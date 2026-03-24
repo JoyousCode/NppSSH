@@ -1,0 +1,14 @@
+{
+  "version": "0.2.1",
+  "defaults": {},
+  "configurations": [
+    
+      {
+        "type": "dll",
+        "exe": "D:\\software\\application\\Notepad++\\notepad++.exe",
+        "project": "CMakeLists.txt",
+        "projectTarget": "NppSSH.dll (bin\\Release\\NppSSH.dll)",
+        "name": "NppSSH.dll (bin\\Release\\NppSSH.dll)"
+      }
+  ]
+}
