@@ -15,14 +15,15 @@
 //along with this program; if not, write to the Free Software
 //Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
-#include "PluginDefinition.h"
-#include "menuCmdID.h"
-#include <Windows.h>
-#include <libssh2.h> 
-#include <tchar.h>
-
-#include <winsock2.h>
-#include <ws2tcpip.h>
+//#include "PluginDefinition.h"
+#include "SSHClient.h" 
+//#include "menuCmdID.h"
+//#include <Windows.h>
+//#include <libssh2.h> 
+//#include <tchar.h>
+//
+//#include <winsock2.h>
+//#include <ws2tcpip.h>
 LIBSSH2_SESSION* g_sshSession = nullptr;
 SOCKET g_sshSocket = INVALID_SOCKET;
 bool g_isConnected = false;
@@ -46,6 +47,11 @@ FuncItem funcItem[nbFunc];
 // The data of Notepad++ that you can use in your plugin commands
 //
 NppData nppData;
+//// 全局变量：NPP插件核心数据（NPP启动时自动初始化）
+//NppData g_nppData;
+//HINSTANCE g_hInst;
+//NppData g_nppData = { 0 };  // 初始化为空，后续在 setInfo 中赋值
+//HINSTANCE g_hInst = NULL;
 
 //
 // Initialize your plugin data here
@@ -80,6 +86,7 @@ void commandMenuInit()
     setCommand(0, TEXT("Hello Notepad++"), hello, NULL, false);
     setCommand(1, TEXT("Hello (with dialog)"), helloDlg, NULL, false);
     setCommand(2, TEXT("NppSSH"), onNppSSH, NULL, false);
+    setCommand(3, TEXT("on NppSSH Window"), onNppSSHWindow, NULL, false);
 }
 
 //
@@ -267,7 +274,7 @@ LRESULT CALLBACK SSH_WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 void onNppSSH()
 {
-    ::MessageBox(NULL, TEXT("NppSSH 连接!"), TEXT("提示"), MB_OK);
+    ::MessageBox(NULL, TEXT("SSH 连接!"), TEXT("提示"), MB_OK);
 
     //const char* CLASS_NAME = "NppSSHLoginWindow";
     const wchar_t* CLASS_NAME = L"NppSSHLoginWindow";
@@ -320,4 +327,11 @@ void onNppSSH()
     _stprintf_s(szRel, _T("%d"), rel);
     ::MessageBox(NULL, szRel, TEXT("NppSSHRel定义"), MB_OK);
     ::MessageBox(NULL, TEXT("NppSSH 连接!"), TEXT("NppSSH提示"), MB_OK);
+    ::MessageBoxW(NULL, L"错误提示：Notepad++插件环境未初始化！", L"NppSSH错误提示", MB_OK | MB_ICONERROR);
 }
+
+void onNppSSHWindow()
+{
+    CreateNppSSHTerminal();  // 调用 SSHClient.cpp 里的实现
+}
+

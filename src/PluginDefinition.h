@@ -25,6 +25,10 @@
 // All difinitions of plugin interface
 //
 #include "PluginInterface.h"
+// 全局存储 Notepad++ 插件接口数据（NppData 是 Notepad++ 定义的结构体）
+extern NppData g_nppData;
+// 全局存储插件实例句柄
+extern HINSTANCE g_hInst;
 
 //-------------------------------------//
 //-- STEP 1. DEFINE YOUR PLUGIN NAME --//
@@ -39,7 +43,7 @@ const TCHAR NPP_PLUGIN_NAME[] = TEXT("NppSSH");
 //
 // Here define the number of your plugin commands
 //
-const int nbFunc = 3;
+const int nbFunc = 4;
 
 
 //
@@ -76,5 +80,6 @@ bool setCommand(size_t index, TCHAR *cmdName, PFUNCPLUGINCMD pFunc, ShortcutKey 
 void hello();
 void helloDlg();
 void onNppSSH();
+void onNppSSHWindow();
 
 #endif //PLUGINDEFINITION_H

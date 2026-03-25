@@ -15,10 +15,13 @@
 //along with this program; if not, write to the Free Software
 //Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
-#include "PluginDefinition.h"
+//#include "PluginDefinition.h"
+#include "SSHClient.h" 
 
 extern FuncItem funcItem[nbFunc];
 extern NppData nppData;
+extern NppData g_nppData;
+extern HINSTANCE g_hInst;
 
 
 BOOL APIENTRY DllMain(HANDLE hModule, DWORD  reasonForCall, LPVOID /*lpReserved*/)
@@ -28,6 +31,11 @@ BOOL APIENTRY DllMain(HANDLE hModule, DWORD  reasonForCall, LPVOID /*lpReserved*
 		switch (reasonForCall)
 		{
 			case DLL_PROCESS_ATTACH:
+				//::MessageBox(NULL, TEXT("NppSSH 插件初始化!"), TEXT("NppSSH提示"), MB_OK);
+				// 捕获异常，避免插件崩溃导致Notepad++退出
+				::MessageBox(NULL, _T("插件初始化！"), NPP_PLUGIN_NAME, MB_ICONERROR);
+				// 插件被加载时：初始化DLL实例句柄 + 插件核心逻辑
+				g_hInst = (HINSTANCE)hModule;
 				pluginInit(hModule);
 				break;
 
@@ -42,7 +50,11 @@ BOOL APIENTRY DllMain(HANDLE hModule, DWORD  reasonForCall, LPVOID /*lpReserved*
 				break;
 		}
 	}
-	catch (...) { return FALSE; }
+	catch (...) { 
+		// 捕获异常，避免插件崩溃导致Notepad++退出
+		::MessageBox(NULL, _T("插件初始化/清理异常！"), NPP_PLUGIN_NAME, MB_ICONERROR);
+		return FALSE;
+	}
 
     return TRUE;
 }
@@ -50,6 +62,7 @@ BOOL APIENTRY DllMain(HANDLE hModule, DWORD  reasonForCall, LPVOID /*lpReserved*
 
 extern "C" __declspec(dllexport) void setInfo(NppData notpadPlusData)
 {
+	g_nppData = notpadPlusData;
 	nppData = notpadPlusData;
 	commandMenuInit();
 }

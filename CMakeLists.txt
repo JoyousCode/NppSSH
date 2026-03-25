@@ -25,13 +25,27 @@ set(NOTEPADSDK_DIR "C:/Users/Admin/Desktop/project/C++(notepad++)/notepadSdk/plu
 
 add_library(NppSSH SHARED
     src/PluginDefinition.cpp
-    src/NppPluginDemo.cpp
+    
+    src/SSHClient.cpp
     src/PluginDefinition.h
     src/PluginInterface.h
     src/Scintilla.h
     src/Sci_Position.h
     src/menuCmdID.h
     src/Notepad_plus_msgs.h
+    src/SSHClient.h
+    src/DockingFeature/Docking.h
+    src/DockingFeature/DockingDlgInterface.h
+    src/DockingFeature/dockingResource.h
+    src/DockingFeature/GoToLineDlg.cpp
+    src/DockingFeature/GoToLineDlg.h
+    src/DockingFeature/resource.h
+    src/DockingFeature/StaticDialog.cpp
+    src/DockingFeature/StaticDialog.h
+    src/DockingFeature/Window.h
+    src/Resource.h
+    src/NppPluginSSH.cpp
+    
 )
 
 
@@ -43,6 +57,9 @@ target_include_directories(NppSSH PRIVATE
 target_link_libraries(NppSSH PRIVATE
     ${LIBSSH2_LIB}
     ws2_32.lib
+    shlwapi.lib
+    advapi32.lib
+    crypt32.lib
 )
 
 

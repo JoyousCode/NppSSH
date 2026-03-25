@@ -15,7 +15,8 @@
     "",
     "\\out",
     "\\out\\build",
-    "\\src"
+    "\\src",
+    "\\src\\DockingFeature"
   ],
   "SelectedNode": "\\CMakeLists.txt",
   "PreviewInSolutionExplorer": false
