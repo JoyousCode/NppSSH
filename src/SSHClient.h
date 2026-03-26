@@ -31,8 +31,19 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <vector>
+#include <atomic>
+// 新增：注册表持久化相关宏定义（NPP插件默认注册表路径）
+#define NPP_SSH_REG_PATH _T("Software\\Notepad++\\Plugins\\NppSSH")
+#define NPP_SSH_PANEL_COUNT _T("PanelCount")
+
 class NppSSHDockPanel;
 extern std::vector<NppSSHDockPanel*> g_sshPanels;
+
+extern std::atomic<int> g_panelCounter;
+// 新增：注册表操作函数声明
+void SavePanelCountToReg(int count);
+int LoadPanelCountFromReg();
+void DeletePanelCountFromReg();
 //// 资源ID定义（无需rc文件，直接宏定义，避免新建文件）
 //#define IDD_SSH_PANEL 1001  // 面板对话框唯一ID
 //#define IDC_OUTPUT_EDIT 1002// 输出文本框ID
@@ -58,6 +69,7 @@ public:
         _hOutputEdit(NULL),
         _titleBuf(),
         _isSSHConnected(false) {// 测试：true
+        ZeroMemory(_titleBuf, sizeof(_titleBuf));
     }
 
     bool isSSHConnected() const;
@@ -69,19 +81,27 @@ public:
     void initPanel();
     // 重写原生窗口过程：处理UI创建/消息
     INT_PTR CALLBACK run_dlgProc(UINT message, WPARAM wParam, LPARAM lParam) override;
-
+    // 新增：面板重置为初始状态（仅清空连接，不销毁）
+    void resetPanelToInit() {
+        disconnectSSH();
+        if (_hOutputEdit && ::IsWindow(_hOutputEdit)) {
+            ::SetWindowTextW(_hOutputEdit, L"✅ NppSSH面板已创建\n等待SSH连接...");
+        }
+    }
 private:
     tTbData _dockData;     // 原生停靠数据结构体（需声明）
     int _panelId;               // 面板唯一ID，区分多标签
     HWND _hOutputEdit;          // 输出编辑框句柄,面板内输出文本框
-    wchar_t _titleBuf[64] = { 0 };// 面板标题缓冲区（成员变量，非静态！）
-    bool _isSSHConnected = false;  //当前面板是否SSH登录成功// 测试：true
+    //wchar_t _titleBuf[64] = { 0 };// 面板标题缓冲区（成员变量，非静态！）
+    wchar_t _titleBuf[64];
+    bool _isSSHConnected;  //当前面板是否SSH登录成功// 测试：true
 };
 
 
 
 void CreateNppSSHTerminal();
-
+// 新增：NPP启动时自动重建面板函数
+void RecreatePanelsOnNppStart();
 
 
 //#ifdef __cplusplus

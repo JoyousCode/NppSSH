@@ -41,7 +41,13 @@ BOOL APIENTRY DllMain(HANDLE hModule, DWORD  reasonForCall, LPVOID /*lpReserved*
 				break;
 
 			case DLL_PROCESS_DETACH:
-				pluginCleanUp();
+				// 仅插件卸载时执行清理（NPP关闭时不执行，避免销毁面板）
+				// 插件卸载由NPP主动触发，PROCESS_DETACH区分：卸载时g_sshPanels已空，关闭时非空
+				if (g_sshPanels.empty()) {
+					DeletePanelCountFromReg(); // 卸载时删除注册表
+					pluginCleanUp();
+				}
+				//pluginCleanUp();
 				break;
 
 			case DLL_THREAD_ATTACH:
@@ -86,6 +92,8 @@ extern "C" __declspec(dllexport) void setInfo(NppData notpadPlusData)
 	::MessageBoxW(NULL, szSuccessMsg, L"NppSSH初始化g_nppData提示", MB_OK | MB_ICONINFORMATION);
 	nppData = notpadPlusData;
 	commandMenuInit();
+	// 新增：NPP插件环境初始化完成后，自动重建注册表中记录的面板
+	RecreatePanelsOnNppStart();
 }
 
 extern "C" __declspec(dllexport) const TCHAR * getName()
@@ -128,12 +136,13 @@ extern "C" __declspec(dllexport) void beNotified(SCNotification *notifyCode)
 			// 统一断开所有SSH连接
 			for (auto* panel : g_sshPanels) {
 				if (panel) {
-					panel->disconnectSSH();
+					//panel->disconnectSSH();
+					panel->resetPanelToInit(); // 断开连接+恢复初始文本
 				}
 			}
-
+			// 保留注册表面板数量，不执行pluginCleanUp（避免销毁面板）
 			// 清理插件资源
-			pluginCleanUp();
+			//pluginCleanUp();
 			break;
 		}
 		default:
