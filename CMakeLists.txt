@@ -45,6 +45,7 @@ add_library(NppSSH SHARED
     src/DockingFeature/Window.h
     src/Resource.h
     src/NppPluginSSH.cpp
+    src/SSHClient.rc
     
 )
 

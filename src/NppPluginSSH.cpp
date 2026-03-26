@@ -17,6 +17,7 @@
 
 //#include "PluginDefinition.h"
 #include "SSHClient.h" 
+//#include <SSHClient.cpp>
 
 extern FuncItem funcItem[nbFunc];
 extern NppData nppData;
@@ -33,7 +34,7 @@ BOOL APIENTRY DllMain(HANDLE hModule, DWORD  reasonForCall, LPVOID /*lpReserved*
 			case DLL_PROCESS_ATTACH:
 				//::MessageBox(NULL, TEXT("NppSSH 插件初始化!"), TEXT("NppSSH提示"), MB_OK);
 				// 捕获异常，避免插件崩溃导致Notepad++退出
-				::MessageBox(NULL, _T("插件初始化！"), NPP_PLUGIN_NAME, MB_ICONERROR);
+				//::MessageBox(NULL, _T("NPPSSH插件初始化！"), NPP_PLUGIN_NAME, MB_ICONERROR);
 				// 插件被加载时：初始化DLL实例句柄 + 插件核心逻辑
 				g_hInst = (HINSTANCE)hModule;
 				pluginInit(hModule);
@@ -62,7 +63,27 @@ BOOL APIENTRY DllMain(HANDLE hModule, DWORD  reasonForCall, LPVOID /*lpReserved*
 
 extern "C" __declspec(dllexport) void setInfo(NppData notpadPlusData)
 {
+	// 同样显示成功时的句柄值，方便对比
+	wchar_t szSuccess[256] = { 0 };
+	swprintf_s(szSuccess, 256,
+		L"Notepad++插件环境已经初始化！\n\n"
+		L"g_nppData._nppHandle = %p\n"
+		L"g_hInst = %p",
+		g_nppData._nppHandle,
+		g_hInst);
+
+	::MessageBoxW(NULL, szSuccess, L"NppSSH初始化g_nppData提示", MB_OK | MB_ICONINFORMATION);
 	g_nppData = notpadPlusData;
+	// 同样显示成功时的句柄值，方便对比
+	wchar_t szSuccessMsg[256] = { 0 };
+	swprintf_s(szSuccessMsg, 256,
+		L"Notepad++插件环境已经初始化！\n\n"
+		L"g_nppData._nppHandle = %p\n"
+		L"g_hInst = %p",
+		g_nppData._nppHandle,
+		g_hInst);
+
+	::MessageBoxW(NULL, szSuccessMsg, L"NppSSH初始化g_nppData提示", MB_OK | MB_ICONINFORMATION);
 	nppData = notpadPlusData;
 	commandMenuInit();
 }
@@ -85,10 +106,36 @@ extern "C" __declspec(dllexport) void beNotified(SCNotification *notifyCode)
 	{
 		case NPPN_SHUTDOWN:
 		{
-			commandMenuCleanUp();
-		}
-		break;
+			//commandMenuCleanUp();// 注释掉这行，避免NPP关闭时清理面板窗口
+			// 检查是否有任何面板处于SSH已连接状态
+			bool hasActiveConnection = false;
+			for (auto* panel : g_sshPanels) {
+				if (panel && panel->isSSHConnected()) {
+					hasActiveConnection = true;
+					break;
+				}
+			}
 
+			// 有连接则弹出提示
+			if (hasActiveConnection) {
+				::MessageBoxW(
+					NULL,
+					L"您有已登录的SSH连接，关闭notepad++则直接退出关于SSH的所有登录",
+					L"NppSSH 连接提示",
+					MB_OK | MB_ICONWARNING
+				);
+			}
+			// 统一断开所有SSH连接
+			for (auto* panel : g_sshPanels) {
+				if (panel) {
+					panel->disconnectSSH();
+				}
+			}
+
+			// 清理插件资源
+			pluginCleanUp();
+			break;
+		}
 		default:
 			return;
 	}
