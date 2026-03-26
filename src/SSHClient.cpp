@@ -1,8 +1,9 @@
 #include <SSHClient.h>
 #include <shlwapi.h>
-#include <atomic>
+//#include <atomic>
 #include <algorithm>
 #include <windowsx.h>
+#pragma comment(lib, "shlwapi.lib") // 注册表操作依赖库
 // 全局面板句柄数组：管理多面板，支持NPP标签切换
 //static std::vector<NppSSHDockPanel*> g_sshPanels;
 std::vector<NppSSHDockPanel*> g_sshPanels;
@@ -24,7 +25,52 @@ const char* pass = "";
 NppData g_nppData;
 HINSTANCE g_hInst;
 
+// 新增：保存面板数量到注册表
+void SavePanelCountToReg(int count) {
+    HKEY hKey;
+    if (RegCreateKeyEx(HKEY_CURRENT_USER, NPP_SSH_REG_PATH, 0, NULL, REG_OPTION_NON_VOLATILE, KEY_WRITE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
+        RegSetValueEx(hKey, NPP_SSH_PANEL_COUNT, 0, REG_DWORD, (const BYTE*)&count, sizeof(DWORD));
+        RegCloseKey(hKey);
+    }
+}
 
+// 新增：从注册表加载面板数量
+int LoadPanelCountFromReg() {
+    HKEY hKey;
+    DWORD count = 0;
+    DWORD dwSize = sizeof(DWORD);
+    if (RegOpenKeyEx(HKEY_CURRENT_USER, NPP_SSH_REG_PATH, 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+        RegQueryValueEx(hKey, NPP_SSH_PANEL_COUNT, 0, NULL, (BYTE*)&count, &dwSize);
+        RegCloseKey(hKey);
+    }
+    return (int)count;
+}
+
+// 新增：删除注册表面板数量（插件卸载时调用）
+void DeletePanelCountFromReg() {
+    HKEY hKey;
+    if (RegOpenKeyEx(HKEY_CURRENT_USER, NPP_SSH_REG_PATH, 0, KEY_WRITE, &hKey) == ERROR_SUCCESS) {
+        RegDeleteValue(hKey, NPP_SSH_PANEL_COUNT);
+        RegCloseKey(hKey);
+        RegDeleteKey(HKEY_CURRENT_USER, NPP_SSH_REG_PATH);
+    }
+}
+
+// 新增：NPP启动时自动重建所有面板
+void RecreatePanelsOnNppStart() {
+    if (g_nppData._nppHandle == NULL || g_hInst == NULL) return;
+    int panelCount = LoadPanelCountFromReg();
+    if (panelCount <= 0) return;
+    // 按注册表记录的数量重建面板，ID延续自注册表
+    for (int i = 1; i <= panelCount; i++) {
+        g_panelCounter = i; // 同步计数器，保证新创建面板ID不重复
+        NppSSHDockPanel* pNewPanel = new NppSSHDockPanel(i);
+        if (pNewPanel) {
+            pNewPanel->initPanel();
+            ::SendMessage(g_nppData._nppHandle, NPPM_DMMSHOW, 0, reinterpret_cast<LPARAM>(pNewPanel->getHSelf()));
+        }
+    }
+}
 // TODO:登录成功后,添加
 //_setSSHConnected(true);
 // // 实现 isSSHConnected()
@@ -73,10 +119,11 @@ void NppSSHDockPanel::initPanel() {
     // 面板标签名（多标签区分：NppSSH-1、NppSSH-2...，NPP底部标签栏显示）
     std::wstring panelTitle = L"NppSSH-" + std::to_wstring(_panelId);
     // 关键：将临时字符串拷贝到静态缓冲区（避免析构后pszName指向空）
-    static wchar_t titleBuf[64];
-    wcscpy_s(titleBuf, panelTitle.c_str());
+    //static wchar_t titleBuf[64];
+    wcscpy_s(_titleBuf, _countof(_titleBuf), panelTitle.c_str());
+    //wcscpy_s(titleBuf, panelTitle.c_str());
     //_dockData.pszName = panelTitle.c_str();         
-    _dockData.pszName = titleBuf;           // 原生成员：面板名称
+    _dockData.pszName = _titleBuf;           // 原生成员：面板名称
     _dockData.uMask = DWS_DF_CONT_BOTTOM | DWS_DF_FLOATING; //面板默认停靠在底部和允许面板浮动为独立窗口
     _dockData.iPrevCont = CONT_BOTTOM;  // 原生要求：记录上一次停靠位置为底部
 
@@ -199,8 +246,18 @@ INT_PTR CALLBACK NppSSHDockPanel::run_dlgProc(UINT message, WPARAM wParam, LPARA
 
      // 面板关闭：原生NPP消息，自动清理资源，无内存泄漏
     case WM_CLOSE: {
+        // 检查当前面板是否有活跃SSH连接
+        if (this->isSSHConnected()) {
+            ::MessageBoxW(
+                NULL,
+                L"当前面板存在SSH活跃连接，关闭将断开连接并恢复初始状态！",
+                L"NppSSH 连接提示",
+                MB_OK | MB_ICONWARNING
+            );
+            this->resetPanelToInit(); // 重置为初始状态
+        }
         // 手动关闭面板：自动断开当前SSH，无提示
-        disconnectSSH();
+        //disconnectSSH();
         // 从NPP原生停靠管理器移除面板
         //::SendMessage(g_nppData._nppHandle, NPPM_REMOVESHORTCUTBYCMDID, 0, reinterpret_cast<LPARAM>(_hSelf));
         ::SendMessage(g_nppData._nppHandle, NPPM_MODELESSDIALOG, MODELESSDIALOGREMOVE, (LPARAM)getHSelf());
@@ -214,6 +271,8 @@ INT_PTR CALLBACK NppSSHDockPanel::run_dlgProc(UINT message, WPARAM wParam, LPARA
         this->destroy();
         // 释放面板实例
         delete this;
+        // 同步更新注册表面板数量
+        SavePanelCountToReg(g_sshPanels.size());
         return TRUE;
     }
 
@@ -251,6 +310,8 @@ void CreateNppSSHTerminal() {
         }
         //pNewPanel->initPanel();
         //pNewPanel->display(true); // true=显示面板，原生接口无报错
+        // 新增：创建面板后立即保存数量到注册表
+        SavePanelCountToReg(g_sshPanels.size());
         return;
     }
 }
