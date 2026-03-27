@@ -7,6 +7,10 @@
 #include <windowsx.h>
 #pragma comment(lib, "shlwapi.lib")
 
+// 新增：面板按钮资源ID（独立按钮栏，从1010开始避免与原有控件冲突）
+#define IDC_BTN_CONNECT_SSH 1010  // 连接SSH按钮
+#define IDC_BTN_DISCONNECT_SSH 1011  // 断开SSH按钮（新增）
+
 // 核心：可停靠面板类（具体实现）
 class NppSSHDockPanel : public DockingDlgInterface {
 public:
@@ -24,8 +28,12 @@ private:
     tTbData _dockData;      // 原生停靠数据结构体（需声明）
     int _panelId;           // 面板唯一ID，区分多标签
     HWND _hOutputEdit;      // 输出编辑框句柄,面板内输出文本框
+    HWND _hBtnConnectSSH;   // 新增：连接SSH按钮句柄
+    HWND _hBtnDisconnectSSH;// 新增：断开SSH按钮句柄
     wchar_t _titleBuf[64];  // 面板标题缓冲区（成员变量，非静态！）
     bool _isSSHConnected;   //当前面板是否SSH登录成功  测试：true
+    // 新增：创建面板顶部按钮栏
+    void createTopButtonBar();
 };
 
 // 全局变量封装（供SSHWindow调用）
