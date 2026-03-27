@@ -26,9 +26,9 @@
 //
 #include "PluginInterface.h"
 // 全局存储 Notepad++ 插件接口数据（NppData 是 Notepad++ 定义的结构体）
-extern NppData g_nppData;
+extern NppData& g_nppData;
 // 全局存储插件实例句柄
-extern HINSTANCE g_hInst;
+extern HINSTANCE& g_hInst;
 
 //-------------------------------------//
 //-- STEP 1. DEFINE YOUR PLUGIN NAME --//

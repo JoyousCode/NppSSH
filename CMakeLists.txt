@@ -46,7 +46,13 @@ add_library(NppSSH SHARED
     src/Resource.h
     src/NppPluginSSH.cpp
     src/SSHClient.rc
-    
+
+    src/windows/SSHWindow.cpp
+    src/Windows/SSHWindow.h
+    src/Windows/SSHPanel.h
+    src/Windows/SSHPanel.cpp
+    src/Windows/SSHConnection.h
+    src/Windows/SSHConnection.cpp
 )
 
 

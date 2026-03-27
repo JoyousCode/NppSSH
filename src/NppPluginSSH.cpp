@@ -17,12 +17,13 @@
 
 //#include "PluginDefinition.h"
 #include "SSHClient.h" 
+#include "Windows/SSHPanel.h"
 //#include <SSHClient.cpp>
 
 extern FuncItem funcItem[nbFunc];
 extern NppData nppData;
-extern NppData g_nppData;
-extern HINSTANCE g_hInst;
+extern NppData& g_nppData;
+extern HINSTANCE& g_hInst;
 
 
 BOOL APIENTRY DllMain(HANDLE hModule, DWORD  reasonForCall, LPVOID /*lpReserved*/)
@@ -72,7 +73,7 @@ extern "C" __declspec(dllexport) void setInfo(NppData notpadPlusData)
 	// 同样显示成功时的句柄值，方便对比
 	wchar_t szSuccess[256] = { 0 };
 	swprintf_s(szSuccess, 256,
-		L"Notepad++插件环境已经初始化！\n\n"
+		L"Notepad++插件环境准备初始化！\n\n"
 		L"g_nppData._nppHandle = %p\n"
 		L"g_hInst = %p",
 		g_nppData._nppHandle,
@@ -83,7 +84,7 @@ extern "C" __declspec(dllexport) void setInfo(NppData notpadPlusData)
 	// 同样显示成功时的句柄值，方便对比
 	wchar_t szSuccessMsg[256] = { 0 };
 	swprintf_s(szSuccessMsg, 256,
-		L"Notepad++插件环境已经初始化！\n\n"
+		L"Notepad++插件环境初始化数据！\n\n"
 		L"g_nppData._nppHandle = %p\n"
 		L"g_hInst = %p",
 		g_nppData._nppHandle,
