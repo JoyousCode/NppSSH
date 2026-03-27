@@ -94,8 +94,59 @@ void NppSSHDockPanel::resetPanelToInit() {
     if (_hOutputEdit && ::IsWindow(_hOutputEdit)) {
         ::SetWindowTextW(_hOutputEdit, L"✅ NppSSH面板已创建\n等待SSH连接...");
     }
+    // 可选：重置面板时，启用连接SSH按钮（若之前置灰）
+    if (_hBtnConnectSSH && ::IsWindow(_hBtnConnectSSH)) {
+        ::EnableWindow(_hBtnConnectSSH, TRUE);
+    }
 }
+// 新增：创建面板顶部独立按钮栏
+void NppSSHDockPanel::createTopButtonBar() {
+    if (!_hSelf || !::IsWindow(_hSelf)) return;
 
+    // 获取面板客户区大小，确定按钮位置（顶部横向排列，左对齐，边距10）
+    RECT rcClient;
+    ::GetClientRect(_hSelf, &rcClient);
+    int btnWidth = 80;  // 按钮宽度
+    int btnHeight = 28; // 按钮高度
+    int btnMargin = 10; // 按钮左右边距
+    int btnTop = 10;    // 按钮顶部边距
+    int btnGap = 10; // 按钮之间的间距
+
+    // 创建「连接SSH」按钮（Unicode版，适配NPP中文环境）
+    _hBtnConnectSSH = ::CreateWindowW(
+        L"BUTTON",                // 控件类名
+        L"连接SSH",               // 按钮文字
+        WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON | WS_BORDER, // 控件样式
+        btnMargin,                // 左坐标
+        btnTop,                   // 上坐标
+        btnWidth,                 // 宽度
+        btnHeight,                // 高度
+        _hSelf,                   // 父窗口句柄
+        (HMENU)IDC_BTN_CONNECT_SSH, // 按钮ID
+        ::GetModuleHandleW(NULL), // 实例句柄
+        NULL
+    );
+    // 新增：创建「断开SSH」按钮（在连接按钮右侧，间隔10px）
+    _hBtnDisconnectSSH = ::CreateWindowW(
+        L"BUTTON",
+        L"断开SSH",
+        WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON | WS_BORDER,
+        btnMargin + btnWidth + btnGap, // 左坐标 = 连接按钮左 + 宽度 + 间距
+        btnTop,
+        btnWidth,
+        btnHeight,
+        _hSelf,
+        (HMENU)IDC_BTN_DISCONNECT_SSH,
+        ::GetModuleHandleW(NULL),
+        NULL
+    );
+
+    // 复用NPP默认字体，保证按钮样式与NPP统一
+    HFONT hNppFont = (HFONT)::SendMessage(s_nppData._nppHandle, NPPM_SETSMOOTHFONT, 0, 0);
+    if (hNppFont == NULL) hNppFont = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+    ::SendMessage(_hBtnConnectSSH, WM_SETFONT, (WPARAM)hNppFont, TRUE);
+    ::SendMessage(_hBtnDisconnectSSH, WM_SETFONT, (WPARAM)hNppFont, TRUE);
+}
 // 面板初始化：纯原生接口
 void NppSSHDockPanel::initPanel() {
     // 检查资源是否存在
@@ -152,6 +203,8 @@ void NppSSHDockPanel::initPanel() {
     }
     ::SendMessage(s_nppData._nppHandle, NPPM_DMMREGASDCKDLG, 0, reinterpret_cast<LPARAM>(&_dockData));
     ::SendMessage(s_nppData._nppHandle, NPPM_MODELESSDIALOG, MODELESSDIALOGADD, reinterpret_cast<LPARAM>(_hSelf));
+    // ====== 新增：调用创建顶部按钮栏 ======
+    createTopButtonBar();
 
     // 4. 从资源中获取EDIT控件句柄（不再手动CreateWindow）
     _hOutputEdit = ::GetDlgItem(_hSelf, IDC_OUTPUT_EDIT);
@@ -162,6 +215,16 @@ void NppSSHDockPanel::initPanel() {
         ::SendMessage(_hOutputEdit, WM_SETFONT, (WPARAM)hNppFont, TRUE);
         ::SendMessage(_hOutputEdit, EM_GETLINECOUNT, 0, 0);     // 设置编辑框自适应换行/滚动
         ::SendMessage(_hOutputEdit, EM_SETTABSTOPS, 1, (LPARAM)8);
+        // ====== 修改：调整输出编辑框位置，避开顶部按钮栏 ======
+        RECT rcClient;
+        ::GetClientRect(_hSelf, &rcClient);
+        // 编辑框：左10、上50（避开按钮栏）、右-20、下-20，与按钮栏保留间距
+        ::SetWindowPos(
+            _hOutputEdit,
+            NULL,
+            10, 50, rcClient.right - 20, rcClient.bottom - 60,
+            SWP_NOZORDER | SWP_NOACTIVATE
+        );
     }
     // 5. 加入全局管理，支持标签切换和内存清理
     s_sshPanels.push_back(this);
@@ -183,22 +246,51 @@ INT_PTR CALLBACK NppSSHDockPanel::run_dlgProc(UINT message, WPARAM wParam, LPARA
         }
         return TRUE;
     }
-                      // 面板大小变化时，自动适配输出文本框（防止遮挡/空白）
+    // 面板大小变化时，自动适配输出文本框（防止遮挡/空白）
     case WM_SIZE: {
         if (_hOutputEdit && ::IsWindow(_hOutputEdit)) {
             RECT rc;
             ::GetClientRect(_hSelf, &rc);
+            //::SetWindowPos(
+            //    _hOutputEdit,
+            //    NULL,
+            //    10, 10, rc.right - 20, rc.bottom - 20,
+            //    SWP_NOZORDER | SWP_NOACTIVATE
+            //);
+            // ====== 同步修改WM_SIZE中的编辑框位置，适配按钮栏 ======
             ::SetWindowPos(
                 _hOutputEdit,
                 NULL,
-                10, 10, rc.right - 20, rc.bottom - 20,
+                10, 50, rc.right - 20, rc.bottom - 60,
                 SWP_NOZORDER | SWP_NOACTIVATE
             );
         }
+        // 新增：面板大小变化时，按钮栏宽度自适应（可选，保持按钮左对齐即可）
+        if (_hBtnConnectSSH && ::IsWindow(_hBtnConnectSSH)) {
+            ::SetWindowPos(_hBtnConnectSSH, NULL, 10, 10, 80, 28, SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+        // 新增：更新断开按钮位置
+        if (_hBtnDisconnectSSH && ::IsWindow(_hBtnDisconnectSSH)) {
+            ::SetWindowPos(_hBtnDisconnectSSH, NULL, 100, 10, 80, 28, SWP_NOZORDER | SWP_NOACTIVATE);
+        }
         return TRUE;
     }
-
-                // 响应NPP停靠管理器的浮动/停靠消息，更新面板状态
+    // ====== 新增：处理按钮点击消息 WM_COMMAND ======
+    case WM_COMMAND: {
+        // 判断是否为连接SSH按钮点击
+        if (LOWORD(wParam) == IDC_BTN_CONNECT_SSH) {
+            
+            // 弹出提示框，验证按钮可用，后续替换为实际SSH连接逻辑
+            ::MessageBoxW(_hSelf, L"连接SSH", L"NppSSH提示", MB_OK | MB_ICONINFORMATION);
+            ::onNppSSH();
+        }
+        // 新增：处理断开SSH按钮点击
+        else if (LOWORD(wParam) == IDC_BTN_DISCONNECT_SSH) {
+            ::MessageBoxW(_hSelf, L"SSH连接已断开", L"NppSSH提示", MB_OK | MB_ICONINFORMATION);
+        }
+        return TRUE;
+    }
+    // 响应NPP停靠管理器的浮动/停靠消息，更新面板状态
     case WM_NOTIFY: {
         LPNMHDR pnmh = reinterpret_cast<LPNMHDR>(lParam);
         if (pnmh->hwndFrom == s_nppData._nppHandle) {
