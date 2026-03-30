@@ -45,9 +45,13 @@ extern const char*& pass;
 class NppSSHDockPanel;
 
 // 注册表操作函数（声明，具体实现在SSHPanel中）
-void SavePanelCountToReg(int count);
-int LoadPanelCountFromReg();
-void DeletePanelCountFromReg();
+//void SavePanelCountToReg(int count);
+//int LoadPanelCountFromReg();
+//void DeletePanelCountFromReg();
+// ini操作函数（声明，具体实现在SSHPanel中）
+void SavePanelCountToIni(int count);
+int LoadPanelCountFromIni();
+void DeletePanelCountFromIni();
 
 // NPP启动时自动重建面板（分发到SSHPanel）
 void RecreatePanelsOnNppStart();

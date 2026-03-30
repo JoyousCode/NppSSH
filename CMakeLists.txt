@@ -53,6 +53,8 @@ add_library(NppSSH SHARED
     src/Windows/SSHPanel.cpp
     src/Windows/SSHConnection.h
     src/Windows/SSHConnection.cpp
+    src/SSHSettings.h
+    src/SSHSettings.cpp
 )
 
 
@@ -74,8 +76,8 @@ target_link_libraries(NppSSH PRIVATE
 set_target_properties(NppSSH PROPERTIES
     OUTPUT_NAME "NppSSH"
     SUFFIX ".dll"
-    RUNTIME_OUTPUT_DIRECTORY "D:/software/application/Notepad++/plugins/NppSSH"
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE "D:/software/application/Notepad++/plugins/NppSSH"
+    RUNTIME_OUTPUT_DIRECTORY "D:/software/developer/Notepad++/plugins/NppSSH"
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE "D:/software/developer/Notepad++/plugins/NppSSH"
     WINDOWS_EXPORT_ALL_SYMBOLS OFF  # 禁用自动导出，仅手动导出
     ARCHITECTURE "x64"
 )

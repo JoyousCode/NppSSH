@@ -1,5 +1,6 @@
 // SSHPanel.cpp（面板 + 注册表具体实现）
 #include "SSHPanel.h"
+#include "SSHSettings.h" // 引入INI工具
 
 // 面板相关全局变量实际定义
 static std::vector<NppSSHDockPanel*> s_sshPanels;
@@ -32,32 +33,44 @@ HINSTANCE& SSHPanel_GetGlobalHInst() {
 }
 
 // 注册表操作具体实现
-void SSHPanel_SavePanelCountToReg(int count) {
-    HKEY hKey;
-    if (RegCreateKeyEx(HKEY_CURRENT_USER, NPP_SSH_REG_PATH, 0, NULL, REG_OPTION_NON_VOLATILE, KEY_WRITE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
-        RegSetValueEx(hKey, NPP_SSH_PANEL_COUNT, 0, REG_DWORD, (const BYTE*)&count, sizeof(DWORD));
-        RegCloseKey(hKey);
-    }
+//void SSHPanel_SavePanelCountToReg(int count) {
+//    HKEY hKey;
+//    if (RegCreateKeyEx(HKEY_CURRENT_USER, NPP_SSH_REG_PATH, 0, NULL, REG_OPTION_NON_VOLATILE, KEY_WRITE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
+//        RegSetValueEx(hKey, NPP_SSH_PANEL_COUNT, 0, REG_DWORD, (const BYTE*)&count, sizeof(DWORD));
+//        RegCloseKey(hKey);
+//    }
+//}
+//
+//int SSHPanel_LoadPanelCountFromReg() {
+//    HKEY hKey;
+//    DWORD count = 0;
+//    DWORD dwSize = sizeof(DWORD);
+//    if (RegOpenKeyEx(HKEY_CURRENT_USER, NPP_SSH_REG_PATH, 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+//        RegQueryValueEx(hKey, NPP_SSH_PANEL_COUNT, 0, NULL, (BYTE*)&count, &dwSize);
+//        RegCloseKey(hKey);
+//    }
+//    return (int)count;
+//}
+//
+//void SSHPanel_DeletePanelCountFromReg() {
+//    HKEY hKey;
+//    if (RegOpenKeyEx(HKEY_CURRENT_USER, NPP_SSH_REG_PATH, 0, KEY_WRITE, &hKey) == ERROR_SUCCESS) {
+//        RegDeleteValue(hKey, NPP_SSH_PANEL_COUNT);
+//        RegCloseKey(hKey);
+//        RegDeleteKey(HKEY_CURRENT_USER, NPP_SSH_REG_PATH);
+//    }
+//}
+// INI操作具体实现（替换原注册表函数）
+void SSHPanel_SavePanelCountToIni(int count) {
+    SSHSettings_SavePanelCountToIni(count);
 }
 
-int SSHPanel_LoadPanelCountFromReg() {
-    HKEY hKey;
-    DWORD count = 0;
-    DWORD dwSize = sizeof(DWORD);
-    if (RegOpenKeyEx(HKEY_CURRENT_USER, NPP_SSH_REG_PATH, 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
-        RegQueryValueEx(hKey, NPP_SSH_PANEL_COUNT, 0, NULL, (BYTE*)&count, &dwSize);
-        RegCloseKey(hKey);
-    }
-    return (int)count;
+int SSHPanel_LoadPanelCountFromIni() {
+    return SSHSettings_LoadPanelCountFromIni();
 }
 
-void SSHPanel_DeletePanelCountFromReg() {
-    HKEY hKey;
-    if (RegOpenKeyEx(HKEY_CURRENT_USER, NPP_SSH_REG_PATH, 0, KEY_WRITE, &hKey) == ERROR_SUCCESS) {
-        RegDeleteValue(hKey, NPP_SSH_PANEL_COUNT);
-        RegCloseKey(hKey);
-        RegDeleteKey(HKEY_CURRENT_USER, NPP_SSH_REG_PATH);
-    }
+void SSHPanel_DeletePanelCountFromIni() {
+    SSHSettings_DeleteIniConfig();
 }
 
 // 面板类构造函数
@@ -115,7 +128,7 @@ void NppSSHDockPanel::createTopButtonBar() {
     // 创建「连接SSH」按钮（Unicode版，适配NPP中文环境）
     _hBtnConnectSSH = ::CreateWindowW(
         L"BUTTON",                // 控件类名
-        L"连接SSH",               // 按钮文字
+        L"连接",               // 按钮文字
         WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON | WS_BORDER, // 控件样式
         btnMargin,                // 左坐标
         btnTop,                   // 上坐标
@@ -129,7 +142,7 @@ void NppSSHDockPanel::createTopButtonBar() {
     // 新增：创建「断开SSH」按钮（在连接按钮右侧，间隔10px）
     _hBtnDisconnectSSH = ::CreateWindowW(
         L"BUTTON",
-        L"断开SSH",
+        L"断开",
         WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON | WS_BORDER,
         btnMargin + btnWidth + btnGap, // 左坐标 = 连接按钮左 + 宽度 + 间距
         btnTop,
@@ -303,7 +316,7 @@ INT_PTR CALLBACK NppSSHDockPanel::run_dlgProc(UINT message, WPARAM wParam, LPARA
         return TRUE;
     }
 
-                  // 面板关闭：原生NPP消息，自动清理资源，无内存泄漏
+    // 面板关闭：原生NPP消息，自动清理资源，无内存泄漏
     case WM_CLOSE: {
         // 检查当前面板是否有活跃SSH连接
         if (this->isSSHConnected()) {
@@ -329,7 +342,8 @@ INT_PTR CALLBACK NppSSHDockPanel::run_dlgProc(UINT message, WPARAM wParam, LPARA
         ::DestroyWindow(_hSelf);
         this->destroy();
         delete this;                                // 释放面板实例
-        SSHPanel_SavePanelCountToReg(s_sshPanels.size());    // 同步更新注册表面板数量
+        //SSHPanel_SavePanelCountToReg(s_sshPanels.size());    // 同步更新注册表面板数量
+        SSHPanel_SavePanelCountToIni(s_sshPanels.size());    // 同步更新INI面板数量
         return TRUE;
     }
                  // 其他所有消息，交给DockingDlgInterface原生处理（避免NPP异常）
@@ -341,7 +355,8 @@ INT_PTR CALLBACK NppSSHDockPanel::run_dlgProc(UINT message, WPARAM wParam, LPARA
 // NPP启动重建面板具体实现
 void SSHPanel_RecreatePanelsOnNppStart() {
     if (s_nppData._nppHandle == NULL || s_hInst == NULL) return;
-    int panelCount = SSHPanel_LoadPanelCountFromReg();
+    //int panelCount = SSHPanel_LoadPanelCountFromReg();
+    int panelCount = SSHPanel_LoadPanelCountFromIni(); // 从INI加载
     if (panelCount <= 0) return;
     // 按注册表记录的数量重建面板，ID延续自注册表
     for (int i = 1; i <= panelCount; i++) {

@@ -43,9 +43,13 @@ NppData& SSHPanel_GetGlobalNppData();
 HINSTANCE& SSHPanel_GetGlobalHInst();
 
 // 注册表操作具体实现
-void SSHPanel_SavePanelCountToReg(int count);
-int SSHPanel_LoadPanelCountFromReg();
-void SSHPanel_DeletePanelCountFromReg();
+//void SSHPanel_SavePanelCountToReg(int count);
+//int SSHPanel_LoadPanelCountFromReg();
+//void SSHPanel_DeletePanelCountFromReg();
+// INI操作具体实现（替换原注册表函数）
+void SSHPanel_SavePanelCountToIni(int count);
+int SSHPanel_LoadPanelCountFromIni();
+void SSHPanel_DeletePanelCountFromIni();
 
 // NPP启动重建面板具体实现
 void SSHPanel_RecreatePanelsOnNppStart();

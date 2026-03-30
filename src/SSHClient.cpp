@@ -29,5 +29,7 @@ void CreateNppSSHTerminal() {
     }
 
     // 同步注册表（复用SSHWindow的注册表函数）
-    SavePanelCountToReg(g_sshPanels.size());
+    //SavePanelCountToReg(g_sshPanels.size());
+    // 同步INI（替换原注册表）
+    SavePanelCountToIni(g_sshPanels.size());
 }
