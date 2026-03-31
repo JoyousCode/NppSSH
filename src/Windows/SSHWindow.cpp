@@ -18,18 +18,6 @@ int& port = SSHConnection_GetPort();
 const char*& user = SSHConnection_GetUser();
 const char*& pass = SSHConnection_GetPass();
 
-// 注册表操作转发
-//void SavePanelCountToReg(int count) {
-//    SSHPanel_SavePanelCountToReg(count);
-//}
-//
-//int LoadPanelCountFromReg() {
-//    return SSHPanel_LoadPanelCountFromReg();
-//}
-//
-//void DeletePanelCountFromReg() {
-//    SSHPanel_DeletePanelCountFromReg();
-//}
 // INI操作转发（替换原注册表）
 void SavePanelCountToIni(int count) {
     SSHPanel_SavePanelCountToIni(count);

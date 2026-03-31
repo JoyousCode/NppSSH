@@ -55,7 +55,18 @@ add_library(NppSSH SHARED
     src/Windows/SSHConnection.cpp
     src/SSHSettings.h
     src/SSHSettings.cpp
+
+    src/res/connect.ico
+    src/res/disconnect.ico
 )
+# 新增：指定 RC 文件为资源编译（Windows 特有）
+if(WIN32)
+    set_source_files_properties(
+        src/SSHClient.rc
+        PROPERTIES
+        OBJECT_DEPENDS "${CMAKE_SOURCE_DIR}/src/res/connect.ico;${CMAKE_SOURCE_DIR}/src/res/disconnect.ico"
+    )
+endif()
 
 
 target_include_directories(NppSSH PRIVATE

@@ -1,5 +1,9 @@
-﻿#include "resource.h"
+﻿#include "Resource.h"
 #include <windows.h>
+
+// 相对路径（RC 在 src/ 目录，图标在 src/res/，路径正确，直接保留）
+IDI_ICON_CONNECT ICON "res/connect.ico"
+IDI_ICON_DISCONNECT ICON "res/disconnect.ico"
 
 // 严格按此样式定义，无WS_VISIBLE！
 IDD_SSH_PANEL DIALOGEX 0, 0, 400, 300
