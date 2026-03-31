@@ -148,6 +148,47 @@ extern "C" __declspec(dllexport) void beNotified(SCNotification *notifyCode)
 			//pluginCleanUp();
 			break;
 		}
+
+		// 新增：监听工具栏图标大小变化（自动适配）
+		//case NPPN_TOOLBARICONSETCHANGED:
+		//{
+		//	// 遍历所有面板，更新按钮图标大小
+		//	std::vector<NppSSHDockPanel*>& panels = SSHPanel_GetGlobalPanels();
+		//	for (auto* panel : panels) {
+		//		if (panel && panel->getHSelf() && IsWindow(panel->getHSelf())) {
+		//			panel->UpdateToolbarIconSize();
+		//		}
+		//	}
+		//	break;
+		//}
+		// 
+		//case NPPN_TOOLBARICONSETCHANGED:
+		//{
+		//	// 声明全局面板容器（如果已存在可省略）
+		//	extern std::vector<NppSSHDockPanel*>& SSHPanel_GetGlobalPanels();
+		//	auto& panels = SSHPanel_GetGlobalPanels();
+		//	for (auto* pPanel : panels)
+		//	{
+		//		if (pPanel != nullptr && pPanel->getHSelf() != nullptr && ::IsWindow(pPanel->getHSelf()))
+		//		{
+		//			pPanel->UpdateToolbarIconSize();
+		//		}
+		//	}
+		//	break;
+		//}
+
+		// 关键：监听工具栏图标大小变化通知
+		case NPPN_TOOLBARICONSETCHANGED:
+		{
+			// 遍历所有面板，更新按钮尺寸
+			std::vector<NppSSHDockPanel*>& panels = SSHPanel_GetGlobalPanels();
+			for (auto* panel : panels) {
+				if (panel != nullptr && panel->getHSelf() != nullptr && ::IsWindow(panel->getHSelf())) {
+					panel->UpdateToolbarIconSize();
+				}
+			}
+			break;
+		}
 		default:
 			return;
 	}

@@ -16,6 +16,7 @@
     "\\out",
     "\\out\\build",
     "\\src",
+    "\\src\\res",
     "\\src\\Windows"
   ],
   "SelectedNode": "\\CMakeLists.txt",

@@ -15,13 +15,10 @@
 #include <vector>
 #include <atomic>
 
-// 注册表持久化相关宏定义（NPP插件默认注册表路径）
-#define NPP_SSH_REG_PATH _T("Software\\Notepad++\\Plugins\\NppSSH")//regedit→计算机\HKEY_CURRENT_USER\Software\Notepad++\Plugins\NppSSH
-#define NPP_SSH_PANEL_COUNT _T("PanelCount")
 
 // 资源ID定义
-#define IDD_SSH_PANEL 1001
-#define IDC_OUTPUT_EDIT 1002
+//#define IDD_SSH_PANEL 1001
+//#define IDC_OUTPUT_EDIT 1002
 
 // 这里必须包含，否则 NppSSHDockPanel 是未定义类型
 //#include "SSHPanel.h"//////////////////////////////////////////////
