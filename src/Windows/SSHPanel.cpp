@@ -278,10 +278,10 @@ void NppSSHDockPanel::createTopButtonBar() {
 
     RECT rcClient;
     ::GetClientRect(_hSelf, &rcClient);
-    const int btnMargin = 10;    // 左边距
-    const int btnTop = 10;       // 上边距
+    const int btnMargin = 5;    // 左边距
+    const int btnTop = 2;       // 上边距
     const int btnGap = 10;       // 按钮间距
-    const int btnInitSize = 32;  // 按钮初始尺寸
+    const int btnInitSize = _iconSize;  // 按钮初始尺寸
 
     // 创建「连接SSH」按钮（无文字，后续通过 SetButtonIconOnly 设图标）
     _hBtnConnectSSH = ::CreateWindowW(
@@ -415,7 +415,7 @@ void NppSSHDockPanel::initPanel() {
         ::SetWindowPos(
             _hOutputEdit,
             NULL,
-            10, 50, rcClient.right - 20, rcClient.bottom - 60,
+            5, _iconSize + 12, rcClient.right - 10, rcClient.bottom - 50,
             SWP_NOZORDER | SWP_NOACTIVATE
         );
     }
@@ -460,7 +460,7 @@ INT_PTR CALLBACK NppSSHDockPanel::run_dlgProc(UINT message, WPARAM wParam, LPARA
             ::SetWindowPos(
                 _hOutputEdit,
                 NULL,
-                10, 50, rc.right - 20, rc.bottom - 60,
+                5, _iconSize + 12, rc.right - 10, rc.bottom - 50,
                 SWP_NOZORDER | SWP_NOACTIVATE
             );
         }
