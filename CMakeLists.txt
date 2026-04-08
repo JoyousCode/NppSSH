@@ -87,6 +87,7 @@ target_link_libraries(NppSSH PRIVATE
 set_target_properties(NppSSH PROPERTIES
     OUTPUT_NAME "NppSSH"
     SUFFIX ".dll"
+    PREFIX ""
     RUNTIME_OUTPUT_DIRECTORY "D:/software/developer/Notepad++/plugins/NppSSH"
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "D:/software/developer/Notepad++/plugins/NppSSH"
     WINDOWS_EXPORT_ALL_SYMBOLS OFF  # 禁用自动导出，仅手动导出

@@ -13,3 +13,37 @@ FONT 9, "Microsoft Sans Serif", 400, 0, 0x1
 BEGIN
     EDITTEXT IDC_OUTPUT_EDIT, 0, 0, 400, 300, ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY | WS_VSCROLL | WS_CHILD
 END
+
+
+// ===================== 版本信息（自动显示 0.0.1）=====================
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 0,0,1,0
+ PRODUCTVERSION 0,0,1,0
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x40004L
+ FILETYPE 0x2L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "080404B0"
+        BEGIN
+            VALUE "CompanyName", "NppSSH"
+            VALUE "FileDescription", "NppSSH"
+            VALUE "FileVersion", "0.0.1.0"
+            VALUE "InternalName", "NppSSH"
+            VALUE "ProductName", "NppSSH"
+            VALUE "ProductVersion", "0.0.1.0"
+            VALUE "OriginalFilename", "NppSSH.dll"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x804, 1200
+    END
+END

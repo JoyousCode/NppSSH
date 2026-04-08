@@ -72,36 +72,29 @@ BOOL APIENTRY DllMain(HANDLE hModule, DWORD  reasonForCall, LPVOID /*lpReserved*
 
 extern "C" __declspec(dllexport) void setInfo(NppData notpadPlusData)
 {
-	// 同样显示成功时的句柄值，方便对比
-	wchar_t szSuccess[256] = { 0 };
-	swprintf_s(szSuccess, 256,
-		L"Notepad++插件环境准备初始化！\n\n"
-		L"g_nppData._nppHandle = %p\n"
-		L"g_hInst = %p",
-		g_nppData._nppHandle,
-		g_hInst);
-
-	//::MessageBoxW(NULL, szSuccess, L"NppSSH初始化g_nppData提示", MB_OK | MB_ICONINFORMATION);
+	
 	g_nppData = notpadPlusData;
 	// 同样显示成功时的句柄值，方便对比
-	wchar_t szSuccessMsg[256] = { 0 };
-	swprintf_s(szSuccessMsg, 256,
-		L"Notepad++插件环境初始化数据！\n\n"
-		L"g_nppData._nppHandle = %p\n"
-		L"g_hInst = %p",
-		g_nppData._nppHandle,
-		g_hInst);
+	//wchar_t szSuccessMsg[256] = { 0 };
+	//swprintf_s(szSuccessMsg, 256,
+	//	L"Notepad++插件环境初始化数据！\n\n"
+	//	L"g_nppData._nppHandle = %p\n"
+	//	L"g_hInst = %p",
+	//	g_nppData._nppHandle,
+	//	g_hInst);
 
 	//::MessageBoxW(NULL, szSuccessMsg, L"NppSSH初始化g_nppData提示", MB_OK | MB_ICONINFORMATION);
+
 	nppData = notpadPlusData;
 	commandMenuInit();
-	// 新增：NPP插件环境初始化完成后，自动重建注册表中记录的面板
+	// NPP插件环境初始化完成后，自动重建注册表中记录的面板
 	RecreatePanelsOnNppStart();
 }
 
 extern "C" __declspec(dllexport) const TCHAR * getName()
 {
 	return NPP_PLUGIN_NAME;
+	//return TEXT("NppSSH");
 }
 
 extern "C" __declspec(dllexport) FuncItem * getFuncsArray(int *nbF)
@@ -113,12 +106,12 @@ extern "C" __declspec(dllexport) FuncItem * getFuncsArray(int *nbF)
 
 extern "C" __declspec(dllexport) void beNotified(SCNotification *notifyCode)
 {
+	if (!notifyCode) return; // 空指针防护
 	switch (notifyCode->nmhdr.code) 
 	{
 		case NPPN_SHUTDOWN:
 		{
-			//commandMenuCleanUp();// 注释掉这行，避免NPP关闭时清理面板窗口
-			// 检查是否有任何面板处于SSH已连接状态
+			// 检查活跃连接并提示
 			bool hasActiveConnection = false;
 			for (auto* panel : g_sshPanels) {
 				if (panel && panel->isSSHConnected()) {
@@ -126,8 +119,6 @@ extern "C" __declspec(dllexport) void beNotified(SCNotification *notifyCode)
 					break;
 				}
 			}
-
-			// 有连接则弹出提示
 			if (hasActiveConnection) {
 				::MessageBoxW(
 					NULL,
@@ -139,13 +130,9 @@ extern "C" __declspec(dllexport) void beNotified(SCNotification *notifyCode)
 			// 统一断开所有SSH连接
 			for (auto* panel : g_sshPanels) {
 				if (panel) {
-					//panel->disconnectSSH();
 					panel->resetPanelToInit(); // 断开连接+恢复初始文本
 				}
 			}
-			// 保留注册表面板数量，不执行pluginCleanUp（避免销毁面板）
-			// 清理插件资源
-			//pluginCleanUp();
 			break;
 		}
 
