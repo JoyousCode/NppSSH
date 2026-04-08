@@ -5,6 +5,7 @@
 #include <shlwapi.h>
 #include <algorithm>
 #include <windowsx.h>
+//#include "SSHConnection.h"
 //#include "../Resource.h"
 #pragma comment(lib, "shlwapi.lib")
 
@@ -21,7 +22,7 @@
 class NppSSHDockPanel : public DockingDlgInterface {
 public:
     NppSSHDockPanel(int panelId);
-    ~NppSSHDockPanel() override = default;
+    ~NppSSHDockPanel();
 
     bool isSSHConnected() const;
     void setSSHConnected(bool state);
@@ -32,11 +33,17 @@ public:
     void UpdateToolbarIconSize();
     HICON LoadCustomIcon(int iconId, int size);
     void SetButtonIconOnly(HWND btn, int iconId);
-
+    void OnConnect(HWND hWnd, NppSSHDockPanel* pPanel);
+    //显示登录窗口
+    void ShowSSHLoginWindow();
     //NppSSHDockPanel() = default;
     //NppSSHDockPanel(const NppData& nppData, HINSTANCE hInst);
+    static LRESULT CALLBACK SSH_WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
 
     //static NppSSHDockPanel* GetInstance(); // 单例获取函数
+    //void OnConnect(HWND hWnd, NppSSHDockPanel* pPanel);
+    //void SSHPanel_RecreatePanelsOnNppStart();// NPP启动重建面板
 private:
     tTbData _dockData;      // 原生停靠数据结构体（需声明）
     int _panelId;           // 面板唯一ID，区分多标签

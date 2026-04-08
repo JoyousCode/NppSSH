@@ -81,7 +81,7 @@ extern "C" __declspec(dllexport) void setInfo(NppData notpadPlusData)
 		g_nppData._nppHandle,
 		g_hInst);
 
-	::MessageBoxW(NULL, szSuccess, L"NppSSH初始化g_nppData提示", MB_OK | MB_ICONINFORMATION);
+	//::MessageBoxW(NULL, szSuccess, L"NppSSH初始化g_nppData提示", MB_OK | MB_ICONINFORMATION);
 	g_nppData = notpadPlusData;
 	// 同样显示成功时的句柄值，方便对比
 	wchar_t szSuccessMsg[256] = { 0 };
@@ -92,7 +92,7 @@ extern "C" __declspec(dllexport) void setInfo(NppData notpadPlusData)
 		g_nppData._nppHandle,
 		g_hInst);
 
-	::MessageBoxW(NULL, szSuccessMsg, L"NppSSH初始化g_nppData提示", MB_OK | MB_ICONINFORMATION);
+	//::MessageBoxW(NULL, szSuccessMsg, L"NppSSH初始化g_nppData提示", MB_OK | MB_ICONINFORMATION);
 	nppData = notpadPlusData;
 	commandMenuInit();
 	// 新增：NPP插件环境初始化完成后，自动重建注册表中记录的面板

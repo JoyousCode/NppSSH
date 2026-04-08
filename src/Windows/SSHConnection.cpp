@@ -2,16 +2,20 @@
 
 #include "SSHConnection.h"
 #include <tchar.h>
+//#include <string.h>
 
 // SSH连接全局状态实际定义
 static LIBSSH2_SESSION* s_sshSession = nullptr;
 static SOCKET s_sock = INVALID_SOCKET;
 static bool s_connected = false;
-static const char* ssh_host = "36.33.27.234";
+static const char* ssh_host = "192.168.137.200";
 //const char* ssh_host = "36.33.27.234";
 static int s_port = 22;
-static const char* s_user = "";
-static const char* s_pass = "";
+static const char* s_user = "root";
+static const char* s_pass = "123456";
+
+static NppData s_nppData;
+static HINSTANCE s_hInst;
 
 // 全局状态获取接口
 LIBSSH2_SESSION*& SSHConnection_GetSession() {
@@ -41,23 +45,60 @@ const char*& SSHConnection_GetUser() {
 const char*& SSHConnection_GetPass() {
     return s_pass;
 }
-
+// 工具函数：释放连接资源（抽离公共逻辑）统一释放 Socket、SSH 会话、libssh2、WSA 资源；
+static void ReleaseConnectionResources(SOCKET sock, LIBSSH2_SESSION* session) {
+    if (session) {
+        libssh2_session_free(session);
+    }
+    if (sock != INVALID_SOCKET) {
+        closesocket(sock);
+    }
+    libssh2_exit();
+    WSACleanup();
+}
 // SSH连接具体实现
 bool SSHConnection_Connect(const char* host, int port, const char* user, const char* pass) {
+    // 1. 入参合法性校验
+    if (!host || !user || !pass || port <= 0 || port > 65535) {
+        ::MessageBoxW(s_nppData._nppHandle, L"无效的连接参数！主机/用户/密码不能为空，端口需在1-65535之间", L"NppSSH 错误提示", MB_OK | MB_ICONERROR);
+        return false;
+    }
+
+
     s_connected = false;
     s_sshSession = nullptr;
     s_sock = INVALID_SOCKET;
+    wchar_t paramMsg[1024] = { 0 }; // 加大缓冲区并初始化
+    swprintf_s(paramMsg, _countof(paramMsg), L"是否确认连接？\n\nSSH连接参数：\n主机 = %hs\n端口 = %d\n用户 = %hs\n密码 = %hs",
+        host, port, user, pass);
+    // 强制激活NPP主窗口，确保系统认定NPP为活跃窗口（关键！）
+    ::SetForegroundWindow(s_nppData._nppHandle);
+    ::SetActiveWindow(s_nppData._nppHandle);
+    ::SetWindowPos(s_nppData._nppHandle, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
 
-    TCHAR szPort[16];
-    _stprintf_s(szPort, _T("%d"), port);
-    ::MessageBox(NULL, szPort, TEXT("NppSSHRel定义"), MB_OK);
-
-    //开始连接操作
+    // 禁用NPP主窗口，防止操作（系统标准模态第一步）
+    ::EnableWindow(s_nppData._nppHandle, FALSE);
+    int ret = ::MessageBoxW(                        //弹框确认取消提示框
+        s_nppData._nppHandle,
+        paramMsg,
+        L"NppSSH 连接提示",
+        MB_YESNO | MB_ICONQUESTION | MB_TASKMODAL // 置顶+模态// 系统模态，强制锁定
+    );
+    // 恢复NPP主窗口 + 强制置顶，防止被置底（必须！）
+    ::EnableWindow(s_nppData._nppHandle, TRUE);
+    //::SetForegroundWindow(s_nppData._nppHandle);
+    //::SetWindowPos(s_nppData._nppHandle, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+    
+    if (ret == IDNO) {
+        return false;
+    }
+    //开始连接操作   初始化WSA  创建Socket
     WSADATA wsaData;
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) return false;
     SOCKET sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (sock == INVALID_SOCKET) { WSACleanup(); return false; }
 
+    // 配置服务器地址
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
@@ -66,61 +107,97 @@ bool SSHConnection_Connect(const char* host, int port, const char* user, const c
     wsprintf(buf, TEXT("端口(网络序): %d\n端口(真实端口): %d"),
         addr.sin_port,            // 网络字节序（数字很大）
         ntohs(addr.sin_port));    // 真实端口（22）
-    ::MessageBox(NULL, buf, TEXT("NppSSH端口"), MB_OK);
+    ::MessageBox(s_nppData._nppHandle, buf, TEXT("NppSSH端口"), MB_OK | MB_ICONQUESTION | MB_TASKMODAL);
     inet_pton(AF_INET, host, &addr.sin_addr);
-    if (connect(sock, (sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR)
+
+    // 连接服务器
+    int connectRet = connect(sock, (sockaddr*)&addr, sizeof(addr));
+    if (connectRet == SOCKET_ERROR)
     {
         int err = WSAGetLastError(); // 获取具体错误码
         TCHAR errBuf[128];
         wsprintf(errBuf, TEXT("SOCKET_ERROR, 错误码: %d"), err);
-        ::MessageBox(NULL, errBuf, TEXT("NppSSH提示"), MB_OK);
-        ::MessageBox(NULL, TEXT("10060：连接超时::服务器无响应-防火墙拦截\n10061：连接被拒绝::服务器端口未开放\n10065：无路由到主机::网络不可达"), TEXT("NppSSH提示"), MB_OK);
-        closesocket(sock); WSACleanup(); return false;
-    }
-    if (libssh2_init(0) != 0) {
-        ::MessageBox(NULL, TEXT("libssh2_init_ERROR"), TEXT("NppSSH提示"), MB_OK);
-        closesocket(sock);
-        WSACleanup();
+        ::MessageBox(s_nppData._nppHandle, errBuf, TEXT("NppSSH提示"), MB_OK | MB_ICONERROR);
+        ::MessageBox(s_nppData._nppHandle, TEXT("10060：连接超时::服务器无响应-防火墙拦截\n10061：连接被拒绝::服务器端口未开放\n10065：无路由到主机::网络不可达"), TEXT("NppSSH提示"), MB_OK);
+        //closesocket(sock); WSACleanup(); 
+        ReleaseConnectionResources(sock, nullptr);
         return false;
     }
+
+    // 初始化libssh2
+    int libssh2Ret = libssh2_init(0);
+    if (libssh2Ret != 0) {
+        ::MessageBox(s_nppData._nppHandle, TEXT("libssh2初始化失败！"), TEXT("NppSSH提示"), MB_OK | MB_ICONERROR);
+        //closesocket(sock);
+        //WSACleanup();
+        ReleaseConnectionResources(sock, nullptr);
+        return false;
+    }
+
+    // 创建SSH会话
     LIBSSH2_SESSION* session = libssh2_session_init();
     if (!session) {
-        ::MessageBox(NULL, TEXT("libssh2_session_init_ERROR"), TEXT("NppSSH提示"), MB_OK);
-        libssh2_exit();
-        closesocket(sock);
-        WSACleanup();
+        ::MessageBox(s_nppData._nppHandle, TEXT("libssh2_session_init_ERROR"), TEXT("NppSSH提示"), MB_OK | MB_ICONERROR);
+        //libssh2_exit();
+        //closesocket(sock);
+        //WSACleanup();
+        ReleaseConnectionResources(sock, nullptr);
         return false;
     }
+
+    // SSH握手
     libssh2_session_set_blocking(session, 1);
     if (libssh2_session_handshake(session, sock) != 0)
     {
-        ::MessageBox(NULL, TEXT("libssh2_session_handshake_ERROR"), TEXT("NppSSH提示"), MB_OK);
-        libssh2_session_free(session); libssh2_exit(); closesocket(sock); WSACleanup(); return false;
+        ::MessageBox(s_nppData._nppHandle, TEXT("SSH握手失败！"), TEXT("NppSSH提示"), MB_OK | MB_ICONERROR);
+        //libssh2_session_free(session); libssh2_exit(); closesocket(sock); WSACleanup(); 
+        ReleaseConnectionResources(sock, session);
+        return false;
     }
+
+    // 密码认证
     if (libssh2_userauth_password(session, user, pass) != 0)
     {
         libssh2_session_disconnect(session, "Auth Fail");
-        ::MessageBox(NULL, TEXT("Auth Fail_ERROR!\n用户名或者密码错误！"), TEXT("NppSSH提示"), MB_OK);
+        ::MessageBox(s_nppData._nppHandle, TEXT("认证失败！\n用户名或密码错误！"), TEXT("NppSSH提示"), MB_OK | MB_ICONERROR);
 
-        libssh2_session_free(session);
-        libssh2_exit();
-        closesocket(sock);
-        WSACleanup();
+        //libssh2_session_free(session);
+        //libssh2_exit();
+        //closesocket(sock);
+        //WSACleanup();
+        ReleaseConnectionResources(sock, session);
         return false;
     }
+
+    // 连接成功，更新全局状态
     s_sock = sock;
     s_sshSession = session;
     s_connected = true;
-    ssh_host = host;
+    ssh_host = _strdup(host);  // 避免原指针失效，动态分配内存（需在Disconnect时释放）
     s_port = port;
-    s_user = user;
-    s_pass = pass;
+    s_user = _strdup(user);    // 动态分配内存
+    s_pass = _strdup(pass);    // 动态分配内存
     return true;
 }
 
 // 断开SSH连接
 void SSHConnection_Disconnect() {
     if (s_connected) {
+
+        // 释放动态分配的字符串内存
+        if (ssh_host) {
+            free((void*)ssh_host);
+            ssh_host = nullptr;
+        }
+        if (s_user) {
+            free((void*)s_user);
+            s_user = nullptr;
+        }
+        if (s_pass) {
+            free((void*)s_pass);
+            s_pass = nullptr;
+        }
+
         // 断开SSH会话
         if (s_sshSession != nullptr) {
             libssh2_session_disconnect(s_sshSession, "Panel closed manually");
@@ -146,11 +223,22 @@ bool SSHConnection_IsConnected() {
 
 // 重置连接状态
 void SSHConnection_ResetState() {
+    // 释放动态分配的内存
+    if (ssh_host) {
+        free((void*)ssh_host);
+        ssh_host = "36.33.27.234";
+    }
+    if (s_user) {
+        free((void*)s_user);
+        s_user = "";
+    }
+    if (s_pass) {
+        free((void*)s_pass);
+        s_pass = "";
+    }
     s_connected = false;
     s_sshSession = nullptr;
     s_sock = INVALID_SOCKET;
     ssh_host = "36.33.27.234";
     s_port = 22;
-    s_user = "";
-    s_pass = "";
 }
