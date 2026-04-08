@@ -55,9 +55,9 @@ void RecreatePanelsOnNppStart();
 
 // SSH连接操作函数（声明，具体实现在SSHConnection中）
 bool NppSSH_Connect(const char* host, int port, const char* user, const char* pass);
-void NppSSH_Disconnect();
-bool NppSSH_IsConnected();
-void NppSSH_ResetConnectionState();
+void NppSSH_Disconnect();				// 断开SSH连接
+bool NppSSH_IsConnected();				// 判断是否连接
+void NppSSH_ResetConnectionState();		// 重置连接状态
 
 ////创建面板的转发函数声明
 //NppSSHDockPanel* CreateNewSSHDockPanel(int panelId);

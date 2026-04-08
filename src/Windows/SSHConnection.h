@@ -4,6 +4,8 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
+#include "SSHWindow.h"
+#include "DockingFeature/DockingDlgInterface.h"
 
 // SSH连接全局状态封装
 LIBSSH2_SESSION*& SSHConnection_GetSession();
@@ -16,6 +18,6 @@ const char*& SSHConnection_GetPass();
 
 // SSH连接操作具体声明
 bool SSHConnection_Connect(const char* host, int port, const char* user, const char* pass);
-void SSHConnection_Disconnect();
-bool SSHConnection_IsConnected();
-void SSHConnection_ResetState();
+void SSHConnection_Disconnect();// 断开SSH连接
+bool SSHConnection_IsConnected();// 判断是否连接
+void SSHConnection_ResetState();// 重置连接状态
