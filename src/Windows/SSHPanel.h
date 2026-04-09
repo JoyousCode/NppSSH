@@ -5,8 +5,6 @@
 #include <shlwapi.h>
 #include <algorithm>
 #include <windowsx.h>
-//#include "SSHConnection.h"
-//#include "../Resource.h"
 #pragma comment(lib, "shlwapi.lib")
 
 // 新增：面板按钮资源ID（独立按钮栏，从1010开始避免与原有控件冲突）
@@ -40,30 +38,22 @@ public:
     //NppSSHDockPanel(const NppData& nppData, HINSTANCE hInst);
     static LRESULT CALLBACK SSH_WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
-
-    //static NppSSHDockPanel* GetInstance(); // 单例获取函数
-    //void OnConnect(HWND hWnd, NppSSHDockPanel* pPanel);
-    //void SSHPanel_RecreatePanelsOnNppStart();// NPP启动重建面板
 private:
     tTbData _dockData;      // 原生停靠数据结构体（需声明）
     int _panelId;           // 面板唯一ID，区分多标签
-    int _iconSize = 28;          // 面板中按钮大小
+    int _iconSize = 28;     // 面板中按钮大小
     HWND _hOutputEdit;      // 输出编辑框句柄,面板内输出文本框
-    HWND _hBtnConnectSSH;   // 新增：连接SSH按钮句柄
-    HWND _hBtnDisconnectSSH;// 新增：断开SSH按钮句柄
+    HWND _hBtnConnectSSH;   // 连接SSH按钮句柄
+    HWND _hBtnDisconnectSSH;// 断开SSH按钮句柄
     wchar_t _titleBuf[64];  // 面板标题缓冲区（成员变量，非静态！）
     bool _isSSHConnected;   //当前面板是否SSH登录成功  测试：true
-    // 新增：创建面板顶部按钮栏
+    // 创建面板顶部按钮栏
     void createTopButtonBar();
 
     HICON _hIconConnect;    // 持久化连接图标句柄
     HICON _hIconDisconnect; // 持久化断开图标句柄
 
 };
-// 全局别名（方便在 beNotified 中调用）
-//inline NppSSHDockPanel* SSHPanel_GetInstance() {
-//    return NppSSHDockPanel::GetInstance();
-//}
 
 // 全局变量封装（供SSHWindow调用）
 std::vector<NppSSHDockPanel*>& SSHPanel_GetGlobalPanels();
