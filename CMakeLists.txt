@@ -58,6 +58,8 @@ add_library(NppSSH SHARED
 
     src/res/connect.ico
     src/res/disconnect.ico
+    src/Windows/SSHLog.h
+    src/Windows/SSHLog.cpp
 )
 # 新增：指定 RC 文件为资源编译（Windows 特有）
 if(WIN32)

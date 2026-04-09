@@ -10,7 +10,6 @@ std::wstring SSHSettings_GetPluginsConfigDir() {
     TCHAR szConfigDir[MAX_PATH] = { 0 };
 
     // 调用NPP原生消息获取插件配置目录
-    // NPPM_GETPLUGINSCONFIGDIR = NPPMSG + 63
     SendMessage(g_nppData._nppHandle, NPPM_GETPLUGINSCONFIGDIR, MAX_PATH, (LPARAM)szConfigDir);
 
     // 验证路径有效性

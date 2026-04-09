@@ -16,10 +16,6 @@
 #include <atomic>
 
 
-// 资源ID定义
-//#define IDD_SSH_PANEL 1001
-//#define IDC_OUTPUT_EDIT 1002
-
 // 这里必须包含，否则 NppSSHDockPanel 是未定义类型
 //#include "SSHPanel.h"//////////////////////////////////////////////
 // SSHWindow.h 仅保留分发逻辑，无具体实现
@@ -41,10 +37,7 @@ extern const char*& pass;
 // 核心：可停靠面板类（声明，具体实现在SSHPanel中）
 class NppSSHDockPanel;
 
-// 注册表操作函数（声明，具体实现在SSHPanel中）
-//void SavePanelCountToReg(int count);
-//int LoadPanelCountFromReg();
-//void DeletePanelCountFromReg();
+
 // ini操作函数（声明，具体实现在SSHPanel中）
 void SavePanelCountToIni(int count);
 int LoadPanelCountFromIni();
@@ -59,5 +52,14 @@ void NppSSH_Disconnect();				// 断开SSH连接
 bool NppSSH_IsConnected();				// 判断是否连接
 void NppSSH_ResetConnectionState();		// 重置连接状态
 
-////创建面板的转发函数声明
-//NppSSHDockPanel* CreateNewSSHDockPanel(int panelId);
+// 日志转发接口（核心：只转发，不处理逻辑）
+void NppSSH_LogDebug(const std::string& event, const std::string& content);  // 新增：调试级
+void NppSSH_LogInfo(const std::string& event, const std::string& content);
+void NppSSH_LogWarn(const std::string& event, const std::string& content);   // 新增：警告级
+void NppSSH_LogError(const std::string& event, const std::string& content);
+
+// 简化封装：自动传入当前调用函数名作为事件（无需手动传event）
+#define NppSSH_LogDebugAuto(content) NppSSH_LogDebug(__FUNCTION__, content)
+#define NppSSH_LogInfoAuto(content) NppSSH_LogInfo(__FUNCTION__, content)
+#define NppSSH_LogWarnAuto(content) NppSSH_LogWarn(__FUNCTION__, content)
+#define NppSSH_LogErrorAuto(content) NppSSH_LogError(__FUNCTION__, content)

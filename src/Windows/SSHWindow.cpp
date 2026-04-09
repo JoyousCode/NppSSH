@@ -2,6 +2,7 @@
 #include "SSHWindow.h"
 #include "SSHPanel.h"
 #include "SSHConnection.h"
+#include "SSHLog.h"
 
 // 全局变量转发（实际定义在SSHPanel中）
 std::vector<NppSSHDockPanel*>& g_sshPanels = SSHPanel_GetGlobalPanels();
@@ -54,20 +55,22 @@ void NppSSH_ResetConnectionState() {
 }
 
 
-//NppSSHDockPanel* CreateNewSSHDockPanel(int panelId) {
-//    return new NppSSHDockPanel(panelId);
-//}
-//在 SSHWindow 中提供全局清理接口（如 NppSSH_Cleanup），
-// 内部统一调用 SSHPanel 的面板清理和 SSHConnection 的连接清理，
-// 让 NppPluginSSH 的 DLL_PROCESS_DETACH、NPPN_SHUTDOWN 仅调用此一个接口，避免清理逻辑分散导致的泄漏：
-//void NppSSH_Cleanup() {
-//    // 清理SSH连接
-//    NppSSH_Disconnect();
-//    // 清理面板
-//    for (auto* panel : g_sshPanels) {
-//        if (panel) delete panel;
-//    }
-//    g_sshPanels.clear();
-//    // 清理注册表
-//    DeletePanelCountFromReg();
-//}
+// 日志转发实现：调试级（新增）
+void NppSSH_LogDebug(const std::string& event, const std::string& content) {
+    SSHLog_Write(LogLevel::LOG_DEBUG, event, content);
+}
+
+// 日志转发实现：Info级别
+void NppSSH_LogInfo(const std::string& event, const std::string& content) {
+    SSHLog_Write(LogLevel::LOG_INFO, event, content);
+}
+
+// 日志转发实现：警告级（新增）
+void NppSSH_LogWarn(const std::string& event, const std::string& content) {
+    SSHLog_Write(LogLevel::LOG_WARN, event, content);
+}
+
+// 日志转发实现：Error级别
+void NppSSH_LogError(const std::string& event, const std::string& content) {
+    SSHLog_Write(LogLevel::LOG_ERROR, event, content);  
+}
