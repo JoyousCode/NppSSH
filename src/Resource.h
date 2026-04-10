@@ -11,6 +11,7 @@
 #define IDC_BTN_DISCONNECT_SSH 1011  // 断开SSH按钮（新增）
 #define IDI_ICON_CONNECT 1012       // 连接图标ID（需与RC文件中一致）
 #define IDI_ICON_DISCONNECT 1013    // 断开图标ID（需与RC文件中一致）
+#define IDI_ICON_NPPSSH  1014
 
 //登录控件ID
 #define IDD_SSH_LOGIN  1600

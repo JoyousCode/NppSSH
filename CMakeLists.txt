@@ -58,6 +58,7 @@ add_library(NppSSH SHARED
 
     src/res/connect.ico
     src/res/disconnect.ico
+    src/res/nppssh.ico
     src/Windows/SSHLog.h
     src/Windows/SSHLog.cpp
 )

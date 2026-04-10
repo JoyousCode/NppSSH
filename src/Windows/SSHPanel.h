@@ -1,4 +1,4 @@
-// SSHPanel.h（面板 + 注册表核心逻辑）
+// SSHPanel.h（面板 + INI操作核心逻辑）
 #pragma once
 #include "SSHWindow.h"
 #include "DockingFeature/DockingDlgInterface.h"
@@ -6,23 +6,8 @@
 #include <algorithm>
 #include <windowsx.h>
 #pragma comment(lib, "shlwapi.lib")
-
-//#define IDD_SSH_LOGIN 1500
-//#define IDC_HOST 1501
-//#define IDC_PORT 1502
-//#define IDC_USER 1503
-//#define IDC_PASS 1504
-//#define IDC_BTN_CONNECT 1505
-// 新增：面板按钮资源ID（独立按钮栏，从1010开始避免与原有控件冲突）
-//#define IDC_BTN_CONNECT_SSH 1010  // 连接SSH按钮
-//#define IDC_BTN_DISCONNECT_SSH 1011  // 断开SSH按钮（新增）
-
-//#define IDC_BTN_CONNECT_SSH 1010  // 连接SSH按钮
-//#define IDC_BTN_DISCONNECT_SSH 1011  // 断开SSH按钮
-//#define IDI_ICON_CONNECT 1012       // 连接图标ID（需与RC文件中一致）
-//#define IDI_ICON_DISCONNECT 1013    // 断开图标ID（需与RC文件中一致）
-
-// 核心：可停靠面板类（具体实现）
+//#define DWS_ICONTAB 0x0008
+// 可停靠面板类（具体实现）
 class NppSSHDockPanel : public DockingDlgInterface {
 public:
     NppSSHDockPanel(int panelId);
@@ -39,12 +24,8 @@ public:
     void SetButtonIconOnly(HWND btn, int iconId);
     void OnConnect(HWND hWnd, NppSSHDockPanel* pPanel);
     //显示登录窗口
-    void ShowSSHLoginWindow();
     // 官方标准模态登录窗口（修复NPP置底）
     void ShowSSHLoginWindow_Modal();
-    //NppSSHDockPanel() = default;
-    //NppSSHDockPanel(const NppData& nppData, HINSTANCE hInst);
-    static LRESULT CALLBACK SSH_WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 private:
     tTbData _dockData;      // 原生停靠数据结构体（需声明）
@@ -60,6 +41,7 @@ private:
 
     HICON _hIconConnect;    // 持久化连接图标句柄
     HICON _hIconDisconnect; // 持久化断开图标句柄
+    HICON _hTabIcon;       // 持久化标签图标句柄
     // 官方对话框过程
     static INT_PTR CALLBACK SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
