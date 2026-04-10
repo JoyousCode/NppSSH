@@ -48,7 +48,9 @@ std::string SSHLog_FormatTime() {
     return oss.str();
 }
 
-// 核心日志写入实现（终极版：无行首空格 + 无弃用警告 + 无空行）
+/*
+日志格式：time level: [] event: [] msg ==> []
+*/
 void SSHLog_Write(LogLevel level, const std::string& event, const std::string& content) {
     // 格式化时间（精确到秒）
     std::string timeStr = SSHLog_FormatTime();

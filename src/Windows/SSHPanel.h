@@ -7,6 +7,12 @@
 #include <windowsx.h>
 #pragma comment(lib, "shlwapi.lib")
 
+//#define IDD_SSH_LOGIN 1500
+//#define IDC_HOST 1501
+//#define IDC_PORT 1502
+//#define IDC_USER 1503
+//#define IDC_PASS 1504
+//#define IDC_BTN_CONNECT 1505
 // 新增：面板按钮资源ID（独立按钮栏，从1010开始避免与原有控件冲突）
 //#define IDC_BTN_CONNECT_SSH 1010  // 连接SSH按钮
 //#define IDC_BTN_DISCONNECT_SSH 1011  // 断开SSH按钮（新增）
@@ -34,6 +40,8 @@ public:
     void OnConnect(HWND hWnd, NppSSHDockPanel* pPanel);
     //显示登录窗口
     void ShowSSHLoginWindow();
+    // 官方标准模态登录窗口（修复NPP置底）
+    void ShowSSHLoginWindow_Modal();
     //NppSSHDockPanel() = default;
     //NppSSHDockPanel(const NppData& nppData, HINSTANCE hInst);
     static LRESULT CALLBACK SSH_WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -52,6 +60,8 @@ private:
 
     HICON _hIconConnect;    // 持久化连接图标句柄
     HICON _hIconDisconnect; // 持久化断开图标句柄
+    // 官方对话框过程
+    static INT_PTR CALLBACK SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
 };
 

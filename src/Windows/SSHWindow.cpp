@@ -74,3 +74,30 @@ void NppSSH_LogWarn(const std::string& event, const std::string& content) {
 void NppSSH_LogError(const std::string& event, const std::string& content) {
     SSHLog_Write(LogLevel::LOG_ERROR, event, content);  
 }
+///// ===================== 日志测试（连接成功输出，全部走SSHWindow中转）=====================
+//// 1. 自动获取当前函数名作为 event（最常用）
+//NppSSH_LogInfoAuto("==============测试日志使用开始==========");
+//NppSSH_LogInfoAuto("SSH连接成功，Socket与会话已创建");
+
+//// 2. 手动指定 event 名称
+//NppSSH_LogInfo("SSH_Handshake", "SSH协议握手完成，服务器响应正常");
+
+//// 3. event 传空字符串（触发兜底 unknown）
+//NppSSH_LogInfo("", "用户密码认证通过，登录成功");
+
+//// 4. 错误级别日志（测试）
+//NppSSH_LogError("SSH_Connect_Test", "测试错误日志：连接流程正常结束");
+
+//// 5. 调试级别日志
+//NppSSH_LogDebug("SSH_Session", "libssh2会话已初始化，阻塞模式开启");
+
+//// 6. 警告级别日志
+//NppSSH_LogWarn("SSH_KeepAlive", "测试警告：连接成功，心跳未启动");//支持“\n”换行，例如：心跳\n未启动
+
+//// 7. 输出服务器远程信息（你要的握手/返回内容）
+//std::string serverInfo = "服务器主机：" + std::string(host) + " 端口：" + std::to_string(port) + " 用户：" + std::string(user);
+//NppSSH_LogInfo("SSH_ServerInfo", serverInfo);
+
+//// 8. event 传空字符串 + 错误级别（兜底测试）
+//NppSSH_LogError("", "连接状态已标记为已连接");
+//NppSSH_LogInfoAuto("==============测试日志使用结束==========");

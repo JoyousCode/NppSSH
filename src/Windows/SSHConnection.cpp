@@ -2,13 +2,11 @@
 
 #include "SSHConnection.h"
 #include <tchar.h>
-//#include <string.h>
-
 // SSH连接全局状态实际定义
 static LIBSSH2_SESSION* s_sshSession = nullptr;
 static SOCKET s_sock = INVALID_SOCKET;
 static bool s_connected = false;
-static const char* ssh_host = "192.168.137.200";
+static const char* ssh_host = "192.168.137.201";
 //const char* ssh_host = "36.33.27.234";
 static int s_port = 22;
 static const char* s_user = "root";
@@ -65,8 +63,9 @@ bool SSHConnection_Connect(const char* host, int port, const char* user, const c
         return false;
     }
     // 连接前打印Info日志（手动指定事件名）
-    std::string connectInfo = "开始尝试连接SSH服务器，主机：" + std::string(host) + "，端口：" + std::to_string(port);
-    
+    std::string connectInfo = "开始尝试连接SSH服务器，主机：" + std::string(host) + "，端口：" + std::to_string(port) + "，用户：" + std::string(user);
+    NppSSH_LogInfoAuto(connectInfo);
+
 
     s_connected = false;
     s_sshSession = nullptr;
@@ -106,23 +105,17 @@ bool SSHConnection_Connect(const char* host, int port, const char* user, const c
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
 
-    TCHAR buf[64];
-    wsprintf(buf, TEXT("端口(网络序): %d\n端口(真实端口): %d"),
-        addr.sin_port,            // 网络字节序（数字很大）
-        ntohs(addr.sin_port));    // 真实端口（22）
-    ::MessageBox(s_nppData._nppHandle, buf, TEXT("NppSSH端口"), MB_OK | MB_ICONQUESTION | MB_TASKMODAL);
+    NppSSH_LogInfoAuto("端口(网络序)：" + std::to_string(addr.sin_port) + "，端口(真实端口)：" + std::to_string(ntohs(addr.sin_port)));
+
     inet_pton(AF_INET, host, &addr.sin_addr);
 
     // 连接服务器
     int connectRet = connect(sock, (sockaddr*)&addr, sizeof(addr));
     if (connectRet == SOCKET_ERROR)
-    {
+    {      
         int err = WSAGetLastError(); // 获取具体错误码
-        TCHAR errBuf[128];
-        wsprintf(errBuf, TEXT("SOCKET_ERROR, 错误码: %d"), err);
-        ::MessageBox(s_nppData._nppHandle, errBuf, TEXT("NppSSH提示"), MB_OK | MB_ICONERROR);
-        ::MessageBox(s_nppData._nppHandle, TEXT("10060：连接超时::服务器无响应-防火墙拦截\n10061：连接被拒绝::服务器端口未开放\n10065：无路由到主机::网络不可达"), TEXT("NppSSH提示"), MB_OK);
-        //closesocket(sock); WSACleanup(); 
+        NppSSH_LogErrorAuto("SOCKET_ERROR失败！用户：" + std::string(user) + "，错误码：" + std::to_string(err));
+        NppSSH_LogWarnAuto("10060：连接超时::服务器无响应-防火墙拦截 10061：连接被拒绝::服务器端口未开放 10065：无路由到主机::网络不可达");
         ReleaseConnectionResources(sock, nullptr);
         return false;
     }
@@ -130,9 +123,7 @@ bool SSHConnection_Connect(const char* host, int port, const char* user, const c
     // 初始化libssh2
     int libssh2Ret = libssh2_init(0);
     if (libssh2Ret != 0) {
-        ::MessageBox(s_nppData._nppHandle, TEXT("libssh2初始化失败！"), TEXT("NppSSH提示"), MB_OK | MB_ICONERROR);
-        //closesocket(sock);
-        //WSACleanup();
+        NppSSH_LogErrorAuto("libssh2初始化失败！用户：" + std::string(user));
         ReleaseConnectionResources(sock, nullptr);
         return false;
     }
@@ -140,10 +131,7 @@ bool SSHConnection_Connect(const char* host, int port, const char* user, const c
     // 创建SSH会话
     LIBSSH2_SESSION* session = libssh2_session_init();
     if (!session) {
-        ::MessageBox(s_nppData._nppHandle, TEXT("libssh2_session_init_ERROR"), TEXT("NppSSH提示"), MB_OK | MB_ICONERROR);
-        //libssh2_exit();
-        //closesocket(sock);
-        //WSACleanup();
+        NppSSH_LogErrorAuto("libssh2_session_init_ERROR！用户：" + std::string(user));
         ReleaseConnectionResources(sock, nullptr);
         return false;
     }
@@ -152,8 +140,7 @@ bool SSHConnection_Connect(const char* host, int port, const char* user, const c
     libssh2_session_set_blocking(session, 1);
     if (libssh2_session_handshake(session, sock) != 0)
     {
-        ::MessageBox(s_nppData._nppHandle, TEXT("SSH握手失败！"), TEXT("NppSSH提示"), MB_OK | MB_ICONERROR);
-        //libssh2_session_free(session); libssh2_exit(); closesocket(sock); WSACleanup(); 
+        NppSSH_LogErrorAuto("SSH握手失败！用户：" + std::string(user));
         ReleaseConnectionResources(sock, session);
         return false;
     }
@@ -162,12 +149,6 @@ bool SSHConnection_Connect(const char* host, int port, const char* user, const c
     if (libssh2_userauth_password(session, user, pass) != 0)
     {
         libssh2_session_disconnect(session, "Auth Fail");
-        ::MessageBox(s_nppData._nppHandle, TEXT("认证失败！\n用户名或密码错误！"), TEXT("NppSSH提示"), MB_OK | MB_ICONERROR);
-
-        //libssh2_session_free(session);
-        //libssh2_exit();
-        //closesocket(sock);
-        //WSACleanup();
         // 错误日志  异常场景示例（比如认证失败）
         NppSSH_LogErrorAuto("SSH密码认证失败，用户：" + std::string(user));
         ReleaseConnectionResources(sock, session);
@@ -183,40 +164,50 @@ bool SSHConnection_Connect(const char* host, int port, const char* user, const c
     s_user = _strdup(user);    // 动态分配内存
     s_pass = _strdup(pass);    // 动态分配内存
 
-    /// ===================== 日志测试（连接成功输出，全部走SSHWindow中转）=====================
-    // 1. 自动获取当前函数名作为 event（最常用）
-    NppSSH_LogInfoAuto("==============测试日志使用开始==========");
-    NppSSH_LogInfoAuto("SSH连接成功，Socket与会话已创建");
+    ///// ===================== 日志测试（连接成功输出，全部走SSHWindow中转）=====================
+    //// 1. 自动获取当前函数名作为 event（最常用）
+    //NppSSH_LogInfoAuto("==============测试日志使用开始==========");
+    //NppSSH_LogInfoAuto("SSH连接成功，Socket与会话已创建");
 
-    // 2. 手动指定 event 名称
-    NppSSH_LogInfo("SSH_Handshake", "SSH协议握手完成，服务器响应正常");
+    //// 2. 手动指定 event 名称
+    //NppSSH_LogInfo("SSH_Handshake", "SSH协议握手完成，服务器响应正常");
 
-    // 3. event 传空字符串（触发兜底 unknown）
-    NppSSH_LogInfo("", "用户密码认证通过，登录成功");
+    //// 3. event 传空字符串（触发兜底 unknown）
+    //NppSSH_LogInfo("", "用户密码认证通过，登录成功");
 
-    // 4. 错误级别日志（测试）
-    NppSSH_LogError("SSH_Connect_Test", "测试错误日志：连接流程正常结束");
+    //// 4. 错误级别日志（测试）
+    //NppSSH_LogError("SSH_Connect_Test", "测试错误日志：连接流程正常结束");
 
-    // 5. 调试级别日志
-    NppSSH_LogDebug("SSH_Session", "libssh2会话已初始化，阻塞模式开启");
+    //// 5. 调试级别日志
+    //NppSSH_LogDebug("SSH_Session", "libssh2会话已初始化，阻塞模式开启");
 
-    // 6. 警告级别日志
-    NppSSH_LogWarn("SSH_KeepAlive", "测试警告：连接成功，心跳未启动");//支持“\n”换行，例如：心跳\n未启动
+    //// 6. 警告级别日志
+    //NppSSH_LogWarn("SSH_KeepAlive", "测试警告：连接成功，心跳未启动");//支持“\n”换行，例如：心跳\n未启动
 
-    // 7. 输出服务器远程信息（你要的握手/返回内容）
-    std::string serverInfo = "服务器主机：" + std::string(host) + " 端口：" + std::to_string(port) + " 用户：" + std::string(user);
-    NppSSH_LogInfo("SSH_ServerInfo", serverInfo);
+    //// 7. 输出服务器远程信息（你要的握手/返回内容）
+    //std::string serverInfo = "服务器主机：" + std::string(host) + " 端口：" + std::to_string(port) + " 用户：" + std::string(user);
+    //NppSSH_LogInfo("SSH_ServerInfo", serverInfo);
 
-    // 8. event 传空字符串 + 错误级别（兜底测试）
-    NppSSH_LogError("", "连接状态已标记为已连接");
-    NppSSH_LogInfoAuto("==============测试日志使用结束==========");
+    //// 8. event 传空字符串 + 错误级别（兜底测试）
+    //NppSSH_LogError("", "连接状态已标记为已连接");
+    //NppSSH_LogInfoAuto("==============测试日志使用结束==========");
     return true;
 }
 
 // 断开SSH连接
 void SSHConnection_Disconnect() {
     if (s_connected) {
-        NppSSH_LogInfoAuto("开始断开SSH连接，释放资源");
+        // 格式化指针/句柄为字符串
+        char sessionBuf[64] = { 0 };
+        char sockBuf[64] = { 0 };
+        sprintf(sessionBuf, "0x%p", s_sshSession);
+        sprintf(sockBuf, "%u", static_cast<unsigned int>(s_sock));
+        NppSSH_LogInfoAuto("断开SSH连接，释放资源，服务器主机：" + std::string(ssh_host) + 
+            " 端口：" + std::to_string(s_port) + 
+            " 用户：" + std::string(s_user)+
+            "sshSession："+std::string(sessionBuf) +
+            "socket:"+std::string(sockBuf));
+
         // 释放动态分配的字符串内存
         if (ssh_host) {
             free((void*)ssh_host);
