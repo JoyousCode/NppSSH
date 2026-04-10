@@ -13,10 +13,14 @@
 #define IDI_ICON_DISCONNECT 1013    // 断开图标ID（需与RC文件中一致）
 
 //登录控件ID
+#define IDD_SSH_LOGIN  1600
 #define IDC_HOST 1020
 #define IDC_PORT 1021
 #define IDC_USER 1022
 #define IDC_PASS 1023
 #define IDC_BTN_CONNECT 1024
+#define IDC_BTN_TEST  1025  // 新增测试按钮ID
+
 
 #endif // RESOURCE_H
+

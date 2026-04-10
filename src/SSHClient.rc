@@ -1,49 +1,85 @@
 ﻿#include "Resource.h"
 #include <windows.h>
 
-// 相对路径（RC 在 src/ 目录，图标在 src/res/，路径正确，直接保留）
-IDI_ICON_CONNECT ICON "res/connect.ico"
-IDI_ICON_DISCONNECT ICON "res/disconnect.ico"
+//////////////////////////////////////////////////////////////////////////
+// 图标资源（规范命名 + 正确相对路径）
+//////////////////////////////////////////////////////////////////////////
+IDI_ICON_CONNECT        ICON    "res/connect.ico"
+IDI_ICON_DISCONNECT     ICON    "res/disconnect.ico"
 
-// 严格按此样式定义，无WS_VISIBLE！
-IDD_SSH_PANEL DIALOGEX 0, 0, 400, 300
+//////////////////////////////////////////////////////////////////////////
+// Notepad++ 停靠面板（官方标准样式，无警告）
+//////////////////////////////////////////////////////////////////////////
+IDD_SSH_PANEL DIALOGEX 0, 0, 400, 260
 STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD | WS_BORDER
 CAPTION "NppSSH Terminal"
-FONT 9, "Microsoft Sans Serif", 400, 0, 0x1
+FONT 9, "Microsoft Sans Serif", 400, 0, 0x01
 BEGIN
-    EDITTEXT IDC_OUTPUT_EDIT, 0, 0, 400, 300, ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY | WS_VSCROLL | WS_CHILD
+    EDITTEXT IDC_OUTPUT_EDIT, 0, 0, 400, 260,
+            ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY | WS_VSCROLL | WS_TABSTOP
 END
 
+//////////////////////////////////////////////////////////////////////////
+// SSH 登录对话框（修复关闭后 NPP 置底的关键弹窗）
+//////////////////////////////////////////////////////////////////////////
+IDD_SSH_LOGIN DIALOGEX 0, 0, 280, 140
+STYLE DS_SETFONT | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME
+EXSTYLE WS_EX_APPWINDOW
+CAPTION "SSH 登录"
+FONT 12, "Microsoft YaHei UI", 400, 0, 0x01
+BEGIN
+    // 主机行（标签+输入框精准对齐，间距舒适）
+    LTEXT           "主机:", -1, 28, 12, 20, 12, SS_CENTERIMAGE
+    EDITTEXT        IDC_HOST,  50, 12, 200, 12, ES_AUTOHSCROLL | WS_TABSTOP | ES_AUTOVSCROLL
 
-// ===================== 版本信息（自动显示 0.0.1）=====================
+    // 端口行
+    LTEXT           "端口:", -1, 28, 36, 20, 12, SS_CENTERIMAGE
+    EDITTEXT        IDC_PORT,  50, 36, 200, 12, ES_AUTOHSCROLL | WS_TABSTOP
+
+    // 用户行
+    LTEXT           "用户:", -1, 28, 60, 20, 12, SS_CENTERIMAGE
+    EDITTEXT        IDC_USER,  50, 60, 200, 12, ES_AUTOHSCROLL | WS_TABSTOP | ES_AUTOVSCROLL
+
+    // 密码行
+    LTEXT           "密码:", -1, 28, 84, 20, 12, SS_CENTERIMAGE
+    EDITTEXT        IDC_PASS,  50, 84, 200, 12, ES_AUTOHSCROLL | ES_PASSWORD | WS_TABSTOP | ES_AUTOVSCROLL
+
+    // 按钮区：左下测试 / 右下连接，等宽等高，完美贴合截图样式
+    PUSHBUTTON      "测试", IDC_BTN_TEST, 20, 110, 40, 15
+    DEFPUSHBUTTON   "连接", IDC_BTN_CONNECT, 220, 110, 40, 15
+END
+
+//////////////////////////////////////////////////////////////////////////
+// 版本信息（规范、无编译警告、NPP 插件标准）
+//////////////////////////////////////////////////////////////////////////
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 0,0,1,0
- PRODUCTVERSION 0,0,1,0
- FILEFLAGSMASK 0x3fL
+FILEVERSION     0,0,1,0
+PRODUCTVERSION  0,0,1,0
+FILEFLAGSMASK   VS_FFI_FILEFLAGSMASK
 #ifdef _DEBUG
- FILEFLAGS 0x1L
+FILEFLAGS       VS_FF_DEBUG | VS_FF_PRIVATEBUILD
 #else
- FILEFLAGS 0x0L
+FILEFLAGS       0
 #endif
- FILEOS 0x40004L
- FILETYPE 0x2L
- FILESUBTYPE 0x0L
+FILEOS          VOS_NT_WINDOWS32
+FILETYPE        VFT_DLL
+FILESUBTYPE     VFT2_UNKNOWN
 BEGIN
     BLOCK "StringFileInfo"
     BEGIN
         BLOCK "080404B0"
         BEGIN
-            VALUE "CompanyName", "NppSSH"
-            VALUE "FileDescription", "NppSSH"
-            VALUE "FileVersion", "0.0.1.0"
-            VALUE "InternalName", "NppSSH"
-            VALUE "ProductName", "NppSSH"
-            VALUE "ProductVersion", "0.0.1.0"
+            VALUE "CompanyName",      "NppSSH"
+            VALUE "FileDescription",  "NppSSH Terminal Plugin"
+            VALUE "FileVersion",      "0.0.1.0"
+            VALUE "InternalName",     "NppSSH"
+            VALUE "ProductName",      "NppSSH"
+            VALUE "ProductVersion",   "0.0.1.0"
             VALUE "OriginalFilename", "NppSSH.dll"
         END
     END
     BLOCK "VarFileInfo"
     BEGIN
-        VALUE "Translation", 0x804, 1200
+        VALUE "Translation", 0x0804, 1200
     END
 END
