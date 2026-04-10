@@ -27,9 +27,6 @@ void CreateNppSSHTerminal() {
         // 显示面板：使用Notepad_plus_msgs.h原生消息NPPM_DMMSHOW（NPPMSG+30）
         ::SendMessage(g_nppData._nppHandle, NPPM_DMMSHOW, 0, reinterpret_cast<LPARAM>(pNewPanel->getHSelf()));
     }
-
-    // 同步注册表（复用SSHWindow的注册表函数）
-    //SavePanelCountToReg(g_sshPanels.size());
     // 同步INI（替换原注册表）
     SavePanelCountToIni(g_sshPanels.size());
 }

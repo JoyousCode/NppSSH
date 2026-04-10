@@ -79,17 +79,13 @@ bool SSHConnection_Connect(const char* host, int port, const char* user, const c
     ::SetWindowPos(s_nppData._nppHandle, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
 
     // 禁用NPP主窗口，防止操作（系统标准模态第一步）
-    ::EnableWindow(s_nppData._nppHandle, FALSE);
+    //::EnableWindow(s_nppData._nppHandle, FALSE);
     int ret = ::MessageBoxW(                        //弹框确认取消提示框
         s_nppData._nppHandle,
         paramMsg,
         L"NppSSH 连接提示",
         MB_YESNO | MB_ICONQUESTION | MB_TASKMODAL // 置顶+模态// 系统模态，强制锁定
     );
-    // 恢复NPP主窗口 + 强制置顶，防止被置底（必须！）
-    ::EnableWindow(s_nppData._nppHandle, TRUE);
-    //::SetForegroundWindow(s_nppData._nppHandle);
-    //::SetWindowPos(s_nppData._nppHandle, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
     
     if (ret == IDNO) {
         return false;
