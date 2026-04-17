@@ -392,9 +392,7 @@ void NppSSHDockPanel::ShowSSHLoginWindow_Modal()
 INT_PTR CALLBACK NppSSHDockPanel::SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
     static NppSSHDockPanel* pPanel = nullptr;
-    // 新增：标记是否正在连接，避免重复操作
-    //static bool s_isConnecting = false;
-    // 新增：标记是否正在连接，避免重复操作
+    // 标记是否正在连接，避免重复操作
     static std::atomic<bool> s_isConnecting = false;
 
     switch (uMsg)
