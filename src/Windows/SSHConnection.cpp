@@ -6,7 +6,7 @@
 static std::timed_mutex s_connectMutex; // 支持超时锁操作
 std::mutex s_errorMsgMutex;
 std::string s_lastConnectError; // 存储最后一次连接错误信息
-std::mutex s_threadResourceMutex; // 线程资源专用锁
+//std::mutex s_threadResourceMutex; // 线程资源专用锁
 
 // 全局变量专用锁
 std::mutex s_globalVarMutex;
@@ -25,7 +25,7 @@ static std::mutex s_connected_mirror_mutex;// 保护镜像变量的锁
 #define SSH_AUTH_TIMEOUT      1000    // 认证超时
 const int MAIN_THREAD_WAIT_INTERVAL = 50; // 主线程轮询间隔（保持50ms）1000除以MAIN_THREAD_WAIT_INTERVAL=轮询次数
 const int MAX_MAIN_THREAD_WAIT = 10000;   // 主线程最大等待3秒（原30秒）
-const UINT WM_SSH_CONNECT_CANCEL = WM_USER + 101; // 取消连接消息
+//const UINT WM_SSH_CONNECT_CANCEL = WM_USER + 101; // 取消连接消息
 
 
 // SSH连接全局状态实际定义
@@ -113,6 +113,8 @@ static void SafeReleaseGlobalLibResources() {
 
 // 核心连接函数
 bool SSHConnection_Connect(const char* host, int port, const char* user, const char* pass) {
+    s_nppData = g_nppData;
+
     // 1. 入参合法性校验
     if (!host || strlen(host) == 0 || !user || strlen(user) == 0 || !pass || strlen(pass) == 0) {
         std::wstring errMsg = L"主机/用户名/密码不能为空！";
