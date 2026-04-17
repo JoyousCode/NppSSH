@@ -1,4 +1,5 @@
 // SSHPanel.cpp（面板 + 注册表具体实现）
+#define WM_SSH_CONNECT_RESULT (WM_USER + 100)
 #include "SSHPanel.h"
 #include "SSHSettings.h" // 引入INI工具
 
@@ -391,6 +392,10 @@ void NppSSHDockPanel::ShowSSHLoginWindow_Modal()
 INT_PTR CALLBACK NppSSHDockPanel::SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
     static NppSSHDockPanel* pPanel = nullptr;
+    // 新增：标记是否正在连接，避免重复操作
+    //static bool s_isConnecting = false;
+    // 新增：标记是否正在连接，避免重复操作
+    static std::atomic<bool> s_isConnecting = false;
 
     switch (uMsg)
     {
@@ -409,6 +414,7 @@ INT_PTR CALLBACK NppSSHDockPanel::SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM 
 
         // 密码框样式
         SendDlgItemMessage(hWnd, IDC_PASS, EM_SETPASSWORDCHAR, L'•', 0);
+        s_isConnecting = false; // 初始化连接状态
         return TRUE;
     }
 
@@ -425,9 +431,28 @@ INT_PTR CALLBACK NppSSHDockPanel::SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM 
         GetDlgItemTextA(hWnd, IDC_PASS, pass, 256);
         if (LOWORD(wParam) == IDC_BTN_CONNECT)//连接按钮
         {
+           
+            if (host == 0 || std::string(host) == "")
+            {
+                MessageBox(hWnd, L"IP/端口不能为空！", L"NppSSH 提示", MB_ICONERROR);
+                return TRUE;
+            }
+
+
+            if (s_isConnecting) {
+                MessageBoxW(hWnd, L"正在连接中，请等待...", L"NppSSH 提示", MB_OK | MB_ICONINFORMATION);
+                NppSSH_LogInfoAuto("用户重复点击连接按钮，忽略");
+                return TRUE;
+            }
+            s_isConnecting = true;
+            NppSSH_LogInfoAuto("用户点击连接按钮，开始调用SSHConnection_Connect");
+
             bool ok = NppSSH_Connect(host, atoi(port), user, pass);
+            s_isConnecting = false;// 异步连接立即重置，避免卡死
             if (ok)
             {
+                NppSSH_LogInfoAuto("SSH连接请求已发送，等待异步结果");
+                //EndDialog(hWnd, IDOK);
                 if (pPanel) {
                     pPanel->setSSHConnected(true);
                 }
@@ -436,31 +461,44 @@ INT_PTR CALLBACK NppSSHDockPanel::SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM 
             }
             else
             {
+                s_isConnecting = false;
                 MessageBoxW(hWnd, L"SSH 连接失败 ❌", L"NppSSH", MB_ICONERROR);
+                NppSSH_LogErrorAuto("SSH连接请求发送失败");
             }
         }
         else if (LOWORD(wParam) == IDC_BTN_TEST)//测试连接按钮
         {
+            NppSSH_LogInfoAuto("用户点击测试连接按钮");
             bool ok = NppSSH_Connect(host, atoi(port), user, pass);
             if (ok)
             {
                 MessageBoxW(s_nppData._nppHandle, L"SSH 测试登录连接成功 ✅", L"NppSSH", MB_OK);
+                NppSSH_LogInfoAuto("SSH测试连接成功");
             }
             else {
                 MessageBoxW(s_nppData._nppHandle, L"SSH 测试登录连接失败 ❌", L"NppSSH", MB_OK);
+                NppSSH_LogErrorAuto("SSH测试连接失败");
             }
             //无论成功还是失败都断开连接，防止占用远程资源
             NppSSH_Disconnect();
         }
         else if (LOWORD(wParam) == IDCANCEL)
         {
+            // 取消连接时重置状态
+            if (s_isConnecting) {
+                NppSSH_Disconnect();
+                s_isConnecting = false;
+                NppSSH_LogInfoAuto("用户取消连接，已断开SSH");
+            }
             EndDialog(hWnd, IDCANCEL); // 右上角关闭
+            NppSSH_LogInfoAuto("登录对话框已取消关闭");
         }
         return TRUE;
     }
 
     case WM_DESTROY:
         pPanel = nullptr;
+        NppSSH_LogInfoAuto("登录对话框销毁");
         return TRUE;
     }
 
@@ -476,6 +514,7 @@ INT_PTR CALLBACK NppSSHDockPanel::run_dlgProc(UINT message, WPARAM wParam, LPARA
     case WM_INITDIALOG: 
     {
         if (!_hSelf) {
+            NppSSH_LogErrorAuto("面板窗口句柄无效！");
             ::MessageBox(NULL, TEXT("面板窗口句柄无效！"), TEXT("NppSSH错误提示"), MB_OK | MB_ICONERROR);
             return FALSE;
         }
@@ -503,11 +542,11 @@ INT_PTR CALLBACK NppSSHDockPanel::run_dlgProc(UINT message, WPARAM wParam, LPARA
     {
         UINT cmd = LOWORD(wParam);
         if (cmd == IDC_BTN_CONNECT_SSH) {
-            //ShowSSHLoginWindow(); // 显示登录窗口（关联当前面板）
-            // 替换为官方修复版
-                ShowSSHLoginWindow_Modal();
+            NppSSH_LogInfoAuto("用户点击面板连接按钮，显示登录对话框");
+            ShowSSHLoginWindow_Modal();
         }
         else if (cmd == IDC_BTN_DISCONNECT_SSH) {
+            NppSSH_LogInfoAuto("用户点击面板断开按钮");
             disconnectSSH(); // 断开连接
             if (_hOutputEdit) {
                 ::SetWindowTextW(_hOutputEdit, L"✅ SSH已断开\n等待新的连接...");
@@ -533,7 +572,8 @@ INT_PTR CALLBACK NppSSHDockPanel::run_dlgProc(UINT message, WPARAM wParam, LPARA
     // 面板关闭：原生NPP消息，自动清理资源，无内存泄漏
     case WM_CLOSE: 
     {
-        ::MessageBoxW(s_nppData._nppHandle, L"SSH变化3关闭面板", L"NppSSH提示", MB_OK | MB_ICONINFORMATION);
+        NppSSH_LogInfoAuto("面板开始关闭，当前连接状态：" + std::to_string(_isSSHConnected));
+        ::MessageBoxW(s_nppData._nppHandle, L"关闭面板", L"NppSSH提示", MB_OK | MB_ICONINFORMATION);
 
         // 检查当前面板是否有活跃SSH连接
         if (this->isSSHConnected()) {
@@ -566,6 +606,39 @@ INT_PTR CALLBACK NppSSHDockPanel::run_dlgProc(UINT message, WPARAM wParam, LPARA
         UpdateToolbarIconSize();
         return TRUE;
     }
+    //自定义连接处理
+    case WM_SSH_CONNECT_RESULT: // 修复连接结果处理
+    {
+        bool success = (bool)wParam;
+        NppSSH_LogInfoAuto("收到SSH连接结果消息，成功："+ std::to_string(success));
+
+        setSSHConnected(success);
+
+        // 修复：消息框父窗口为面板窗口，避免影响NPP主窗口
+        HWND hMsgParent = _hSelf ? _hSelf : s_nppData._nppHandle;
+        if (success) {
+            MessageBoxW(hMsgParent, L"SSH 连接成功 ✅", L"NppSSH", MB_OK | MB_TASKMODAL);
+            // 关闭登录对话框（如果存在）
+            ::EnumWindows([](HWND hWnd, LPARAM lParam) -> BOOL {
+                wchar_t className[256] = { 0 };
+                ::GetClassNameW(hWnd, className, 256);
+                if (wcscmp(className, L"#32770") == 0) { // 对话框类名
+                    wchar_t windowText[256] = { 0 };
+                    ::GetWindowTextW(hWnd, windowText, 256);
+                    if (wcsstr(windowText, L"NppSSH") != nullptr) {
+                        ::EndDialog(hWnd, IDOK);
+                        return FALSE;
+                    }
+                }
+                return TRUE;
+                }, 0);
+        }
+        else {
+            MessageBoxW(hMsgParent, L"SSH 连接失败 ❌", L"NppSSH", MB_ICONERROR | MB_TASKMODAL);
+        }
+        return TRUE;
+    }
+
     // 其他所有消息，交给DockingDlgInterface原生处理（避免NPP异常）
     default:
         return DockingDlgInterface::run_dlgProc(message, wParam, lParam);

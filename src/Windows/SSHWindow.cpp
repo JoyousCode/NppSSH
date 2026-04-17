@@ -101,3 +101,26 @@ void NppSSH_LogError(const std::string& event, const std::string& content) {
 //// 8. event 传空字符串 + 错误级别（兜底测试）
 //NppSSH_LogError("", "连接状态已标记为已连接");
 //NppSSH_LogInfoAuto("==============测试日志使用结束==========");
+
+LRESULT CALLBACK NppSSHWindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+{
+    switch (uMsg)
+    {
+        // 转发 SSH 连接结果给当前面板
+    case WM_SSH_CONNECT_RESULT:
+    {
+        if (!g_sshPanels.empty())
+        {
+            NppSSHDockPanel* panel = g_sshPanels.back();
+            if (panel && IsWindow(panel->getHSelf()))
+            {
+                PostMessage(panel->getHSelf(), WM_SSH_CONNECT_RESULT, wParam, lParam);
+            }
+        }
+        return 0;
+    }
+
+    default:
+        return DefWindowProc(hWnd, uMsg, wParam, lParam);
+    }
+}

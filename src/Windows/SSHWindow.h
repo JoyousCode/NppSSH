@@ -15,12 +15,13 @@
 #include <vector>
 #include <atomic>
 
-
+#define WM_SSH_CONNECT_RESULT (WM_USER + 100)
 // 这里必须包含，否则 NppSSHDockPanel 是未定义类型
 //#include "SSHPanel.h"//////////////////////////////////////////////
 // SSHWindow.h 仅保留分发逻辑，无具体实现
 // 全局变量声明（供SSHClient调用）
 extern std::vector<class NppSSHDockPanel*>& g_sshPanels;
+//extern std::vector<NppSSHDockPanel*> s_sshPanels;
 extern std::atomic<int>& g_panelCounter;
 extern NppData& g_nppData;
 extern HINSTANCE& g_hInst;

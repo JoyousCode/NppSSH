@@ -7,6 +7,7 @@
 #include "SSHWindow.h"
 #include "DockingFeature/DockingDlgInterface.h"
 
+
 // SSH连接全局状态封装
 LIBSSH2_SESSION*& SSHConnection_GetSession();
 SOCKET& SSHConnection_GetSocket();
