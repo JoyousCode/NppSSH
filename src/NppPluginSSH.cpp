@@ -15,10 +15,9 @@
 //along with this program; if not, write to the Free Software
 //Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
-//#include "PluginDefinition.h"
+
 #include "SSHClient.h" 
 #include "Windows/SSHPanel.h"
-//#include <SSHClient.cpp>
 #include "SSHSettings.h" // 引入INI工具
 
 extern FuncItem funcItem[nbFunc];
@@ -34,10 +33,6 @@ BOOL APIENTRY DllMain(HANDLE hModule, DWORD  reasonForCall, LPVOID /*lpReserved*
 		switch (reasonForCall)
 		{
 			case DLL_PROCESS_ATTACH:
-				//::MessageBox(NULL, TEXT("NppSSH 插件初始化!"), TEXT("NppSSH提示"), MB_OK);
-				// 捕获异常，避免插件崩溃导致Notepad++退出
-				//::MessageBox(NULL, _T("NPPSSH插件初始化！"), NPP_PLUGIN_NAME, MB_ICONERROR);
-				// 插件被加载时：初始化DLL实例句柄 + 插件核心逻辑
 				g_hInst = (HINSTANCE)hModule;
 				pluginInit(hModule);
 				break;
@@ -46,7 +41,6 @@ BOOL APIENTRY DllMain(HANDLE hModule, DWORD  reasonForCall, LPVOID /*lpReserved*
 				// 仅插件卸载时执行清理（NPP关闭时不执行，避免销毁面板）
 				// 插件卸载由NPP主动触发，PROCESS_DETACH区分：卸载时g_sshPanels已空，关闭时非空
 				if (g_sshPanels.empty()) {
-					//DeletePanelCountFromReg(); // 卸载时删除注册表
 					DeletePanelCountFromIni(); // 卸载时删除INI配置
 					pluginCleanUp();
 				}
@@ -74,21 +68,10 @@ extern "C" __declspec(dllexport) void setInfo(NppData notpadPlusData)
 {
 	
 	g_nppData = notpadPlusData;
-	// 同样显示成功时的句柄值，方便对比
-	//wchar_t szSuccessMsg[256] = { 0 };
-	//swprintf_s(szSuccessMsg, 256,
-	//	L"Notepad++插件环境初始化数据！\n\n"
-	//	L"g_nppData._nppHandle = %p\n"
-	//	L"g_hInst = %p",
-	//	g_nppData._nppHandle,
-	//	g_hInst);
-
-	//::MessageBoxW(NULL, szSuccessMsg, L"NppSSH初始化g_nppData提示", MB_OK | MB_ICONINFORMATION);
-
 	nppData = notpadPlusData;
 	commandMenuInit();
-	// NPP插件环境初始化完成后，自动重建注册表中记录的面板
-	RecreatePanelsOnNppStart();
+	
+	RecreatePanelsOnNppStart();// NPP插件环境初始化完成后，自动重建配置中记录的面板
 }
 
 extern "C" __declspec(dllexport) const TCHAR * getName()

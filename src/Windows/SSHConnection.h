@@ -6,7 +6,12 @@
 #include <windows.h>
 #include "SSHWindow.h"
 #include "DockingFeature/DockingDlgInterface.h"
-
+#include <tchar.h>
+#include <mutex>
+#include <thread>
+#include <stdexcept>
+#include <string>
+#include <future>
 
 // SSH连接全局状态封装
 LIBSSH2_SESSION*& SSHConnection_GetSession();

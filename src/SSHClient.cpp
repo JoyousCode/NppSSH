@@ -1,6 +1,5 @@
 #include "SSHClient.h"
-#include "Windows/SSHPanel.h"
-#include <Windows.h>
+
 
 // 仅保留分发逻辑，核心实现全部委托给SSHWindow
 void CreateNppSSHTerminal() {

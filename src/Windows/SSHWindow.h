@@ -1,3 +1,4 @@
+// SSHWindow.h 仅保留分发逻辑，无具体实现
 #pragma once
 #include "PluginDefinition.h"
 #include "menuCmdID.h"
@@ -16,9 +17,7 @@
 #include <atomic>
 
 #define WM_SSH_CONNECT_RESULT (WM_USER + 100)
-// 这里必须包含，否则 NppSSHDockPanel 是未定义类型
-//#include "SSHPanel.h"//////////////////////////////////////////////
-// SSHWindow.h 仅保留分发逻辑，无具体实现
+
 // 全局变量声明（供SSHClient调用）
 extern std::vector<class NppSSHDockPanel*>& g_sshPanels;
 //extern std::vector<NppSSHDockPanel*> s_sshPanels;
@@ -51,12 +50,12 @@ void RecreatePanelsOnNppStart();
 bool NppSSH_Connect(const char* host, int port, const char* user, const char* pass);
 void NppSSH_Disconnect();				// 断开SSH连接
 bool NppSSH_IsConnected();				// 判断是否连接
-void NppSSH_ResetConnectionState();		// 重置连接状态
+void NppSSH_ResetConnectionState();		// 重置连接状态（暂未使用）
 
 // 日志转发接口（核心：只转发，不处理逻辑）
-void NppSSH_LogDebug(const std::string& event, const std::string& content);  // 新增：调试级
-void NppSSH_LogInfo(const std::string& event, const std::string& content);
-void NppSSH_LogWarn(const std::string& event, const std::string& content);   // 新增：警告级
+void NppSSH_LogDebug(const std::string& event, const std::string& content);  // 调试级
+void NppSSH_LogInfo(const std::string& event, const std::string& content);	
+void NppSSH_LogWarn(const std::string& event, const std::string& content);   // 警告级
 void NppSSH_LogError(const std::string& event, const std::string& content);
 
 // 简化封装：自动传入当前调用函数名作为事件（无需手动传event）

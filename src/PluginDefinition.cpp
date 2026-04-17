@@ -15,29 +15,8 @@
 //along with this program; if not, write to the Free Software
 //Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
-//#include "PluginDefinition.h"
+
 #include "SSHClient.h" 
-//#include "menuCmdID.h"
-//#include <Windows.h>
-//#include <libssh2.h> 
-//#include <tchar.h>
-//
-//#include <winsock2.h>
-//#include <ws2tcpip.h>
-
-//测试
-//LIBSSH2_SESSION* g_sshSession = nullptr;
-//SOCKET g_sshSocket = INVALID_SOCKET;
-//bool g_isConnected = false;
-////控件ID定义
-//#define IDC_HOST 1001
-//#define IDC_PORT 1002
-//#define IDC_USER 1003
-//#define IDC_PASS 1004
-//#define IDC_BTN_CONNECT 1005
-//// 窗口句柄
-//HWND hHost, hPort, hUser, hPass;
-
 
 
 //
@@ -49,11 +28,6 @@ FuncItem funcItem[nbFunc];
 // The data of Notepad++ that you can use in your plugin commands
 //
 NppData nppData;
-//// 全局变量：NPP插件核心数据（NPP启动时自动初始化）
-//NppData g_nppData;
-//HINSTANCE g_hInst;
-//NppData g_nppData = { 0 };  // 初始化为空，后续在 setInfo 中赋值
-//HINSTANCE g_hInst = NULL;
 
 //
 // Initialize your plugin data here
