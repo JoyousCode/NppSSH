@@ -23,7 +23,7 @@ public:
     HICON LoadCustomIcon(int iconId, int size);
     void SetButtonIconOnly(HWND btn, int iconId);
     void OnConnect(HWND hWnd, NppSSHDockPanel* pPanel);
-    //显示登录窗口
+    
     // 官方标准模态登录窗口（修复NPP置底）
     void ShowSSHLoginWindow_Modal();
 
@@ -36,8 +36,8 @@ private:
     HWND _hBtnDisconnectSSH;// 断开SSH按钮句柄
     wchar_t _titleBuf[64];  // 面板标题缓冲区（成员变量，非静态！）
     bool _isSSHConnected;   //当前面板是否SSH登录成功  测试：true
-    // 创建面板顶部按钮栏
-    void createTopButtonBar();
+    
+    void createTopButtonBar();// 创建面板顶部按钮栏
 
     HICON _hIconConnect;    // 持久化连接图标句柄
     HICON _hIconDisconnect; // 持久化断开图标句柄
