@@ -2,6 +2,21 @@
 
 #include "SSHConnection.h"
 
+// 连接信息结构体（每个面板一套）
+struct SSHConnInfo {
+    LIBSSH2_SESSION* session = nullptr;
+    SOCKET sock = INVALID_SOCKET;
+    bool connected = false;
+    char* host = nullptr;
+    char* user = nullptr;
+    char* pass = nullptr;
+    int port = 22;
+};
+// 全局存储：每个面板独立的连接资源（索引对应面板）
+static std::unordered_map<int, SSHConnInfo> s_panelConnections;
+static int s_lastPanelIndex = -1;
+
+
 // 异步连接防重入锁
 static std::timed_mutex s_connectMutex; // 支持超时锁操作
 std::mutex s_errorMsgMutex;
@@ -454,8 +469,10 @@ void SSHConnection_Disconnect() {
         // 格式化指针/句柄为字符串
         char sessionBuf[64] = { 0 };
         char sockBuf[64] = { 0 };
-        sprintf(sessionBuf, "0x%p", s_sshSession);
-        sprintf(sockBuf, "%u", static_cast<unsigned int>(s_sock));
+        sprintf_s(sessionBuf, _countof(sessionBuf), "0x%p", s_sshSession);
+        sprintf_s(sockBuf, _countof(sockBuf), "%u", static_cast<unsigned int>(s_sock));
+        //sprintf(sessionBuf, "0x%p", s_sshSession);
+        //sprintf(sockBuf, "%u", static_cast<unsigned int>(s_sock));
         NppSSH_LogInfoAuto("断开SSH连接，释放资源，服务器主机：" + std::string(ssh_host) + 
             " 端口：" + std::to_string(ssh_port) +
             " 用户：" + std::string(ssh_user)+
@@ -517,3 +534,49 @@ void SSHConnection_ResetState() {
     NppSSH_LogInfoAuto("SSH连接状态已重置");
 }
 
+// 连接成功后，把当前全局连接绑定到面板索引
+void SSHConnection_BindPanelIndex(int panelIndex) {
+    SSHConnInfo info;
+    info.session = s_sshSession;
+    info.sock = s_sock;
+    info.connected = s_connected;
+    info.host = _strdup(ssh_host);
+    info.user = _strdup(ssh_user);
+    info.pass = _strdup(ssh_pass);
+    info.port = ssh_port;
+
+    s_panelConnections[panelIndex] = info;
+    s_lastPanelIndex = panelIndex;
+}
+// ---------------- 核心：按面板索引断开 ----------------
+void SSHConnection_DisconnectByPanelIndex(int panelIndex) {
+    auto it = s_panelConnections.find(panelIndex);
+    if (it == s_panelConnections.end()) return;
+
+    SSHConnInfo& info = it->second;
+    if (!info.connected || !info.session || info.sock == INVALID_SOCKET)
+        return;
+
+    // 关闭当前面板的连接（服务器侧释放）
+    libssh2_session_disconnect(info.session, "Panel Disconnect");
+    libssh2_session_free(info.session);
+    shutdown(info.sock, SD_BOTH);
+    closesocket(info.sock);
+
+    // 释放内存
+    if (info.host) free(info.host);
+    if (info.user) free(info.user);
+    if (info.pass) free(info.pass);
+
+    // 清空状态
+    info.session = nullptr;
+    info.sock = INVALID_SOCKET;
+    info.connected = false;
+
+    // 如果断开的是最后一个面板，同步全局状态
+    if (panelIndex == s_lastPanelIndex) {
+        s_connected = false;
+        s_sshSession = nullptr;
+        s_sock = INVALID_SOCKET;
+    }
+}
