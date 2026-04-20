@@ -63,3 +63,7 @@ void NppSSH_LogError(const std::string& event, const std::string& content);
 #define NppSSH_LogInfoAuto(content) NppSSH_LogInfo(__FUNCTION__, content)
 #define NppSSH_LogWarnAuto(content) NppSSH_LogWarn(__FUNCTION__, content)
 #define NppSSH_LogErrorAuto(content) NppSSH_LogError(__FUNCTION__, content)
+
+// 窗口类中添加转发函数
+void DisconnectPanel(int panelIndex);
+void OnSSHConnected(int panelIndex);

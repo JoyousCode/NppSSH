@@ -77,11 +77,17 @@ void NppSSHDockPanel::setSSHConnected(bool state) {
     // 同步更新输出框状态提示
     if (_hOutputEdit && ::IsWindow(_hOutputEdit)) {
         if (state) {
+            OnSSHConnected(this->_panelId);         //调用转发SSH连接设置当前面板连接资源
+            //TODO 待优化连接成功后的命令执行
             ::SetWindowTextW(_hOutputEdit, L"✅ SSH连接成功！\n可执行SSH命令...");
         }
         else {
+
+            DisconnectPanel(this->_panelId);        //调用转发断开连接释放当前面板连接资源
             ::SetWindowTextW(_hOutputEdit, L"🔌 SSH已断开\n等待新的连接...");
         }
+        NppSSH_LogInfoAuto("setSSHConnected==========PanelID======" + std::to_string(this->_panelId));
+        MessageBoxW(s_nppData._nppHandle, (L"当前面板ID==" + std::to_wstring(this->_panelId)).c_str(), L"NppSSH", MB_OK | MB_TASKMODAL);
         //自动滚动到底部
         DWORD len = ::GetWindowTextLengthW(_hOutputEdit);
         ::SendMessageW(_hOutputEdit, EM_SETSEL, len, len);
@@ -92,12 +98,13 @@ void NppSSHDockPanel::setSSHConnected(bool state) {
 // 断开当前面板的SSH连接（无提示）
 void NppSSHDockPanel::disconnectSSH() {
     if (_isSSHConnected) {      // 调用SSHConnection的断开逻辑
-        NppSSH_Disconnect();    // 调用转发断开连接释放资源
+        //NppSSH_Disconnect();    // 调用转发断开连接释放资源
+        //DisconnectPanel(this->_panelId);//通过面板ID断开连接
         setSSHConnected(false); // 统一通过set方法更新状态
     }
 }
 
-void NppSSHDockPanel::resetPanelToInit() {
+void NppSSHDockPanel::resetPanelToInit() {//关闭面板进行销毁时调用
     disconnectSSH();
     if (_hOutputEdit && ::IsWindow(_hOutputEdit)) {
         ::SetWindowTextW(_hOutputEdit, L"✅ NppSSH面板已创建\n等待SSH连接...");
@@ -142,11 +149,6 @@ HICON NppSSHDockPanel::LoadCustomIcon(int iconId, int size)
         if (_hIconDisconnect) ::DestroyIcon(_hIconDisconnect); // 释放旧图标
         _hIconDisconnect = hIcon;
     }
-    // 新增：标签图标持久化（关键修复）
-    //else if (iconId == IDI_ICON_NPPSSH) {
-    //    if (_hTabIcon) ::DestroyIcon(_hTabIcon); // 释放旧图标
-    //    _hTabIcon = hIcon;
-    //}
     return hIcon;
     
 }
@@ -189,10 +191,18 @@ void NppSSHDockPanel::UpdateToolbarIconSize()
     //int newIconSize = ::SendMessage(s_nppData._nppHandle, NPPM_GETTOOLBARICONSIZE, 0, 0);
     ::MessageBoxW(s_nppData._nppHandle, L"触发工具栏尺寸更新", L"NppSSH调试", MB_OK | MB_ICONINFORMATION);
     if (_hBtnConnectSSH && IsWindow(_hBtnConnectSSH)) {
+        // 读取当前是否启用（TRUE=正常，FALSE=灰色）
+        BOOL isEnabled = IsWindowEnabled(_hBtnConnectSSH);
         SetButtonIconOnly(_hBtnConnectSSH, IDI_ICON_CONNECT);
+        // 恢复原来的状态
+        EnableWindow(_hBtnConnectSSH, isEnabled);
     }
     if (_hBtnDisconnectSSH && IsWindow(_hBtnDisconnectSSH)) {
+        // 读取当前是否启用（TRUE=正常，FALSE=灰色）
+        BOOL isEnabled = IsWindowEnabled(_hBtnDisconnectSSH);
         SetButtonIconOnly(_hBtnDisconnectSSH, IDI_ICON_DISCONNECT);
+        // 恢复原来的状态
+        EnableWindow(_hBtnDisconnectSSH, isEnabled);
     }
 }
 // 创建顶部按钮栏（去掉文字，直接设为图标）
@@ -456,6 +466,12 @@ INT_PTR CALLBACK NppSSHDockPanel::SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM 
                 }
                 MessageBoxW(s_nppData._nppHandle, L"SSH 连接成功 ✅", L"NppSSH", MB_OK | MB_TASKMODAL);
                 EndDialog(hWnd, IDOK); // 官方标准关闭
+
+                // 已经由setSSHConnected(true);处理
+                //NppSSH_LogInfoAuto("连接成功PanelID======" + std::to_string(pPanel->_panelId));
+                //MessageBoxW(s_nppData._nppHandle, std::to_wstring(pPanel->_panelId).c_str(), L"NppSSH", MB_OK | MB_TASKMODAL);
+                //OnSSHConnected(pPanel->_panelId); // 面板连接成功后，通知窗口绑定索引
+                //DisconnectPanel(pPanel->_panelId);// 面板断开SSH函数
             }
             else
             {
@@ -544,9 +560,12 @@ INT_PTR CALLBACK NppSSHDockPanel::run_dlgProc(UINT message, WPARAM wParam, LPARA
             ShowSSHLoginWindow_Modal();
         }
         else if (cmd == IDC_BTN_DISCONNECT_SSH) {
-            NppSSH_LogInfoAuto("用户点击面板断开按钮");
+            NppSSH_LogInfoAuto("用户点击面板断开按钮"+ std::to_string(this->_panelId));
             disconnectSSH(); // 断开连接
             if (_hOutputEdit) {
+
+                MessageBoxW(s_nppData._nppHandle, std::to_wstring(this -> _panelId).c_str(), L"NppSSH", MB_OK | MB_TASKMODAL);
+                //DisconnectPanel(this -> _panelId);// 面板断开SSH函数
                 ::SetWindowTextW(_hOutputEdit, L"✅ SSH已断开\n等待新的连接...");
             }
             ::MessageBoxW(s_nppData._nppHandle, L"SSH连接已断开", L"NppSSH提示", MB_OK | MB_ICONINFORMATION);
@@ -602,38 +621,6 @@ INT_PTR CALLBACK NppSSHDockPanel::run_dlgProc(UINT message, WPARAM wParam, LPARA
     case NPPN_TOOLBARICONSETCHANGED: 
     {
         UpdateToolbarIconSize();
-        return TRUE;
-    }
-    //自定义连接处理
-    case WM_SSH_CONNECT_RESULT: // 修复连接结果处理
-    {
-        bool success = (bool)wParam;
-        NppSSH_LogInfoAuto("收到SSH连接结果消息，成功："+ std::to_string(success));
-
-        setSSHConnected(success);
-
-        // 修复：消息框父窗口为面板窗口，避免影响NPP主窗口
-        HWND hMsgParent = _hSelf ? _hSelf : s_nppData._nppHandle;
-        if (success) {
-            MessageBoxW(hMsgParent, L"SSH 连接成功 ✅", L"NppSSH", MB_OK | MB_TASKMODAL);
-            // 关闭登录对话框（如果存在）
-            ::EnumWindows([](HWND hWnd, LPARAM lParam) -> BOOL {
-                wchar_t className[256] = { 0 };
-                ::GetClassNameW(hWnd, className, 256);
-                if (wcscmp(className, L"#32770") == 0) { // 对话框类名
-                    wchar_t windowText[256] = { 0 };
-                    ::GetWindowTextW(hWnd, windowText, 256);
-                    if (wcsstr(windowText, L"NppSSH") != nullptr) {
-                        ::EndDialog(hWnd, IDOK);
-                        return FALSE;
-                    }
-                }
-                return TRUE;
-                }, 0);
-        }
-        else {
-            MessageBoxW(hMsgParent, L"SSH 连接失败 ❌", L"NppSSH", MB_ICONERROR | MB_TASKMODAL);
-        }
         return TRUE;
     }
 

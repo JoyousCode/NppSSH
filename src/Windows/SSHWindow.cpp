@@ -124,3 +124,15 @@ LRESULT CALLBACK NppSSHWindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lP
         return DefWindowProc(hWnd, uMsg, wParam, lParam);
     }
 }
+
+// 2. 转发断开：窗口只做中转，不存数据
+void DisconnectPanel(int panelIndex) {
+    // 唯一转发：Panel → Window → Connection
+    SSHConnection_DisconnectByPanelIndex(panelIndex);
+}
+
+// 3. 连接成功后，窗口转发绑定面板ID
+// 在你处理连接成功的消息函数里添加：
+void OnSSHConnected(int panelIndex) {
+    SSHConnection_BindPanelIndex(panelIndex);
+}
