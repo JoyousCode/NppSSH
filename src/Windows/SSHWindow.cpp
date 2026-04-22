@@ -9,6 +9,7 @@ std::vector<NppSSHDockPanel*>& g_sshPanels = SSHPanel_GetGlobalPanels();
 std::atomic<int>& g_panelCounter = SSHPanel_GetGlobalPanelCounter();
 NppData& g_nppData = SSHPanel_GetGlobalNppData();
 HINSTANCE& g_hInst = SSHPanel_GetGlobalHInst();
+int& getPanelId = SSH_GetPanelId(); //获取点击连接图标面板索引
 
 // SSH连接全局状态转发（实际定义在SSHConnection中）
 LIBSSH2_SESSION*& sshSession = SSHConnection_GetSession();
@@ -18,10 +19,11 @@ const char*& host = SSHConnection_GetHost();
 int& port = SSHConnection_GetPort();
 const char*& user = SSHConnection_GetUser();
 const char*& pass = SSHConnection_GetPass();
+std::string& g_loginBanner = SSHConnection_loginBanner();
 
-// INI操作转发（替换原注册表）
-void SavePanelCountToIni(int count) {
-    SSHPanel_SavePanelCountToIni(count);
+/**************（实际定义在SSHPanel中）***************/
+void SavePanelCountToIni(int count) {  
+    SSHPanel_SavePanelCountToIni(count); // INI操作转发
 }
 
 int LoadPanelCountFromIni() {
@@ -32,14 +34,30 @@ void DeletePanelCountFromIni() {
     SSHPanel_DeletePanelCountFromIni();
 }
 
-// NPP启动重建面板转发
 void RecreatePanelsOnNppStart() {
-    SSHPanel_RecreatePanelsOnNppStart();
+    SSHPanel_RecreatePanelsOnNppStart();    // NPP启动重建面板转发
+}
+// 新增：焦点设置转发
+void NppSSH_SetCommandEditFocus(int panelIndex) {
+    SSHPanel_SetCommandEditFocus(panelIndex);
 }
 
-// SSH连接操作转发
+// 新增：键盘事件处理转发（核心：Panel检测到按键后，通过Window中转给Connection）
+bool NppSSH_HandleCommandKeyEvent(int panelIndex, WPARAM wParam, LPARAM lParam) {
+    return SSHPanel_HandleCommandKeyEvent(panelIndex, wParam, lParam);
+}
+
+void NppSSH_AppendPanelOutput(int panelIndex, const std::string& text) {
+    SSHPanel_AppendOutput(panelIndex, text);
+}
+HWND NppSSH_getLoginPanel() {
+    return SSHPanel_getLoginPanel();        //获得登录面板句柄
+}
+
+
+/**************（实际定义在SSHConnection中）***************/
 bool NppSSH_Connect(const char* host, int port, const char* user, const char* pass) {
-    return SSHConnection_Connect(host, port, user, pass);
+    return SSHConnection_Connect(host, port, user, pass);   // SSH连接操作转发
 }
 
 void NppSSH_Disconnect() {
@@ -55,7 +73,20 @@ void NppSSH_ResetConnectionState() {
 }
 
 
-// 日志转发实现：调试级（新增）
+void DisconnectPanel(int panelIndex) {      // 唯一转发：Panel → Window → Connection
+    SSHConnection_DisconnectByPanelIndex(panelIndex);// 2. 转发断开：窗口只做中转，不存数据
+}
+
+void OnSSHConnected(int panelIndex) {   //连接成功后，窗口转发绑定面板ID
+    SSHConnection_BindPanelIndex(panelIndex);
+}
+
+std::string NppSSH_ExecuteCommand(int panelIndex, const std::string& cmd) {
+    return SSHConnection_ExecuteCommand(panelIndex, cmd);   // 命令执行转发
+}
+
+/**************（实际定义在SSHLog中）***************/
+// 日志转发实现：调试级
 void NppSSH_LogDebug(const std::string& event, const std::string& content) {
     SSHLog_Write(LogLevel::LOG_DEBUG, event, content);
 }
@@ -65,7 +96,7 @@ void NppSSH_LogInfo(const std::string& event, const std::string& content) {
     SSHLog_Write(LogLevel::LOG_INFO, event, content);
 }
 
-// 日志转发实现：警告级（新增）
+// 日志转发实现：警告级
 void NppSSH_LogWarn(const std::string& event, const std::string& content) {
     SSHLog_Write(LogLevel::LOG_WARN, event, content);
 }
@@ -102,37 +133,4 @@ void NppSSH_LogError(const std::string& event, const std::string& content) {
 //NppSSH_LogError("", "连接状态已标记为已连接");
 //NppSSH_LogInfoAuto("==============测试日志使用结束==========");
 
-LRESULT CALLBACK NppSSHWindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
-{
-    switch (uMsg)
-    {
-        // 转发 SSH 连接结果给当前面板
-    case WM_SSH_CONNECT_RESULT:
-    {
-        if (!g_sshPanels.empty())
-        {
-            NppSSHDockPanel* panel = g_sshPanels.back();
-            if (panel && IsWindow(panel->getHSelf()))
-            {
-                PostMessage(panel->getHSelf(), WM_SSH_CONNECT_RESULT, wParam, lParam);
-            }
-        }
-        return 0;
-    }
 
-    default:
-        return DefWindowProc(hWnd, uMsg, wParam, lParam);
-    }
-}
-
-// 2. 转发断开：窗口只做中转，不存数据
-void DisconnectPanel(int panelIndex) {
-    // 唯一转发：Panel → Window → Connection
-    SSHConnection_DisconnectByPanelIndex(panelIndex);
-}
-
-// 3. 连接成功后，窗口转发绑定面板ID
-// 在你处理连接成功的消息函数里添加：
-void OnSSHConnected(int panelIndex) {
-    SSHConnection_BindPanelIndex(panelIndex);
-}

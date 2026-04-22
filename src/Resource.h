@@ -6,7 +6,8 @@
 #define IDD_SSH_PANEL 1001
 
 // 控件ID
-#define IDC_OUTPUT_EDIT 1002
+#define IDC_COMMAND_EDIT 2001	// 命令输入框
+#define IDC_OUTPUT_EDIT 1002	// 输出框
 #define IDC_BTN_CONNECT_SSH 1010  // 连接SSH按钮
 #define IDC_BTN_DISCONNECT_SSH 1011  // 断开SSH按钮（新增）
 #define IDI_ICON_CONNECT 1012       // 连接图标ID（需与RC文件中一致）
