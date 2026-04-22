@@ -128,8 +128,7 @@
               "RelativeToolTip": "..\\..\\..\\..\\..\\..\\Program Files (x86)\\Windows Kits\\10\\Include\\10.0.26100.0\\um\\Windows.h",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAAAoAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000680|",
-              "WhenOpened": "2026-04-09T00:48:45.956Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-04-09T00:48:45.956Z"
             },
             {
               "$type": "Document",
@@ -189,8 +188,7 @@
               "RelativeToolTip": "src\\Windows\\SSHWindow.h",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAABkAAAAfAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000680|",
-              "WhenOpened": "2026-03-27T00:46:36.146Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-03-27T00:46:36.146Z"
             },
             {
               "$type": "Document",
@@ -202,8 +200,7 @@
               "RelativeToolTip": "src\\Windows\\SSHWindow.cpp",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAAIYAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
-              "WhenOpened": "2026-03-27T03:52:32.334Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-03-27T03:52:32.334Z"
             },
             {
               "$type": "Document",
@@ -285,7 +282,7 @@
               "RelativeDocumentMoniker": "src\\Windows\\SSHPanel.cpp",
               "ToolTip": "C:\\Users\\Admin\\Desktop\\project\\C\u002B\u002B(notepad\u002B\u002B)\\NppSSH\\src\\Windows\\SSHPanel.cpp",
               "RelativeToolTip": "src\\Windows\\SSHPanel.cpp",
-              "ViewState": "AgIAAGgAAAAAAAAAAAAIwGwAAAAeAAAAAAAAAA==",
+              "ViewState": "AgIAAHMBAAAAAAAAAAAIwH8BAAAYAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
               "WhenOpened": "2026-04-17T08:40:29.416Z",
               "EditorCaption": ""
@@ -300,8 +297,7 @@
               "RelativeToolTip": "src\\Windows\\SSHPanel.h",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000680|",
-              "WhenOpened": "2026-03-27T03:09:54.857Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-03-27T03:09:54.857Z"
             },
             {
               "$type": "Document",
@@ -313,8 +309,7 @@
               "RelativeToolTip": "src\\Windows\\SSHConnection.h",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAABgAAAAmAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000680|",
-              "WhenOpened": "2026-03-27T03:12:40.359Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-03-27T03:12:40.359Z"
             },
             {
               "$type": "Document",
@@ -326,8 +321,7 @@
               "RelativeToolTip": "src\\Windows\\SSHConnection.cpp",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAALABAAAiAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
-              "WhenOpened": "2026-03-27T03:12:07.92Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-03-27T03:12:07.92Z"
             },
             {
               "$type": "Document",

@@ -374,10 +374,7 @@ void NppSSHDockPanel::initPanel() {
     //  从资源中获取EDIT控件句柄（不再手动CreateWindow）
     _hOutputEdit = ::GetDlgItem(_hSelf, IDC_OUTPUT_EDIT);
     if (_hOutputEdit) {
-        ::SetWindowTextW(_hOutputEdit, L"✅ NppSSH面板已创建\n等待SSH连接...");           // 设置初始文本 + 复用NPP字体
-        HFONT hNppFont = (HFONT)::SendMessage(s_nppData._nppHandle, NPPM_SETSMOOTHFONT, 0, 0);
-        if (hNppFont == NULL) hNppFont = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
-        ::SendMessage(_hOutputEdit, WM_SETFONT, (WPARAM)hNppFont, TRUE);
+        ::SetWindowTextW(_hOutputEdit, L"✅ NppSSH面板已创建\n等待SSH连接...");           
         ::SendMessage(_hOutputEdit, EM_GETLINECOUNT, 0, 0);     // 设置编辑框自适应换行/滚动
         ::SendMessage(_hOutputEdit, EM_SETTABSTOPS, 1, (LPARAM)8);  //制表符宽度
         ::SetWindowLongPtr(_hOutputEdit, GWL_STYLE,
