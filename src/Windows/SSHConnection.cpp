@@ -15,6 +15,7 @@ struct SSHConnInfo {
 // 全局存储：每个面板独立的连接资源（索引对应面板）
 static std::unordered_map<int, SSHConnInfo> s_panelConnections;
 static int s_lastPanelIndex = -1;
+std::string loginBanner;
 
 
 // 异步连接防重入锁
@@ -98,7 +99,7 @@ const char*& SSHConnection_GetHost() { return (const char*&)ssh_host; }
 int& SSHConnection_GetPort() { return ssh_port; }
 const char*& SSHConnection_GetUser() { return (const char*&)ssh_user; }
 const char*& SSHConnection_GetPass() { return (const char*&)ssh_pass; }
-
+std::string& SSHConnection_loginBanner() { return loginBanner; }
 // 工具函数：释放连接资源（抽离公共逻辑）统一释放 Socket、SSH 会话、libssh2、WSA 资源；
 static void ReleaseConnectionResources(SOCKET sock, LIBSSH2_SESSION* session) {
     NppSSH_LogInfoAuto("开始释放SSH连接资源：sock=" + std::to_string((uintptr_t)sock) 
@@ -170,7 +171,7 @@ bool SSHConnection_Connect(const char* host, int port, const char* user, const c
     std::string strUser = user;
     std::string strPass = pass;
     int nPort = port;
-    HWND hNppMainWnd = s_nppData._nppHandle;
+    HWND hNppMainWnd = NppSSH_getLoginPanel()? NppSSH_getLoginPanel() : s_nppData._nppHandle;
 
     // 7. 异步结果传递（promise/future）
     std::promise<bool> connectPromise;
@@ -344,6 +345,53 @@ bool SSHConnection_Connect(const char* host, int port, const char* user, const c
             connectResult = true;
             NppSSH_LogInfoAuto("SSH连接成功！用户：" + strUser);
 
+            // 读取服务器发送的登录信息（Putty 显示的内容就是这里来的）
+            char buf[4096] = { 0 };
+            
+            const char* banner = libssh2_session_banner_get(session);
+            if (banner) {
+                loginBanner = "\r\n";
+                loginBanner += banner;
+                loginBanner += "\r\n";
+            }
+
+            //执行命令查询上一次登录时间
+            char output[2048] = { 0 };
+            LIBSSH2_CHANNEL* channel = libssh2_channel_open_session(session);
+            if (channel) {
+                // 执行查询上一次登录的命令
+                // 全兼容命令：CentOS 5~9 + Ubuntu 14~24 全部通用（只提取 日期时间 + 来源IP，格式完全对齐）
+                const char* cmd =
+                    "last -n 1 $USER 2>/dev/null "
+                    "| awk 'NR==1 { "
+                    "    if (NF>=8) { "
+                    "        printf \"Last login: %s %s %s %s %s from %s\", $4, $5, $6, $7, $8, $3 "
+                    "    } else if (NF>=6) { "
+                    "        printf \"Last login: %s %s %s from %s\", $4, $5, $6, $3 "
+                    "    } "
+                    "}' "
+                    "| sed 's/  / /g'"; // 清理多余空格
+                if (libssh2_channel_exec(channel, cmd) == 0) {
+                    char buf[1024] = { 0 };
+                    std::string lastLogin;
+                    while (libssh2_channel_read(channel, buf, sizeof(buf) - 1) > 0)
+                    {
+                        lastLogin += buf;
+                        memset(buf, 0, sizeof(buf));
+                    }
+                    // 清理多余换行
+                    while (!lastLogin.empty() && (lastLogin.back() == '\n' || lastLogin.back() == '\r'))
+                        lastLogin.pop_back();
+                    // 追加到输出（如果获取失败，就不显示上一次登录）
+                    if (!lastLogin.empty()) {
+                        loginBanner += lastLogin;
+                        loginBanner += "\r\n";
+                    }
+                }
+                libssh2_channel_close(channel);
+                libssh2_channel_free(channel);
+            }
+            
         }
         catch (const std::exception& e) {
             // 异常处理：释放资源 + 重置状态
@@ -385,14 +433,7 @@ bool SSHConnection_Connect(const char* host, int port, const char* user, const c
     if (::IsWindow(hNppMainWnd)) {
         std::lock_guard<std::mutex> errLock(s_errorMsgMutex);
         s_lastConnectError = errorMsg;
-        ::PostMessage(hNppMainWnd, WM_SSH_CONNECT_RESULT, (WPARAM)connectResult, 0);
     }
-    //else if (!connectResult && !errorMsg.empty())
-    //{
-    //    std::wstring wMsg = GBKToWstring(errorMsg);
-    //
-    //    ::MessageBoxW(NULL, wMsg.c_str(), L"NppSSH 连接失败", MB_OK | MB_ICONERROR);
-    //}
     });
 
     // 主线程消息循环等待（修复：超时必须等线程退出，否则NPP卡死）
@@ -455,9 +496,10 @@ bool SSHConnection_Connect(const char* host, int port, const char* user, const c
         }
 
         std::wstring wErr = GBKToWstring(showMsg);
-        ::MessageBoxW(s_nppData._nppHandle, wErr.c_str(), L"NppSSH 连接失败", MB_OK | MB_ICONERROR);
+        ::MessageBoxW(hNppMainWnd, wErr.c_str(), L"NppSSH 连接失败", MB_OK | MB_ICONERROR);
     }
 
+    //::MessageBoxW(NppSSH_getLoginPanel(), L"NppSSH", L"NppSSH 连接测试", MB_OK | MB_ICONERROR);
     NppSSH_LogInfoAuto("异步连接完成，最终结果：" + std::to_string(finalResult));
     return finalResult;
 }
@@ -547,6 +589,8 @@ void SSHConnection_BindPanelIndex(int panelIndex) {
 
     s_panelConnections[panelIndex] = info;
     s_lastPanelIndex = panelIndex;
+    
+    NppSSH_LogInfoAuto("面板 " + std::to_string(panelIndex) + " 绑定成功");
 }
 // ---------------- 核心：按面板索引断开 ----------------
 void SSHConnection_DisconnectByPanelIndex(int panelIndex) {
@@ -579,4 +623,43 @@ void SSHConnection_DisconnectByPanelIndex(int panelIndex) {
         s_sshSession = nullptr;
         s_sock = INVALID_SOCKET;
     }
+    NppSSH_LogInfoAuto("面板 " + std::to_string(panelIndex) + " 已断开");
+}
+
+std::string SSHConnection_ExecuteCommand(int panelIndex, const std::string& cmd) {
+    auto it = s_panelConnections.find(panelIndex);
+    if (it == s_panelConnections.end() || !it->second.connected || !it->second.session) {
+        return "❌ 面板" + std::to_string(panelIndex) + "未连接\n";
+    }
+
+    auto& info = it->second;
+    LIBSSH2_CHANNEL* ch = libssh2_channel_open_session(info.session);
+    if (!ch) return "❌ 创建channel失败\n";
+
+    if (libssh2_channel_exec(ch, cmd.c_str()) != 0) {
+        std::string err = "❌ 执行失败：" + GetLibssh2ErrorMsg(info.session) + "\n";
+        libssh2_channel_free(ch);
+        return err;
+    }
+
+    char buf[4096] = { 0 };
+    std::string out, err;
+    while (libssh2_channel_read(ch, buf, sizeof(buf)) > 0) {
+        out += buf;
+        memset(buf, 0, sizeof(buf));
+    }
+    while (libssh2_channel_read_stderr(ch, buf, sizeof(buf)) > 0) {
+        err += buf;
+        memset(buf, 0, sizeof(buf));
+    }
+
+    libssh2_channel_wait_closed(ch);
+    int exitCode = libssh2_channel_get_exit_status(ch);
+    libssh2_channel_free(ch);
+
+    std::string result;
+    if (!out.empty()) result += out;
+    if (!err.empty()) result += "[错误] " + err + "\n";
+    if (exitCode != 0) result += "[退出码:" + std::to_string(exitCode) + "]\n";
+    return result;
 }
