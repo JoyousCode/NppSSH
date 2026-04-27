@@ -57,9 +57,6 @@ void DeletePanelCountFromIni();
 // NPP启动时自动重建面板（分发到SSHPanel）
 void RecreatePanelsOnNppStart();
 
-void NppSSH_SetCommandEditFocus(int panelIndex); // 设置命令输入框焦点（辅助）
-bool NppSSH_HandleCommandKeyEvent(int panelIndex, WPARAM wParam, LPARAM lParam);// 转发面板键盘事件处理
-void NppSSH_AppendPanelOutput(int panelIndex, const std::string& text);		// 转发面板内容追加处理
 HWND NppSSH_getLoginPanel();	//获得每次登录面板创建的句柄
 
 
