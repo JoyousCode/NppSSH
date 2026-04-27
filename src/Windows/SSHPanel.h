@@ -5,6 +5,21 @@
 #include <shlwapi.h>
 #include <algorithm>
 #include <windowsx.h>
+
+// 兼容普通Edit的GETTEXTRANGE
+#ifndef EM_GETTEXTRANGE
+#define EM_GETTEXTRANGE 0x00B9
+#endif
+typedef struct _GETTEXTRANGE {
+    DWORD cpMin;
+    DWORD cpMax;
+} GETTEXTRANGE, * LPGETTEXTRANGE;
+
+#define _WIN32_WINNT 0x0A00
+#include <windows.h>
+#include <consoleapi2.h>
+#include <processenv.h>
+
 #pragma comment(lib, "shlwapi.lib")
 
 // 可停靠面板类（具体实现）
@@ -14,21 +29,12 @@ public:
     ~NppSSHDockPanel();
     // 窗口句柄获取（原有）
     HWND getHSelf() const { return _hSelf; } // 需确保_hSelf已声明
-    // 设置编辑框句柄
-    void SetEditHandles(HWND hOutput, HWND hCmd) {
-        _hOutputEdit = hOutput;
-        _hCommandEdit = hCmd;
-    }
     // 焦点状态设置
-    void SetFocused(bool focused) { _isFocused = focused; }
-    // 键盘事件处理（供外部调用）
-    bool HandleKeyEvent(WPARAM wParam, LPARAM lParam);
+    void SetFocused(bool focused) { _isFocused = focused; };
     // 输出文本到输出框（原有/补充）
     void AppendOutputText(const std::string& text);
     // 获取面板索引
     int GetPanelIndex() const { return _panelId; }
-    // 新增：获取命令输入框句柄（供外部全局函数访问）
-    HWND GetCommandEditHandle() const { return _hCommandEdit; }
     HWND GetOutputEditHandle() const { return _hOutputEdit; }
     int getIconSize() { return _iconSize; }
 
@@ -57,7 +63,6 @@ private:
     int _panelId;           // 面板唯一ID，区分多标签
     int _iconSize = 28;     // 面板中按钮大小
     HWND _hOutputEdit;      // 输出编辑框句柄,面板内输出文本框
-    HWND _hCommandEdit;     // 新增：命令输入编辑框句柄
     bool _isFocused;        // 标记当前面板是否获焦
     HWND _hBtnConnectSSH;   // 连接SSH按钮句柄
     HWND _hBtnDisconnectSSH;// 断开SSH按钮句柄
@@ -73,12 +78,19 @@ private:
     // 官方对话框过程
     static INT_PTR CALLBACK SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
     LRESULT CALLBACK PanelWindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
-    // 私有方法：处理回车按键
-    bool OnEnterKeyPressed();
-    // 私有方法：获取当前命令输入框的文本
-    std::string GetCommandText();
-    // 私有方法：清空命令输入框
-    void ClearCommandText();
+
+
+    // 终端模拟相关
+    std::wstring _promptText;          // 存储当前命令提示符（如 [root@host ~]# ）
+    DWORD _promptEndPos = 0;           // 命令提示符结束位置（光标只能在此之后）
+    // 私有方法：更新提示符并锁定光标位置
+    void UpdatePrompt(const std::wstring& prompt);
+    // 私有方法：检查光标位置是否合法（仅允许在提示符后）
+    bool IsCursorInEditableArea();
+    // 私有方法：强制将光标移到可编辑区域末尾
+    void ForceCursorToEditableEnd();
+    const char* cmd = "";//回车需要执行的命令
+    std::string Prompt;//命令提示符
 
 };
 
@@ -96,10 +108,7 @@ void SSHPanel_DeletePanelCountFromIni();
 // NPP启动重建面板具体实现
 void SSHPanel_RecreatePanelsOnNppStart();
 
-// 新增：面板层键盘事件处理实现声明
-bool SSHPanel_HandleCommandKeyEvent(int panelIndex, WPARAM wParam, LPARAM lParam);
-// 新增：设置命令输入框焦点
-void SSHPanel_SetCommandEditFocus(int panelIndex);
+
 // 新增：输出文本到指定面板的输出框
 void SSHPanel_AppendOutput(int panelIndex, const std::string& text);
 // 获取面板索引进行转发

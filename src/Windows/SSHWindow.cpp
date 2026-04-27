@@ -37,19 +37,8 @@ void DeletePanelCountFromIni() {
 void RecreatePanelsOnNppStart() {
     SSHPanel_RecreatePanelsOnNppStart();    // NPP启动重建面板转发
 }
-// 新增：焦点设置转发
-void NppSSH_SetCommandEditFocus(int panelIndex) {
-    SSHPanel_SetCommandEditFocus(panelIndex);
-}
 
-// 新增：键盘事件处理转发（核心：Panel检测到按键后，通过Window中转给Connection）
-bool NppSSH_HandleCommandKeyEvent(int panelIndex, WPARAM wParam, LPARAM lParam) {
-    return SSHPanel_HandleCommandKeyEvent(panelIndex, wParam, lParam);
-}
 
-void NppSSH_AppendPanelOutput(int panelIndex, const std::string& text) {
-    SSHPanel_AppendOutput(panelIndex, text);
-}
 HWND NppSSH_getLoginPanel() {
     return SSHPanel_getLoginPanel();        //获得登录面板句柄
 }
