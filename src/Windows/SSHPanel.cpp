@@ -579,9 +579,13 @@ INT_PTR CALLBACK NppSSHDockPanel::run_dlgProc(UINT message, WPARAM wParam, LPARA
     // 面板大小变化时，自动适配输出文本框（防止遮挡/空白）（最小化关闭/打开notepad++会自动触发）
     case WM_SIZE: 
     {
-        if (initPanle) {
+        if (initPanle && _hSelf && ::IsWindow(_hSelf) && _hOutputEdit && ::IsWindow(_hOutputEdit))
+        {
             //::MessageBoxW(s_nppData._nppHandle, L"SSH面板变化", L"NppSSH提示", MB_OK | MB_ICONINFORMATION);
             SSH_SizeSSHTerminal(_hSelf, this->_panelId);
+
+            //重绘【整个 SSH 面板】 + 面板里面所有的子控件（包括按钮、编辑框、滚动条等全部子窗口）RDW_ALLCHILDREN = 把面板里所有子控件全部刷新一遍
+            ::RedrawWindow(_hSelf, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);// 刷新整个面板 + 所有子控件（解决最大化/还原/遮挡BUG）
         }
         return TRUE;
     }

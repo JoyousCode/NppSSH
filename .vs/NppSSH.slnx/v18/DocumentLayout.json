@@ -124,8 +124,7 @@
               "RelativeToolTip": "src\\Windows\\SSHTerminal.h",
               "ViewState": "AgIAAAkAAAAAAAAAAAAuwBcAAAAcAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000680|",
-              "WhenOpened": "2026-04-30T01:59:14.929Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-04-30T01:59:14.929Z"
             },
             {
               "$type": "Document",
@@ -135,7 +134,7 @@
               "RelativeDocumentMoniker": "src\\Windows\\SSHTerminal.cpp",
               "ToolTip": "C:\\Users\\Admin\\Desktop\\project\\C\u002B\u002B(notepad\u002B\u002B)\\NppSSH\\src\\Windows\\SSHTerminal.cpp",
               "RelativeToolTip": "src\\Windows\\SSHTerminal.cpp",
-              "ViewState": "AgIAAHsAAAAAAAAAAAAuwIUAAAAKAAAAAAAAAA==",
+              "ViewState": "AgIAAHgAAAAAAAAAAAAuwIcAAAAuAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
               "WhenOpened": "2026-04-30T01:35:17.587Z",
               "EditorCaption": ""
@@ -210,8 +209,7 @@
               "RelativeToolTip": "src\\SSHSettings.h",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAAAYAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000680|",
-              "WhenOpened": "2026-03-30T01:49:59.493Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-03-30T01:49:59.493Z"
             },
             {
               "$type": "Document",
@@ -223,8 +221,7 @@
               "RelativeToolTip": "src\\Windows\\SSHWindow.h",
               "ViewState": "AgIAAE4AAAAAAAAAAAAuwGAAAAAZAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000680|",
-              "WhenOpened": "2026-03-27T00:46:36.146Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-03-27T00:46:36.146Z"
             },
             {
               "$type": "Document",
@@ -309,8 +306,7 @@
               "RelativeToolTip": "src\\PluginDefinition.cpp",
               "ViewState": "AgIAAHgAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
-              "WhenOpened": "2026-03-24T08:41:31.201Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-03-24T08:41:31.201Z"
             },
             {
               "$type": "Document",
@@ -320,7 +316,7 @@
               "RelativeDocumentMoniker": "src\\Windows\\SSHPanel.cpp",
               "ToolTip": "C:\\Users\\Admin\\Desktop\\project\\C\u002B\u002B(notepad\u002B\u002B)\\NppSSH\\src\\Windows\\SSHPanel.cpp",
               "RelativeToolTip": "src\\Windows\\SSHPanel.cpp",
-              "ViewState": "AgIAAHUAAAAAAAAAAAAAAH4AAAAhAAAAAAAAAA==",
+              "ViewState": "AgIAAEACAAAAAAAAAAAAAEwCAAAJAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
               "WhenOpened": "2026-04-17T08:40:29.416Z",
               "EditorCaption": ""

@@ -40,6 +40,8 @@ HWND SSHTerminal::InitTerminalEditBox(HWND hParent) {
         ::MessageBoxW(s_nppData._nppHandle, L"SSH_InitTerminalEditBox: 面板窗口句柄无效！", L"NppSSH调试提示", MB_OK | MB_ICONERROR);
         return nullptr;
     }
+    // 保存父窗口（必须！解决 _hSelf 为空导致的崩溃）
+    _hSelf = hParent;
     //获取编辑框
     _hOutputEdit = ::GetDlgItem(hParent, IDC_OUTPUT_EDIT);
     if (!_hOutputEdit) {
@@ -96,19 +98,43 @@ void SSHTerminal::resetSSHTerminal() {
 * 设置终端面板大小
 */
 void SSHTerminal::SizeSSHTerminal(HWND hParent) {//hParent=面板的_hSelf
+    if (!_hOutputEdit || !::IsWindow(_hOutputEdit))
+        return;
+
+    if (!::IsWindow(hParent))
+        return;
     //::MessageBoxW(s_nppData._nppHandle, L"SizeSSHTerminal", L"NppSSH提示", MB_OK | MB_ICONINFORMATION);
 
     //_hOutputEdit = ::GetDlgItem(hParent, IDC_OUTPUT_EDIT);
     RECT rc;
-    ::GetClientRect(hParent, &rc);
+    if (!::GetClientRect(hParent, &rc))
+        return;
+    //::GetClientRect(hParent, &rc);
+    // 左边距
+    const int LEFT = 5;
+    // 上边距（避开按钮栏）
+    const int TOP = iconSize + 12;
+    // 右边距
+    const int RIGHT = 10;
+    // 底部边距
+    const int BOTTOM = 10;
+
+    int x = LEFT;
+    int y = TOP;
+    int cx = rc.right - LEFT - RIGHT;
+    int cy = rc.bottom - TOP - BOTTOM;
+
+    // 防止宽高为负数导致看不见
+    if (cx < 0) cx = 0;
+    if (cy < 0) cy = 0;
     ::SetWindowPos(
         _hOutputEdit,
         HWND_TOP,
-        5, iconSize + 12, rc.right - 10, rc.bottom - 50,
+        x, y, cx, cy,
         SWP_NOZORDER | SWP_NOACTIVATE
     );
-
-    ::RedrawWindow(_hOutputEdit, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
+    //只重绘【终端编辑框】自己让编辑框立刻刷新、重新绘制自己的内容、文字、背景、边框。
+    ::RedrawWindow(_hOutputEdit, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);// 刷新编辑框内容（防止文字不显示）
 }
 
 
@@ -206,23 +232,23 @@ INT_PTR CALLBACK SSHTerminal::run_dlgProc(UINT message, WPARAM wParam, LPARAM lP
         return TRUE;
     }
     // 面板大小变化时，自动适配输出文本框（防止遮挡/空白）（最小化关闭/打开notepad++会自动触发）
-    case WM_SIZE:
-    {
-        ::MessageBoxW(s_nppData._nppHandle, L"SSH变化3", L"NppSSH提示", MB_OK | MB_ICONINFORMATION);
-        //面板大小变化
-        if (_hOutputEdit && ::IsWindow(_hOutputEdit)) {
-            RECT rc;
-            ::GetClientRect(_hSelf, &rc);
-            // ====== 同步修改WM_SIZE中的编辑框位置，适配按钮栏 ======
-            ::SetWindowPos(
-                _hOutputEdit,
-                NULL,
-                5, 28 + 12, rc.right - 10, rc.bottom - 50,
-                SWP_NOZORDER | SWP_NOACTIVATE
-            );
-        }
-        return TRUE;
-    }
+    //case WM_SIZE:
+    //{
+    //    ::MessageBoxW(s_nppData._nppHandle, L"SSH变化3", L"NppSSH提示", MB_OK | MB_ICONINFORMATION);
+    //    //面板大小变化
+    //    if (_hOutputEdit && ::IsWindow(_hOutputEdit)) {
+    //        RECT rc;
+    //        ::GetClientRect(_hSelf, &rc);
+    //        // ====== 同步修改WM_SIZE中的编辑框位置，适配按钮栏 ======
+    //        ::SetWindowPos(
+    //            _hOutputEdit,
+    //            NULL,
+    //            5, 28 + 12, rc.right - 10, rc.bottom - 50,
+    //            SWP_NOZORDER | SWP_NOACTIVATE
+    //        );
+    //    }
+    //    return TRUE;
+    //}
     // 处理按钮点击消息
     case WM_COMMAND:
     {
