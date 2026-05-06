@@ -43,7 +43,7 @@ extern const char*& user;
 extern const char*& pass;
 extern int& getPanelId;				//获取点击连接图标面板索引
 extern std::string& g_loginBanner;	//登录成功执行命令的欢迎内容
-
+extern int& iconSize;
 
 //////////////////////////////////////////////////////////////////////////别的文件调用SSHPanel的函数内容
 // 核心：可停靠面板类（声明，具体实现在SSHPanel中）
@@ -88,3 +88,12 @@ void NppSSH_LogError(const std::string& event, const std::string& content);
 #define NppSSH_LogWarnAuto(content) NppSSH_LogWarn(__FUNCTION__, content)
 #define NppSSH_LogErrorAuto(content) NppSSH_LogError(__FUNCTION__, content)
 
+// 转发SSHTerminal的函数声明（SSH_前缀 + 原函数名）
+// 初始化终端编辑框
+HWND SSH_InitTerminalEditBox(HWND hParent);
+// 断开终端编辑框
+void SSH_disconnectTerminalEditBox(int panelIndex);
+// 输出文本到终端
+void SSH_AppendOutputText(int panelIndex, const std::string& text);
+void SSH_resetSSHTerminal(int panelIndex);
+void SSH_SizeSSHTerminal(HWND hParent, int panelIndex);

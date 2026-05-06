@@ -8,6 +8,8 @@ static std::vector<NppSSHDockPanel*> s_sshPanels;
 static std::atomic<int> s_panelCounter = 0;
 static NppData s_nppData;
 static HINSTANCE s_hInst;
+static int s_iconSize;
+static bool initPanle;//防止未初始化完成就调用面板
 
 static NppSSHDockPanel* pPanel = nullptr;
 // 标记是否正在连接，避免重复操作
@@ -35,6 +37,7 @@ HINSTANCE& SSHPanel_GetGlobalHInst() {
     return s_hInst;
 }
 int& SSH_GetPanelId() { return s_panelId; }//获取点击连接图标面板索引
+int& SSHPanel_iconSize() { return s_iconSize; }//获取点击连接图标面板索引
 
 // INI操作具体实现（替换原注册表函数）
 void SSHPanel_SavePanelCountToIni(int count) {
@@ -118,15 +121,9 @@ void NppSSHDockPanel::setSSHConnected(bool state) {
                 host);
             g_loginBanner += currentTime;
 
-            this -> Prompt = "[" + std::string(user) + "@" + std::string(host) + " ~]# ";
-            g_loginBanner += this->Prompt;
-
-            //::Sleep(1);//延迟一小帧输出
-            SSHPanel_AppendOutput(this->_panelId, g_loginBanner);
-            // 新增：初始化提示符锁定位置
-            std::wstring wPrompt = GBKToWstring(this->Prompt);
-            this->UpdatePrompt(wPrompt);
-
+            g_loginBanner += "[" + std::string(user) + "@" + std::string(host) + " ~]# ";
+            //::SetWindowTextW(_hOutputEdit, GBKToWstring(g_loginBanner).c_str());
+            SSH_AppendOutputText(this->_panelId, g_loginBanner);
             //if (_hOutputEdit) {
             //    // 保持整体只读，但允许在末尾输入
             //    ::SendMessage(_hOutputEdit, EM_SETREADONLY, FALSE, 0);
@@ -142,8 +139,6 @@ void NppSSHDockPanel::setSSHConnected(bool state) {
 
             DisconnectPanel(this->_panelId);        //调用转发断开连接释放当前面板连接资源
             ::SetWindowTextW(_hOutputEdit, L"🔌 SSH已断开\n等待新的连接...");
-            _promptEndPos = 0;          // 重置只读边界
-            _promptText.clear();        // 清空提示符缓存
         }
         NppSSH_LogInfoAuto("setSSHConnected==========PanelID======" + std::to_string(this->_panelId));
         //MessageBoxW(s_nppData._nppHandle, (L"当前面板ID==" + std::to_wstring(this->_panelId)).c_str(), L"NppSSH", MB_OK | MB_TASKMODAL);
@@ -171,8 +166,6 @@ void NppSSHDockPanel::resetPanelToInit() {//关闭面板进行销毁时调用
         ::SetWindowTextW(_hOutputEdit, L"✅ NppSSH面板已创建\r\n等待SSH连接...resetPanelToInit");
         ::SetWindowTextW(_hOutputEdit, L"🔌 SSH已断开\r\n等待新的连接...resetPanelToInit");
     }
-    _promptEndPos = 0;
-    _promptText.clear();
     // 重置面板时，启用连接SSH按钮（若之前置灰）
     if (_hBtnConnectSSH) ::EnableWindow(_hBtnConnectSSH, TRUE);
     if (_hBtnDisconnectSSH) ::EnableWindow(_hBtnDisconnectSSH, FALSE);
@@ -343,6 +336,7 @@ void NppSSHDockPanel::createTopButtonBar() {
 
 // 面板初始化：纯原生接口
 void NppSSHDockPanel::initPanel() {
+    if(initPanle) initPanle = false;//标记正在初始化
     if (s_hInst == NULL || s_nppData._nppHandle == NULL) {
         ::MessageBoxW(s_nppData._nppHandle, L"NPP插件环境未初始化！", L"NppSSH资源错误", MB_OK | MB_ICONERROR);
         return;
@@ -402,40 +396,24 @@ void NppSSHDockPanel::initPanel() {
     createTopButtonBar();               // 调用创建顶部按钮栏
 
     //  从资源中获取EDIT控件句柄（不再手动CreateWindow）
-    _hOutputEdit = ::GetDlgItem(_hSelf, IDC_OUTPUT_EDIT);
-    if (_hOutputEdit) {
-        ::SetWindowTextW(_hOutputEdit, L"✅ NppSSH面板已创建\n等待SSH连接...");           
-        //::SendMessage(_hOutputEdit, EM_GETLINECOUNT, 0, 0);     // 设置编辑框自适应换行/滚动
-        //::SendMessage(_hOutputEdit, EM_SETTABSTOPS, 1, (LPARAM)8);  //制表符宽度
-        ::SetWindowLongPtr(_hOutputEdit, GWL_STYLE,
-            GetWindowLongPtr(_hOutputEdit, GWL_STYLE) | ES_MULTILINE | ES_AUTOVSCROLL | ES_AUTOHSCROLL | WS_VSCROLL);
+    //_hOutputEdit = ::GetDlgItem(_hSelf, IDC_OUTPUT_EDIT);
+    s_iconSize = _iconSize;
+    _hOutputEdit = SSH_InitTerminalEditBox(_hSelf);
+    if (!_hOutputEdit) {
+        ::MessageBoxW(s_nppData._nppHandle, L"NPP插件环境_hOutputEdit初始化失败！", L"NppSSH调试提示", MB_OK);
     }
-        
-    // 调整输出编辑框位置，避开顶部按钮栏
-    RECT rcClient;
-    ::GetClientRect(_hSelf, &rcClient);
-        
-    ::SetWindowPos( //编辑框
-        _hOutputEdit,
-        NULL,
-        5,                  // 左边距
-        _iconSize + 12,     // 上边距（避开按钮栏）
-        rcClient.right - 10,// 宽度（自适应面板）
-        rcClient.bottom - 50,// 高度（预留底部空间）
-        SWP_NOZORDER | SWP_NOACTIVATE
-    );
     
     
     if (_hSelf && ::IsWindow(_hSelf)) {         // 强制设置面板窗口样式，解决遮挡/闪烁问题
         DWORD dwStyle = ::GetWindowLongPtrW(_hSelf, GWL_STYLE);
         SetWindowLongPtrW(_hSelf, GWL_STYLE, dwStyle | WS_CLIPCHILDREN | WS_CLIPSIBLINGS);
-        //::SetWindowLongPtrW(_hSelf, GWL_STYLE, dwStyle | WS_CLIPCHILDREN | WS_CLIPSIBLINGS);
         //::SetWindowPos(_hSelf, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);     // 确保面板在停靠容器的顶层，不被覆盖
     }
     // 加入全局管理，支持标签切换和内存清理
     s_sshPanels.push_back(this);
     // 13. 日志记录（调试/排查）
     NppSSH_LogInfoAuto("面板初始化完成 [ID: " + std::to_string(_panelId) + "]");
+    if (!initPanle) initPanle = true;//面板初始化完成
 }
 /////////////////////////////////////////开始处理登录对话框//////////////////////////
 // 窗口居中工具函数
@@ -557,7 +535,6 @@ INT_PTR CALLBACK NppSSHDockPanel::SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM 
                     if (LOWORD(wParam) == IDC_BTN_TEST) {
                         //无论成功还是失败都断开连接，防止占用远程资源
                         NppSSH_Disconnect();
-                        SSHPanel_AppendOutput(pPanel -> _panelId,"\r\n测试连接成功，已断开");
                         //DisconnectPanel(pPanel->_panelId);        //调用转发断开连接释放当前面板连接资源
                         
                     }
@@ -602,17 +579,9 @@ INT_PTR CALLBACK NppSSHDockPanel::run_dlgProc(UINT message, WPARAM wParam, LPARA
     // 面板大小变化时，自动适配输出文本框（防止遮挡/空白）（最小化关闭/打开notepad++会自动触发）
     case WM_SIZE: 
     {
-        //::MessageBoxW(s_nppData._nppHandle, L"SSH变化3", L"NppSSH提示", MB_OK | MB_ICONINFORMATION);
-        if (_hOutputEdit && ::IsWindow(_hOutputEdit)) {
-            RECT rc;
-            ::GetClientRect(_hSelf, &rc);
-            // ====== 同步修改WM_SIZE中的编辑框位置，适配按钮栏 ======
-            ::SetWindowPos(
-                _hOutputEdit,
-                NULL,
-                5, _iconSize + 12, rc.right - 10, rc.bottom - 50,
-                SWP_NOZORDER | SWP_NOACTIVATE
-            );
+        if (initPanle) {
+            //::MessageBoxW(s_nppData._nppHandle, L"SSH面板变化", L"NppSSH提示", MB_OK | MB_ICONINFORMATION);
+            SSH_SizeSSHTerminal(_hSelf, this->_panelId);
         }
         return TRUE;
     }
@@ -641,19 +610,13 @@ INT_PTR CALLBACK NppSSHDockPanel::run_dlgProc(UINT message, WPARAM wParam, LPARA
         if (hCtrl == _hOutputEdit) {
             UINT notifyCode = HIWORD(wParam);
             // 拦截光标移动、文本修改、粘贴等操作
-            NppSSH_LogInfoAuto("拦截输出编辑框PanelPrompt=" + std::to_string(_promptEndPos));
 
             switch (notifyCode) {
             case EN_SETFOCUS: // 编辑框获焦时，强制光标到可编辑区域
-                ForceCursorToEditableEnd();
                 ::SendMessage(_hOutputEdit, EM_SETREADONLY, FALSE, 0);
                 break;
             case EN_CHANGE: // 文本变化时，检查是否在合法区域
                 DWORD totalLen = ::GetWindowTextLengthW(_hOutputEdit);
-                if (totalLen < _promptEndPos) {
-                    ::SendMessageW(_hOutputEdit, EM_UNDO, 0, 0);
-                    ForceCursorToEditableEnd(); // 非法修改则重置光标
-                }
                 break;
             }
             return TRUE;
@@ -665,79 +628,18 @@ INT_PTR CALLBACK NppSSHDockPanel::run_dlgProc(UINT message, WPARAM wParam, LPARA
         if (GetFocus() == _hOutputEdit) {
             DWORD selStart, selEnd;
             ::SendMessageW(_hOutputEdit, EM_GETSEL, (WPARAM)&selStart, (LPARAM)&selEnd);
-            bool selectionInReadOnly = (selStart < _promptEndPos) || (selEnd < _promptEndPos);
-            NppSSH_LogInfoAuto("禁止删除键（Backspace / Delete），开始：" + std::to_string(selStart) + "结束：" + std::to_string(selEnd) + "selectionInReadOnly=" + std::to_string(selectionInReadOnly));
-            // 禁止删除键（Backspace / Delete）
-            if (wParam == VK_BACK || wParam == VK_DELETE) {
-                NppSSH_LogInfoAuto("禁止删除键（Backspace / Delete），开始：" + std::to_string(selStart) + "结束：" + std::to_string(selEnd) + "PanelPrompt=" + std::to_string(_promptEndPos));
-                if (selectionInReadOnly) {
-                    ForceCursorToEditableEnd();
-                    return TRUE;//必须在这里 return，不让系统处理删除
-                }
-            }
-            //  拦截光标进入只读区后的所有按键（← →  Home 等）弹回
-            if (selStart < _promptEndPos)
-            {
-                NppSSH_LogInfoAuto("拦截光标进入只读区后的所有按键，开始：" + std::to_string(selStart)+"结束：" + std::to_string(selEnd) + "PanelPrompt=" + std::to_string(_promptEndPos));
-                ForceCursorToEditableEnd();
-                return TRUE;
-            }
 
-            // 检查光标是否在合法区域
-            //if (!IsCursorInEditableArea()) {
-            //    // 屏蔽非法区域的所有按键（除了方向键→）
-            //    if (wParam != VK_RIGHT) {
-            //        // 强制把光标拉回合法位置
-            //        ForceCursorToEditableEnd();
-            //        return TRUE; // 拦截按键，不传递
-            //    }
-            //    else {
-            //        // 方向键→仅允许移到合法区域末尾
-            //        ForceCursorToEditableEnd();
-            //        return TRUE;
-            //    }
-            //}
             // 处理回车（执行命令）
             if (wParam == VK_RETURN) {
                 NppSSH_LogInfoAuto("endendend========");
                 // 1. 获取合法区域的文本（命令部分）
-                DWORD startPos = _promptEndPos;
-                DWORD endPos = ::GetWindowTextLengthW(_hOutputEdit);
-                int cmdLen = endPos - startPos;
-                if (cmdLen > 0) {
-                    std::wstring wCmd(cmdLen + 1, 0);
-                    GETTEXTRANGE tr;
-                    tr.cpMin = startPos;
-                    tr.cpMax = endPos;
-                    SendMessageW(_hOutputEdit, EM_GETTEXTRANGE, (WPARAM)&tr, (LPARAM)wCmd.data());
-
-                    // 转换为UTF8命令
-                    std::string cmd;
-                    int utf8Len = WideCharToMultiByte(CP_UTF8, 0, wCmd.c_str(), -1, NULL, 0, NULL, NULL);
-                    if (utf8Len > 0) {
-                        cmd.resize(utf8Len - 1);
-                        WideCharToMultiByte(CP_UTF8, 0, wCmd.c_str(), -1, &cmd[0], utf8Len, NULL, NULL);
-                    }
-                    // 2. 执行命令（复用原有逻辑）
-                    AppendOutputText("\r\n"); // 回车换行
-                    NppSSH_ExecuteCommand(_panelId, cmd);
-                    // 3. 清空命令输入区域（保留提示符）
-                    ::SendMessage(_hOutputEdit, EM_SETREADONLY, FALSE, 0);
-                    ::SendMessage(_hOutputEdit, EM_SETSEL, startPos, endPos);
-                    ::SendMessage(_hOutputEdit, EM_REPLACESEL, FALSE, (LPARAM)L"");
-                    ::SendMessage(_hOutputEdit, EM_SETREADONLY, TRUE, 0);
-                    ForceCursorToEditableEnd();
-                }
+               
                 return TRUE; // 拦截回车，不传递
             }
             // 处理删除键（仅允许删除合法区域的字符）
             if (wParam == VK_BACK || wParam == VK_DELETE) {
                 DWORD selStart, selEnd;
                 ::SendMessageW(_hOutputEdit, EM_GETSEL, (WPARAM)&selStart, (LPARAM)&selEnd);
-                if (selStart < _promptEndPos || selEnd < _promptEndPos) {
-                    ForceCursorToEditableEnd();
-                    return TRUE;
-                }
             }
         }
         break;
@@ -821,95 +723,3 @@ void SSHPanel_RecreatePanelsOnNppStart() {
     }
 }
 
-// 新增：输出文本到输出框（追加模式）
-void NppSSHDockPanel::AppendOutputText(const std::string& text) {
-    NppSSH_LogInfoAuto("输出文本到输出框" + std::string(text));
-    if (!_hOutputEdit) return;
-    std::wstring wtext = GBKToWstring(text);
-
-    //// 3. 追加文本（只读控件临时取消只读）
-    ::SendMessage(_hOutputEdit, EM_SETREADONLY, FALSE, 0);
-    //// 光标移到末尾，追加文本
-    int len = ::GetWindowTextLengthW(_hOutputEdit);
-    ::SendMessage(_hOutputEdit, EM_SETSEL, len, len);
-    ::SendMessage(_hOutputEdit, EM_REPLACESEL, FALSE, (LPARAM)wtext.c_str());
-    //// 恢复只读
-    ::SendMessage(_hOutputEdit, EM_SETREADONLY, TRUE, 0);
-
-    // 3. 关键：如果输出包含命令提示符（如 [root@host ~]# ），更新锁定位置
-    if (wtext.find(L"]# ") != wtext.npos || wtext.find(L"]$ ") != wtext.npos) {
-        UpdatePrompt(wtext.substr(wtext.find_last_of(L"]#$") - 1));
-    }
-    else {
-        // 普通输出，更新提示符结束位置为文本末尾
-        _promptEndPos = ::GetWindowTextLengthW(_hOutputEdit);
-    }
-    // 4. 强制光标到可编辑区域
-    ForceCursorToEditableEnd();
-
-    ////// 4. 自动滚动到底部（模拟PuTTY的滚动行为）
-    //::SendMessage(_hOutputEdit, EM_SCROLLCARET, 0, 0);
-    //int lineCount = (int)::SendMessage(_hOutputEdit, EM_GETLINECOUNT, 0, 0);
-    //::SendMessage(_hOutputEdit, EM_LINESCROLL, 0, lineCount);
-    NppSSH_LogInfoAuto("文本追加完成，当前输出框总长度：" + std::to_string(len)
-        + "，追加长度：" + std::to_string(text.length()));
-}
-
-// 新增：输出文本到指定面板
-void SSHPanel_AppendOutput(int panelIndex, const std::string& text) {
-    NppSSH_LogInfoAuto("输出指定面板"+std::to_string(panelIndex));
-    NppSSH_LogInfoAuto("输出指定面板"+std::string(text));
-    NppSSH_LogInfoAuto("输出指定面板"+std::to_string(s_sshPanels.size()));
-
-    if (panelIndex < 0) return;
-    panelIndex = panelIndex - 1;
-    NppSSHDockPanel* panel = s_sshPanels[panelIndex];
-    if (!panel || !panel->GetOutputEditHandle())
-        return;
-    std::string fixedText;
-    for (char c : text) {
-        if (c == '\n') {
-            // Linux \n → Windows \r\n
-            fixedText += "\r\n";
-        }
-        else if (c != '\r') {
-            fixedText += c;
-        }
-    }
-    panel->AppendOutputText(fixedText);
-}
-
-// 更新命令提示符并锁定编辑区域
-void NppSSHDockPanel::UpdatePrompt(const std::wstring& prompt) {
-    if (!_hOutputEdit || !::IsWindow(_hOutputEdit)) return;
-
-    // 1. 记录提示符文本和结束位置
-    _promptText = prompt;
-    // 2. 获取当前文本长度 = 提示符结束位置
-    _promptEndPos = ::GetWindowTextLengthW(_hOutputEdit);
-    // 3. 强制光标移到提示符末尾
-    ForceCursorToEditableEnd();
-}
-
-// 检查光标是否在可编辑区域（提示符后）
-bool NppSSHDockPanel::IsCursorInEditableArea() {
-    if (!_hOutputEdit || !::IsWindow(_hOutputEdit)) return false;
-
-    DWORD startPos = 0, endPos = 0;
-    ::SendMessageW(_hOutputEdit, EM_GETSEL, (WPARAM)&startPos, (LPARAM)&endPos);
-    // 光标起始位置 >= 提示符结束位置 → 合法
-    return (startPos >= _promptEndPos) && (endPos >= _promptEndPos);
-}
-
-// 强制将光标移到可编辑区域末尾
-void NppSSHDockPanel::ForceCursorToEditableEnd() {
-
-    if (!_hOutputEdit || !::IsWindow(_hOutputEdit)) return;
-
-    DWORD totalLen = ::GetWindowTextLengthW(_hOutputEdit);
-    // 仅允许光标在提示符后 → 锁定选择范围为 [_promptEndPos, totalLen]
-    ::SendMessageW(_hOutputEdit, EM_SETSEL, _promptEndPos, totalLen);
-    ::SendMessageW(_hOutputEdit, EM_SCROLLCARET, 0, 0); // 滚动到光标位置
-    NppSSH_LogInfoAuto("强制移动到末尾" + std::to_string(totalLen) + "PanelPrompt=" + std::to_string(_promptEndPos));
-
-}

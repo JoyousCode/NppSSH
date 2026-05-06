@@ -31,8 +31,6 @@ public:
     HWND getHSelf() const { return _hSelf; } // 需确保_hSelf已声明
     // 焦点状态设置
     void SetFocused(bool focused) { _isFocused = focused; };
-    // 输出文本到输出框（原有/补充）
-    void AppendOutputText(const std::string& text);
     // 获取面板索引
     int GetPanelIndex() const { return _panelId; }
     HWND GetOutputEditHandle() const { return _hOutputEdit; }
@@ -80,17 +78,6 @@ private:
     LRESULT CALLBACK PanelWindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
 
-    // 终端模拟相关
-    std::wstring _promptText;          // 存储当前命令提示符（如 [root@host ~]# ）
-    DWORD _promptEndPos = 0;           // 命令提示符结束位置（光标只能在此之后）
-    // 私有方法：更新提示符并锁定光标位置
-    void UpdatePrompt(const std::wstring& prompt);
-    // 私有方法：检查光标位置是否合法（仅允许在提示符后）
-    bool IsCursorInEditableArea();
-    // 私有方法：强制将光标移到可编辑区域末尾
-    void ForceCursorToEditableEnd();
-    const char* cmd = "";//回车需要执行的命令
-    std::string Prompt;//命令提示符
 
 };
 
@@ -109,8 +96,8 @@ void SSHPanel_DeletePanelCountFromIni();
 void SSHPanel_RecreatePanelsOnNppStart();
 
 
-// 新增：输出文本到指定面板的输出框
-void SSHPanel_AppendOutput(int panelIndex, const std::string& text);
 // 获取面板索引进行转发
 int& SSH_GetPanelId();
 HWND SSHPanel_getLoginPanel();
+
+int& SSHPanel_iconSize();
