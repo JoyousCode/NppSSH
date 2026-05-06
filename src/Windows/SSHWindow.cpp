@@ -3,6 +3,7 @@
 #include "SSHPanel.h"
 #include "SSHConnection.h"
 #include "SSHLog.h"
+#include "SSHTerminal.h"
 
 // 全局变量转发（实际定义在SSHPanel中）
 std::vector<NppSSHDockPanel*>& g_sshPanels = SSHPanel_GetGlobalPanels();
@@ -10,6 +11,7 @@ std::atomic<int>& g_panelCounter = SSHPanel_GetGlobalPanelCounter();
 NppData& g_nppData = SSHPanel_GetGlobalNppData();
 HINSTANCE& g_hInst = SSHPanel_GetGlobalHInst();
 int& getPanelId = SSH_GetPanelId(); //获取点击连接图标面板索引
+int& iconSize = SSHPanel_iconSize();
 
 // SSH连接全局状态转发（实际定义在SSHConnection中）
 LIBSSH2_SESSION*& sshSession = SSHConnection_GetSession();
@@ -123,3 +125,19 @@ void NppSSH_LogError(const std::string& event, const std::string& content) {
 //NppSSH_LogInfoAuto("==============测试日志使用结束==========");
 
 
+// 转发函数实现（仅调用SSHTerminal对应方法，无任何业务逻辑修改）
+HWND SSH_InitTerminalEditBox(HWND hParent) {
+    return SSHTerminal_InitTerminalEditBox(hParent);
+}
+void SSH_disconnectTerminalEditBox(int panelIndex) {
+    SSHTerminal_disconnectTerminalEditBox(panelIndex);
+}
+void SSH_resetSSHTerminal(int panelIndex) {
+    SSHTerminal_resetSSHTerminal(panelIndex);
+}
+void SSH_SizeSSHTerminal(HWND hParent, int panelIndex) {
+    SSHTerminal_SizeSSHTerminal(hParent,panelIndex);
+}
+void SSH_AppendOutputText(int panelIndex, const std::string& text) {
+    SSHTerminal_AppendOutput(panelIndex, text);
+}
