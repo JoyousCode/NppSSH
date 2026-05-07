@@ -16,6 +16,8 @@ static NppSSHDockPanel* pPanel = nullptr;
 static std::atomic<bool> s_isConnecting = false;
 //static std::atomic<bool> s_isPanelChangingConnection = false;
 
+//面板上的提示词
+static std::string panelPrompt;
 HWND SSHPanel_getLoginPanel() {
     return pPanel->getLoginPanel();
 }
@@ -35,6 +37,9 @@ NppData& SSHPanel_GetGlobalNppData() {
 
 HINSTANCE& SSHPanel_GetGlobalHInst() {
     return s_hInst;
+}
+std::string& SSHPanel_Prompt() {
+    return panelPrompt;
 }
 int& SSH_GetPanelId() { return s_panelId; }//获取点击连接图标面板索引
 int& SSHPanel_iconSize() { return s_iconSize; }//获取点击连接图标面板索引
@@ -120,18 +125,13 @@ void NppSSHDockPanel::setSSHConnected(bool state) {
                 st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond,
                 host);
             g_loginBanner += currentTime;
-
-            g_loginBanner += "[" + std::string(user) + "@" + std::string(host) + " ~]# ";
+            //std::string& Prompt = "[" + std::string(user) + "@" + std::string(host) + " ~]# ";
+            //g_loginBanner += Prompt;
             //::SetWindowTextW(_hOutputEdit, GBKToWstring(g_loginBanner).c_str());
+            
             SSH_AppendOutputText(this->_panelId, g_loginBanner);
-            //if (_hOutputEdit) {
-            //    // 保持整体只读，但允许在末尾输入
-            //    ::SendMessage(_hOutputEdit, EM_SETREADONLY, FALSE, 0);
-            //    // 强制光标跳到可输入区域
-            //    ForceCursorToEditableEnd();
-            //    // 自动聚焦到编辑框，用户可直接打字
-            //    ::SetFocus(_hOutputEdit);
-            //}
+            panelPrompt = "[" + std::string(user) + "@" + std::string(host) + " ~]# ";//localhost
+            SSH_Prompt(this->_panelId);
             // 清空 banner，防止下一次复用脏数据
             g_loginBanner.clear();
         }

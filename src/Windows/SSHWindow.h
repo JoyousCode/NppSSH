@@ -43,6 +43,7 @@ extern const char*& user;
 extern const char*& pass;
 extern int& getPanelId;				//获取点击连接图标面板索引
 extern std::string& g_loginBanner;	//登录成功执行命令的欢迎内容
+extern std::string& g_Prompt;
 extern int& iconSize;
 
 //////////////////////////////////////////////////////////////////////////别的文件调用SSHPanel的函数内容
@@ -95,5 +96,6 @@ HWND SSH_InitTerminalEditBox(HWND hParent);
 void SSH_disconnectTerminalEditBox(int panelIndex);
 // 输出文本到终端
 void SSH_AppendOutputText(int panelIndex, const std::string& text);
+void SSH_Prompt(int panelIndex);
 void SSH_resetSSHTerminal(int panelIndex);
 void SSH_SizeSSHTerminal(HWND hParent, int panelIndex);
