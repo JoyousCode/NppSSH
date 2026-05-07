@@ -86,6 +86,7 @@ std::vector<NppSSHDockPanel*>& SSHPanel_GetGlobalPanels();
 std::atomic<int>& SSHPanel_GetGlobalPanelCounter();
 NppData& SSHPanel_GetGlobalNppData();
 HINSTANCE& SSHPanel_GetGlobalHInst();
+std::string& SSHPanel_Prompt();
 
 // INI操作具体实现（替换原注册表函数）
 void SSHPanel_SavePanelCountToIni(int count);

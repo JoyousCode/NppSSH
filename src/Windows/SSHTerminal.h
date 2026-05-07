@@ -4,8 +4,6 @@
 #include "SSHWindow.h"
 #include <shlwapi.h>
 #include <algorithm>
-
-
 #include <windows.h>
 #include <consoleapi2.h>
 #include <processenv.h>
@@ -25,14 +23,8 @@ public:
     // 输出文本到输出框（迁移自AppendOutputText）
     void AppendOutputText(const std::string& text);
 
-    // 更新提示符并锁定光标位置（迁移自UpdatePrompt）
-    void UpdatePrompt(const std::wstring& prompt);
-
     // 检查光标位置是否合法（迁移自IsCursorInEditableArea）
     bool IsCursorInEditableArea();
-
-    // 强制将光标移到可编辑区域末尾（迁移自ForceCursorToEditableEnd）
-    void ForceCursorToEditableEnd();
 
     // 获取/设置回车要执行的命令（迁移自cmd）
     void SetCmd(const char* cmdStr);
@@ -43,17 +35,14 @@ public:
     const std::string& GetPrompt() const;
 
     // 获取编辑框句柄
-    HWND GetEditBoxHwnd() const { return _hEditBox; }
+    HWND GetEditBoxHwnd() const { return _hOutputEdit; }
 
 private:
     HWND _hOutputEdit;
     HWND _hSelf = nullptr;
 
     int _panelId;
-    HWND _hEditBox = _hOutputEdit;          // 终端编辑框句柄
-    std::wstring _promptText;          // 存储当前命令提示符（迁移自_promptText）
-    DWORD _promptEndPos = 0;           // 命令提示符结束位置（迁移自_promptEndPos）
-    const char* _cmd = "";             // 回车需要执行的命令（迁移自cmd）
+    std::string _cmd;             // 回车需要执行的命令（迁移自cmd）
     std::string _prompt;               // 命令提示符（迁移自Prompt）
     WNDPROC _oldEditProc = nullptr; // 传统子类化保存旧过程
 };
@@ -65,4 +54,9 @@ void SSHTerminal_SizeSSHTerminal(HWND hParent,int panelIndex);
 
 
 void SSHTerminal_AppendOutput(int panelIndex, const std::string& text);
+void SSHTerminal_Prompt(int panelIndex, const std::string& Prompt);
 SSHTerminal* getSSHTerminal(int panelIndex);
+
+// 工具函数声明（日志专用）
+inline std::string PtrToHexStr(void* ptr);
+inline std::string IntToStr(int num);
