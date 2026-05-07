@@ -10,11 +10,10 @@
 #include <consoleapi2.h>
 #include <processenv.h>
 
-class SSHTerminal : public DockingDlgInterface {
+class SSHTerminal{
 public:
     SSHTerminal();
-    ~SSHTerminal() = default;
-    INT_PTR CALLBACK run_dlgProc(UINT message, WPARAM wParam, LPARAM lParam) override;
+    ~SSHTerminal();
     // 初始化终端编辑框（迁移自initPanel的编辑框创建逻辑）
     HWND InitTerminalEditBox(HWND hParent);
     void disConnection();
@@ -48,13 +47,15 @@ public:
 
 private:
     HWND _hOutputEdit;
+    HWND _hSelf = nullptr;
 
     int _panelId;
-    HWND _hEditBox = nullptr;          // 终端编辑框句柄
+    HWND _hEditBox = _hOutputEdit;          // 终端编辑框句柄
     std::wstring _promptText;          // 存储当前命令提示符（迁移自_promptText）
     DWORD _promptEndPos = 0;           // 命令提示符结束位置（迁移自_promptEndPos）
     const char* _cmd = "";             // 回车需要执行的命令（迁移自cmd）
     std::string _prompt;               // 命令提示符（迁移自Prompt）
+    WNDPROC _oldEditProc = nullptr; // 传统子类化保存旧过程
 };
 
 HWND SSHTerminal_InitTerminalEditBox(HWND hParent);

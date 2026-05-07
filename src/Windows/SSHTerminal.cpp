@@ -1,10 +1,102 @@
 // SSHTerminal.cpp模拟终端，具体实现
 #include "SSHTerminal.h"
-
+static WNDPROC s_pOldEditProc = nullptr; // 保存 EDIT 原来的窗口过程
 static std::vector<SSHTerminal*> vectorSSHTerminal;
 static NppData s_nppData;
 static HINSTANCE s_hInst;
 
+// 传统编辑框子类化过程（解决消息拦截失效问题）
+LRESULT CALLBACK TerminalEditProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    // 强制打印日志，确认函数进入（保留原有逻辑）
+    NppSSH_LogInfoAuto("TerminalEditProc监听！msg=" + std::to_string(msg));
+
+    // 优先从窗口附加数据获取终端实例（更可靠）
+    SSHTerminal* terminal = reinterpret_cast<SSHTerminal*>(GetWindowLongPtr(hWnd, GWLP_USERDATA + sizeof(LONG_PTR)));
+    // 降级兼容：如果附加数据未找到，再遍历vector（兜底）
+    if (!terminal) {
+        for (auto* t : vectorSSHTerminal) {
+            if (t && t->GetOutputEditHandle() == hWnd) {
+                terminal = t;
+                break;
+            }
+        }
+    }
+
+    // 如果仍未找到终端，直接调用原窗口过程（避免消息丢失）
+    if (!terminal) {
+        WNDPROC oldProc = reinterpret_cast<WNDPROC>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
+        return CallWindowProc(oldProc, hWnd, msg, wParam, lParam);
+    }
+
+    // 提前打印消息类型，便于调试
+    NppSSH_LogInfoAuto("TerminalEditProc找到终端！msg=" + std::to_string(msg) + " wParam=" + std::to_string(wParam));
+
+    // 核心：消息处理逻辑（WM_KEYDOWN/WM_CHAR拦截）
+    switch (msg) {
+    case WM_KEYDOWN: {
+        // 强制打印，确认WM_KEYDOWN进入
+        NppSSH_LogInfoAuto("WM_KEYDOWN监听！wParam=" + std::to_string(wParam));
+
+        // 移除多余的return 0（原逻辑会直接截断所有按键，导致后续消息不触发）改为：仅拦截指定按键，其他按键放行
+        if (wParam == VK_BACK || wParam == VK_DELETE || (wParam >= 0x20 && wParam <= 0x7E)) {
+            NppSSH_LogInfoAuto("WM_KEYDOWN拦截按键：" + std::to_string(wParam));
+            // 仅拦截时return 0，否则放行
+            return 0;
+        }
+        // 非拦截按键，继续传递消息
+        break;
+    }
+    case WM_KEYUP: {
+        NppSSH_LogInfoAuto("WM_KEYUP监听！wParam=" + std::to_string(wParam));
+        break;
+    }
+    case WM_CHAR: {
+        NppSSH_LogInfoAuto("WM_CHAR监听！wParam=" + std::to_string(wParam));
+        if (!terminal->IsCursorInEditableArea()) {
+            NppSSH_LogInfoAuto("WM_CHAR：光标在非法区域，拦截输入！");
+            if (wParam == VK_BACK || wParam == VK_DELETE || (wParam >= 0x20 && wParam <= 0x7E)) {
+                return 0;
+            }
+        }
+        break;
+    }
+    case WM_PASTE: {
+        NppSSH_LogInfoAuto("WM_PASTE监听！");
+        if (!terminal->IsCursorInEditableArea()) {
+            NppSSH_LogInfoAuto("WM_PASTE：光标在非法区域，禁止粘贴！");
+            return 0; // 禁止粘贴
+        }
+        break;
+    }
+    case WM_SETFOCUS: {
+        NppSSH_LogInfoAuto("WM_SETFOCUS监听！");
+        if (!terminal->IsCursorInEditableArea()) {
+            terminal->ForceCursorToEditableEnd();
+        }
+        break;
+    }
+    case WM_MOUSEMOVE: {
+        NppSSH_LogInfoAuto("WM_MOUSEMOVE监听！");
+        if (!terminal->IsCursorInEditableArea()) {
+            terminal->ForceCursorToEditableEnd();
+        }
+        break;
+    }
+    case WM_LBUTTONUP: {
+        NppSSH_LogInfoAuto("WM_LBUTTONUP监听！");
+        if (!terminal->IsCursorInEditableArea()) {
+            terminal->ForceCursorToEditableEnd();
+        }
+        break;
+    }
+    }
+
+    // 确保原窗口过程调用的正确性
+    WNDPROC oldProc = reinterpret_cast<WNDPROC>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
+    LRESULT result = CallWindowProc(oldProc, hWnd, msg, wParam, lParam);
+    NppSSH_LogInfoAuto("TerminalEditProc调用原过程！msg=" + std::to_string(msg) + " result=" + std::to_string(result));
+    return result;
+}
 
 // 编码转换工具（自动识别 UTF8 / GBK，彻底解决Windows弹框乱码）
 inline std::wstring GBKToWstring(const std::string& str) {
@@ -30,7 +122,23 @@ SSHTerminal::SSHTerminal() {
     _hOutputEdit = nullptr;
     _promptEndPos = 0;
     _cmd = nullptr; // 或根据实际类型初始化，比如空字符串
+    _oldEditProc = nullptr;
 }
+// 析构函数：释放图标资源，防止内存泄漏
+SSHTerminal::~SSHTerminal() {
+    if (_hOutputEdit && _oldEditProc) {
+        // 清理附加数据
+        SetWindowLongPtr(_hOutputEdit, GWLP_USERDATA + sizeof(LONG_PTR), 0);
+        SetWindowLongPtr(_hOutputEdit, GWLP_WNDPROC, (LONG_PTR)_oldEditProc);
+        _oldEditProc = nullptr;
+    }
+    // 从全局vector移除自身
+    auto it = std::find(vectorSSHTerminal.begin(), vectorSSHTerminal.end(), this);
+    if (it != vectorSSHTerminal.end()) {
+        vectorSSHTerminal.erase(it);
+    }
+}
+
 HWND SSHTerminal::GetOutputEditHandle() {
     return _hOutputEdit;
 }
@@ -71,8 +179,26 @@ HWND SSHTerminal::InitTerminalEditBox(HWND hParent) {
     //// 刷新
     //::RedrawWindow(_hOutputEdit, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
     SizeSSHTerminal(hParent);
+    // ==== 关键：给 挂载子类化 ====
+    if (!_oldEditProc) {
+        // 第一步：获取原窗口过程
+        _oldEditProc = (WNDPROC)GetWindowLongPtr(_hOutputEdit, GWLP_WNDPROC);
+        // 第二步：保存原过程到GWLP_USERDATA
+        SetWindowLongPtr(_hOutputEdit, GWLP_USERDATA, (LONG_PTR)_oldEditProc);
+        // 第三步：将终端实例附加到窗口（GWLP_USERDATA + sizeof(LONG_PTR) 避免覆盖）
+        SetWindowLongPtr(_hOutputEdit, GWLP_USERDATA + sizeof(LONG_PTR), (LONG_PTR)this);
+        // 第四步：设置新的窗口过程
+        SetWindowLongPtr(_hOutputEdit, GWLP_WNDPROC, (LONG_PTR)TerminalEditProc);
+        NppSSH_LogInfoAuto("编辑框子类化完成！原过程：0x%p 新过程：0x%p", _oldEditProc, TerminalEditProc);
+    }
+    // 确保vector中只添加一次
+    if (std::find(vectorSSHTerminal.begin(), vectorSSHTerminal.end(), this) == vectorSSHTerminal.end()) {
+        vectorSSHTerminal.push_back(this);
+    }
 
-    vectorSSHTerminal.push_back(this);
+
+
+    //vectorSSHTerminal.push_back(this);
     MessageBoxW(s_nppData._nppHandle, L"终端编辑框初始化完成 ✅", L"成功", MB_OK);
     return _hOutputEdit;
 }
@@ -220,71 +346,6 @@ void SSHTerminal::SetPrompt(const std::string& promptStr) {
 const std::string& SSHTerminal::GetPrompt() const {
     return _prompt;
 }
-INT_PTR CALLBACK SSHTerminal::run_dlgProc(UINT message, WPARAM wParam, LPARAM lParam) {
-    switch (message) {      // 原生消息：面板窗口创建完成，初始化内部UI（输出文本框）
-    case WM_INITDIALOG:
-    {
-        if (!_hSelf) {
-            NppSSH_LogErrorAuto("面板窗口句柄无效！");
-            ::MessageBox(NULL, TEXT("面板窗口句柄无效！"), TEXT("NppSSH错误提示"), MB_OK | MB_ICONERROR);
-            return FALSE;
-        }
-        return TRUE;
-    }
-    // 面板大小变化时，自动适配输出文本框（防止遮挡/空白）（最小化关闭/打开notepad++会自动触发）
-    //case WM_SIZE:
-    //{
-    //    ::MessageBoxW(s_nppData._nppHandle, L"SSH变化3", L"NppSSH提示", MB_OK | MB_ICONINFORMATION);
-    //    //面板大小变化
-    //    if (_hOutputEdit && ::IsWindow(_hOutputEdit)) {
-    //        RECT rc;
-    //        ::GetClientRect(_hSelf, &rc);
-    //        // ====== 同步修改WM_SIZE中的编辑框位置，适配按钮栏 ======
-    //        ::SetWindowPos(
-    //            _hOutputEdit,
-    //            NULL,
-    //            5, 28 + 12, rc.right - 10, rc.bottom - 50,
-    //            SWP_NOZORDER | SWP_NOACTIVATE
-    //        );
-    //    }
-    //    return TRUE;
-    //}
-    // 处理按钮点击消息
-    case WM_COMMAND:
-    {
-        break;
-    }
-    // 新增：拦截键盘消息（仅允许在合法区域输入）
-    case WM_KEYDOWN: {
-        break;
-    }
-                   // 响应NPP停靠管理器的浮动/停靠消息，更新面板状态
-    case WM_NOTIFY:
-    {
-        break;
-    }
-
-    // 面板关闭：原生NPP消息，自动清理资源，无内存泄漏
-    case WM_CLOSE:
-    {
-        auto it = std::find(vectorSSHTerminal.begin(), vectorSSHTerminal.end(), this);      // 从全局管理数组中移除
-        if (it != vectorSSHTerminal.end()) vectorSSHTerminal.erase(it);
-
-        // 原生停靠面板清理：先隐藏，再销毁
-        this->display(false);
-        ::DestroyWindow(_hSelf);
-        this->destroy();
-        delete this;                                // 释放面板实例
-        return TRUE;
-    }
-
-    // 其他所有消息，交给DockingDlgInterface原生处理（避免NPP异常）
-    default:
-        return DockingDlgInterface::run_dlgProc(message, wParam, lParam);
-    }
-    return TRUE;
-}
-
 
 
 HWND SSHTerminal_InitTerminalEditBox(HWND hParent) {
