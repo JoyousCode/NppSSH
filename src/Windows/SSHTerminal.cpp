@@ -171,7 +171,7 @@ SSHTerminal::SSHTerminal() {
     _hSelf = nullptr;
     _hOutputEdit = nullptr;
     //_promptEndPos = 0;
-    _prompt = "[root@192.168.137.201 ~]# ";
+    //_prompt = "[root@192.168.137.201 ~]# ";
     _cmd = ""; // 或根据实际类型初始化，比如空字符串
     _oldEditProc = nullptr;
 }
@@ -230,7 +230,9 @@ HWND SSHTerminal::InitTerminalEditBox(HWND hParent) {
         SetProp(_hOutputEdit, L"SSHTerminalInstance", (HANDLE)this);
         // 4. 设置新的窗口过程
         SetWindowLongPtr(_hOutputEdit, GWLP_WNDPROC, (LONG_PTR)TerminalEditProc);
-        NppSSH_LogInfoAuto("TerminalEditProc找到终端！hWnd=" + PtrToHexStr(_hOutputEdit) + " terminal=" + PtrToHexStr(_oldEditProc) + " msg=" + PtrToHexStr(TerminalEditProc));
+        NppSSH_LogInfoAuto("编辑框子类化完成！hWnd=" + PtrToHexStr(_hOutputEdit)
+            + " 原过程：" + PtrToHexStr(_oldEditProc)
+            + " 新过程：" + PtrToHexStr(TerminalEditProc));
     }
 
     // 严格检查，避免重复添加终端实例到vector
@@ -310,6 +312,11 @@ void SSHTerminal::SizeSSHTerminal(HWND hParent) {//hParent=面板的_hSelf
 * 追加编辑框终端模拟内容
 */
 void SSHTerminal::AppendOutputText(const std::string& text) {
+    // 空文本防护，避免非法字符串触发弹框
+    if (text.empty() || !_hOutputEdit) {
+        NppSSH_LogWarnAuto("AppendOutputText: 文本或编辑框为空");
+        return;
+    }
     // 迁移自SSHPanel::AppendOutputText的原有逻辑
     NppSSH_LogInfoAuto("输出文本到输出框" + std::string(text));
     if (!_hOutputEdit) return;
@@ -322,7 +329,7 @@ void SSHTerminal::AppendOutputText(const std::string& text) {
     ::SendMessage(_hOutputEdit, EM_SETREADONLY, FALSE, 0);
 
     // 如果输出末尾包含命令提示符（如 [root@host ~]# ），更新提示符具体的内容
-    std::string appendPrompt = _prompt;
+    std::string appendPrompt =this -> GetPrompt();
     wtext += GBKToWstring(appendPrompt);
 
 
@@ -427,7 +434,7 @@ const char* SSHTerminal::GetCmd() const {
     return _cmd.c_str();
 }
 
-void SSHTerminal::SetPrompt(const std::string& promptStr) {
+void SSHTerminal::SetPrompt(const std::string promptStr) {
     _prompt = promptStr;
 }
 
@@ -489,7 +496,7 @@ void SSHTerminal_AppendOutput(int panelIndex, const std::string& text) {
     }
     panel->AppendOutputText(fixedText);
 }
-void SSHTerminal_Prompt(int panelIndex, const std::string& Prompt) {
+void SSHTerminal_Prompt(int panelIndex, const std::string Prompt) {
     SSHTerminal* panel = getSSHTerminal(panelIndex);
     panel->SetPrompt(Prompt);
 }
