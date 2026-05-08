@@ -128,10 +128,11 @@ void NppSSHDockPanel::setSSHConnected(bool state) {
             //std::string& Prompt = "[" + std::string(user) + "@" + std::string(host) + " ~]# ";
             //g_loginBanner += Prompt;
             //::SetWindowTextW(_hOutputEdit, GBKToWstring(g_loginBanner).c_str());
-            
-            SSH_AppendOutputText(this->_panelId, g_loginBanner);
             panelPrompt = "[" + std::string(user) + "@" + std::string(host) + " ~]# ";//localhost
             SSH_Prompt(this->_panelId);
+
+            SSH_AppendOutputText(this->_panelId, g_loginBanner);
+            
             // 清空 banner，防止下一次复用脏数据
             g_loginBanner.clear();
         }

@@ -31,7 +31,7 @@ public:
     const char* GetCmd() const;
 
     // 获取/设置命令提示符（迁移自Prompt）
-    void SetPrompt(const std::string& promptStr);
+    void SetPrompt(const std::string promptStr);
     const std::string& GetPrompt() const;
 
     // 获取编辑框句柄
@@ -54,7 +54,7 @@ void SSHTerminal_SizeSSHTerminal(HWND hParent,int panelIndex);
 
 
 void SSHTerminal_AppendOutput(int panelIndex, const std::string& text);
-void SSHTerminal_Prompt(int panelIndex, const std::string& Prompt);
+void SSHTerminal_Prompt(int panelIndex, const std::string Prompt);
 SSHTerminal* getSSHTerminal(int panelIndex);
 
 // 工具函数声明（日志专用）

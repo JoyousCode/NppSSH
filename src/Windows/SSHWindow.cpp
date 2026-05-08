@@ -144,6 +144,7 @@ void SSH_AppendOutputText(int panelIndex, const std::string& text) {
     SSHTerminal_AppendOutput(panelIndex, text);
 }
 void SSH_Prompt(int panelIndex) {
+    NppSSH_LogInfoAuto("当前提示词========="+g_Prompt);
     if(g_Prompt.empty()) g_Prompt= "[" + std::string(user) + "@" + std::string(host) + " ~]# ";
     SSHTerminal_Prompt(panelIndex, g_Prompt);
 }
