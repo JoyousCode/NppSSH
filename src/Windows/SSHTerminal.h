@@ -58,5 +58,6 @@ void SSHTerminal_Prompt(int panelIndex, const std::string Prompt);
 SSHTerminal* getSSHTerminal(int panelIndex);
 
 // 工具函数声明（日志专用）
+inline std::wstring GBKToWstring(const std::string& gbkStr);
 inline std::string PtrToHexStr(void* ptr);
 inline std::string IntToStr(int num);
