@@ -40,7 +40,6 @@ LRESULT CALLBACK TerminalEditProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPa
 
     LRESULT res = 0;
     try {
-        // 优化日志：移除占位符，改用字符串拼接
         NppSSH_LogInfoAuto("TerminalEditProc监听！msg=" + IntToStr(msg) + " hWnd=" + PtrToHexStr(hWnd));
 
         SSHTerminal* terminal = (SSHTerminal*)GetProp(hWnd, L"SSHTerminalInstance");
@@ -55,63 +54,231 @@ LRESULT CALLBACK TerminalEditProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPa
         }
 
         if (!terminal) {
-            // 优化日志：字符串拼接
             NppSSH_LogInfoAuto("TerminalEditProc未找到终端！hWnd=" + PtrToHexStr(hWnd) + " msg=" + IntToStr(msg));
             WNDPROC oldProc = (WNDPROC)GetWindowLongPtr(hWnd, GWLP_USERDATA);
             res = oldProc ? CallWindowProc(oldProc, hWnd, msg, wParam, lParam) : DefWindowProc(hWnd, msg, wParam, lParam);
             s_bProcessingMsg = false;
             return res;
         }
-        // 优化日志：字符串拼接
-        NppSSH_LogInfoAuto("TerminalEditProc找到终端！hWnd=" + PtrToHexStr(hWnd) + " terminal=" + PtrToHexStr(terminal) + " msg=" + IntToStr(msg));
 
         WNDPROC oldProc = (WNDPROC)GetWindowLongPtr(hWnd, GWLP_USERDATA);
         if (!oldProc) {
             oldProc = DefWindowProc;
         }
 
-        bool canEdit = terminal->IsCursorInEditableArea();
-        if (!canEdit) {
-            // 只允许Ctrl+C复制
-            if (!(msg == WM_KEYDOWN && (GetKeyState(VK_CONTROL) < 0) && wParam == 'C')) {
-                if (msg == WM_KEYDOWN || msg == WM_CHAR || msg == WM_KEYUP || msg == WM_PASTE) {
-                    // 优化日志：字符串拼接
-                    NppSSH_LogInfoAuto("【拦截】非可编辑区域，禁止操作！msg=" + IntToStr(msg) + " wParam=" + IntToStr(wParam));
-                    res = 0;
-                    s_bProcessingMsg = false;
-                    return res;
-                }
-            }
+        // 1. 全局放行复制操作（Ctrl+C / Ctrl+Insert）
+        bool isCopy = (msg == WM_KEYDOWN &&
+            ((GetKeyState(VK_CONTROL) < 0 && wParam == 'C') ||
+                (GetKeyState(VK_CONTROL) < 0 && wParam == VK_INSERT)));
+        if (isCopy) {
+            res = CallWindowProc(oldProc, hWnd, msg, wParam, lParam);
+            NppSSH_LogInfoAuto("【放行】全局复制操作！msg=" + IntToStr(msg) + " wParam=" + IntToStr(wParam));
+            s_bProcessingMsg = false;
+            return res;
         }
-        else {
-            if (msg == WM_KEYDOWN) {
-                if (wParam == VK_UP || wParam == VK_DOWN) {
-                    NppSSH_LogInfoAuto("调用历史命令！");
-                    res = 0;
-                    s_bProcessingMsg = false;
-                    return res;
-                }
-                if (wParam == VK_BACK || wParam == VK_DELETE) {
-                    std::string currentCmd = terminal->GetCmd();
-                    if (!currentCmd.empty()) {
-                        currentCmd.pop_back();
-                        terminal->SetCmd(currentCmd.c_str());
-                        NppSSH_LogInfoAuto("【同步cmd】删除后：" + currentCmd);
-                    }
+
+        // 2. 拦截上下方向键并打印日志
+        if (msg == WM_KEYDOWN && (wParam == VK_UP || wParam == VK_DOWN)) {
+            NppSSH_LogInfoAuto("调用远程服务器的历史记录");
+            NppSSH_LogInfoAuto("【拦截】上下方向键禁止操作！wParam=" + IntToStr(wParam));
+            res = 0;
+            s_bProcessingMsg = false;
+            return res;
+        }
+
+        // 3. 左右方向键放行（无控制）
+        if (msg == WM_KEYDOWN && (wParam == VK_LEFT || wParam == VK_RIGHT)) {
+            res = CallWindowProc(oldProc, hWnd, msg, wParam, lParam);
+            NppSSH_LogInfoAuto("【放行】左右方向键操作！wParam=" + IntToStr(wParam));
+            s_bProcessingMsg = false;
+            return res;
+        }
+
+        // 4. 检查是否在可编辑区域
+        bool canEdit = terminal->IsCursorInEditableArea();
+
+        // ==============================
+        // ✅ 终极修复：同时拦截 WM_KEYDOWN + WM_CHAR 退格键
+        // 禁止删除 prompt 末尾字符，其余操作全部正常
+        // ==============================
+        bool isBackspaceAtPromptEnd = false;
+        if ((msg == WM_KEYDOWN && wParam == VK_BACK) || (msg == WM_CHAR && wParam == 8)) {
+            DWORD selStart = 0;
+            ::SendMessageW(hWnd, EM_GETSEL, (WPARAM)&selStart, NULL);
+            DWORD cursorPos = selStart;
+
+            std::wstring promptW = GBKToWstring(terminal->GetPrompt());
+            int promptLen = (int)promptW.length();
+
+            int totalLen = ::GetWindowTextLengthW(hWnd);
+            std::wstring allText;
+            allText.resize(totalLen + 1);
+            ::GetWindowTextW(hWnd, &allText[0], totalLen + 1);
+
+            size_t lineStart = 0;
+            for (size_t i = cursorPos; i > 0; --i) {
+                if (allText[i] == L'\n' || allText[i] == L'\r') {
+                    lineStart = i + 1;
+                    break;
                 }
             }
-            if (msg == WM_CHAR && wParam >= 0x20 && wParam <= 0x7E) {
-                char c = (char)wParam;
-                // 修复：基于现有 _cmd 拼接，而非覆盖
-                std::string currentCmd = terminal->GetCmd(); // 获取当前cmd
-                currentCmd += c; // 追加新字符
-                terminal->SetCmd(currentCmd.c_str()); // 重新设置
-                NppSSH_LogInfoAuto("【同步cmd】追加字符：" + std::string(1, c) + " → 当前cmd：" + currentCmd);
+
+            size_t promptEndPos = lineStart + promptLen;
+            if (cursorPos == promptEndPos && canEdit) {
+                isBackspaceAtPromptEnd = true;
             }
         }
 
-        s_bProcessingMsg = false;
-        res = CallWindowProc(oldProc, hWnd, msg, wParam, lParam);
+        // 触发：禁止删除 prompt 末尾 → 直接拦截所有退格相关消息
+        if (isBackspaceAtPromptEnd) {
+            NppSSH_LogInfoAuto("【拦截】禁止删除prompt末尾字符！光标位置=" + IntToStr((int)::SendMessageW(hWnd, EM_GETSEL, 0, 0)));
+            res = 0;
+            s_bProcessingMsg = false;
+            return res;
+        }
+
+        // 5. 处理删除键逻辑（原有逻辑不变）
+        bool isDeleteKey = (msg == WM_KEYDOWN && (wParam == VK_BACK || wParam == VK_DELETE));
+        if (isDeleteKey) {
+            // 获取光标位置和前缀信息
+            DWORD selStart = 0, selEnd = 0;
+            ::SendMessageW(hWnd, EM_GETSEL, (WPARAM)&selStart, (LPARAM)&selEnd);
+            DWORD cursorPos = selStart;
+            std::string promptStr = terminal->GetPrompt();
+            std::string cmdStr = terminal->GetCmd();
+            std::wstring wPrompt = GBKToWstring(promptStr);
+            int promptLen = (int)wPrompt.length();
+            int cmdLen = (int)GBKToWstring(cmdStr).length();
+
+            // 获取光标所在行完整信息
+            int totalLen = ::GetWindowTextLengthW(hWnd);
+            std::wstring allText;
+            allText.resize(totalLen + 1);
+            ::GetWindowTextW(hWnd, &allText[0], totalLen + 1);
+
+            // 定位光标所在行的起始/结束位置
+            size_t lineStart = 0;
+            for (size_t i = cursorPos; i > 0; --i) {
+                if (allText[i] == L'\n' || allText[i] == L'\r') {
+                    lineStart = i + 1;
+                    break;
+                }
+            }
+            size_t lineEnd = allText.find_first_of(L"\r\n", cursorPos);
+            if (lineEnd == std::wstring::npos) lineEnd = allText.length();
+            std::wstring currentLine = allText.substr(lineStart, lineEnd - lineStart);
+
+            // 原有删除逻辑
+            size_t promptEndPosInLine = lineStart + promptLen;
+            bool willModifyPrompt = false;
+
+            if (wParam == VK_BACK) {
+                willModifyPrompt = (cursorPos < promptEndPosInLine);
+            }
+            else if (wParam == VK_DELETE) {
+                willModifyPrompt = (cursorPos < promptEndPosInLine);
+            }
+
+            if (willModifyPrompt) {
+                NppSSH_LogInfoAuto("【拦截】删除操作将修改prompt区域，禁止删除！光标位置=" + IntToStr((int)cursorPos));
+                res = 0;
+                s_bProcessingMsg = false;
+                return res;
+            }
+
+            // 核心判定2：仅prompt无命令时，禁止删除
+            std::wstring cmdInLine = currentLine.substr(cmdLen);
+            if (cmdLen == 0) {
+                NppSSH_LogInfoAuto("【拦截】仅存在prompt无命令，禁止删除！");
+                res = 0;
+                s_bProcessingMsg = false;
+                return res;
+            }
+
+            // 计算光标在命令中的位置，同步修改_cmd
+            std::string currentCmd = terminal->GetCmd();
+            int cursorInCmdPos = (int)(cursorPos - (lineStart + promptLen));
+            bool isCmdModified = false;
+
+            if (wParam == VK_BACK) {
+                if (cursorInCmdPos > 0 && cursorInCmdPos <= (int)currentCmd.length()) {
+                    currentCmd.erase(cursorInCmdPos - 1, 1);
+                    isCmdModified = true;
+                }
+            }
+            else if (wParam == VK_DELETE) {
+                if (cursorInCmdPos < (int)currentCmd.length()) {
+                    currentCmd.erase(cursorInCmdPos, 1);
+                    isCmdModified = true;
+                }
+            }
+
+            if (isCmdModified) {
+                terminal->SetCmd(currentCmd.c_str());
+                NppSSH_LogInfoAuto("【同步cmd】删除后：" + currentCmd);
+            }
+
+            res = CallWindowProc(oldProc, hWnd, msg, wParam, lParam);
+            NppSSH_LogInfoAuto("【放行】命令区域删除操作！wParam=" + IntToStr(wParam));
+            s_bProcessingMsg = false;
+            return res;
+        }
+
+        // 6. 处理字符输入（原有逻辑不变）
+        if (msg == WM_CHAR && wParam >= 0x20 && wParam <= 0x7E) {
+            if (!canEdit) {
+                NppSSH_LogInfoAuto("【拦截】非可编辑区域，禁止字符输入！");
+                res = 0;
+            }
+            else {
+                DWORD selStart = 0, selEnd = 0;
+                ::SendMessageW(hWnd, EM_GETSEL, (WPARAM)&selStart, (LPARAM)&selEnd);
+                DWORD cursorPos = selStart;
+                std::string promptStr = terminal->GetPrompt();
+                std::wstring wPrompt = GBKToWstring(promptStr);
+                int promptLen = (int)wPrompt.length();
+
+                int totalLen = ::GetWindowTextLengthW(hWnd);
+                std::wstring allText;
+                allText.resize(totalLen + 1);
+                ::GetWindowTextW(hWnd, &allText[0], totalLen + 1);
+                size_t lineStart = 0;
+                for (size_t i = cursorPos; i > 0; --i) {
+                    if (allText[i] == L'\n' || allText[i] == L'\r') {
+                        lineStart = i + 1;
+                        break;
+                    }
+                }
+
+                int cursorInCmdPos = (int)(cursorPos - (lineStart + promptLen));
+                std::string currentCmd = terminal->GetCmd();
+                char c = (char)wParam;
+
+                if (cursorInCmdPos <= (int)currentCmd.length()) {
+                    currentCmd.insert(cursorInCmdPos, 1, c);
+                    terminal->SetCmd(currentCmd.c_str());
+                    NppSSH_LogInfoAuto("【同步cmd】插入字符：" + std::string(1, c));
+                }
+
+                res = CallWindowProc(oldProc, hWnd, msg, wParam, lParam);
+                NppSSH_LogInfoAuto("【放行】可编辑区域字符输入！");
+            }
+        }
+        else if (!canEdit) {
+            if (msg == WM_KEYDOWN || msg == WM_CHAR || msg == WM_KEYUP || msg == WM_PASTE ||
+                msg == WM_DEADCHAR || msg == WM_SYSKEYDOWN || msg == WM_SYSCHAR) {
+                NppSSH_LogInfoAuto("【拦截】非可编辑区域，禁止操作！msg=" + IntToStr(msg) + " wParam=" + IntToStr(wParam));
+                res = 0;
+            }
+            else {
+                res = CallWindowProc(oldProc, hWnd, msg, wParam, lParam);
+            }
+        }
+        else {
+            res = CallWindowProc(oldProc, hWnd, msg, wParam, lParam);
+            NppSSH_LogInfoAuto("【放行】可编辑区域合法操作！msg=" + IntToStr(msg) + " wParam=" + IntToStr(wParam));
+        }
+
         NppSSH_LogInfoAuto("TerminalEditProc调用原过程！msg=" + IntToStr(msg) + " result=" + IntToStr((int)res));
     }
     catch (...) {
@@ -360,62 +527,50 @@ bool SSHTerminal::IsCursorInEditableArea() {
         return false;
 
     // 1. 获取光标位置
-    DWORD selStart = 0, selEnd = 0;
-    ::SendMessageW(_hOutputEdit, EM_GETSEL, (WPARAM)&selStart, (LPARAM)&selEnd);
+    DWORD selStart = 0;
+    ::SendMessageW(_hOutputEdit, EM_GETSEL, (WPARAM)&selStart, NULL);
+    DWORD cursorPos = selStart;
 
-    // 2. 获取整个文本
+    // 2. 获取整行文本
     int totalLen = ::GetWindowTextLengthW(_hOutputEdit);
     std::wstring allText;
-    allText.resize(totalLen + 2);
+    allText.resize(totalLen + 1);
     ::GetWindowTextW(_hOutputEdit, &allText[0], totalLen + 1);
 
-    // 3. 找到最后一行的起始位置
-    size_t lastRN = allText.find_last_of(L"\r\n");
-    int lastLineStart = (lastRN == std::wstring::npos) ? 0 : (int)(lastRN + 2);
-    std::wstring lastLine = allText.substr(lastLineStart); // 最后一行完整文本
+    // 3. 找光标所在行
+    size_t lineStart = 0;
+    for (size_t i = cursorPos; i > 0; --i) {
+        if (allText[i] == L'\n' || allText[i] == L'\r') {
+            lineStart = i + 1;
+            break;
+        }
+    }
 
-    // 4. 转换命令提示符/命令为宽字符（日志+判定用）
+    // 4. 拿到当前行
+    std::wstring currentLine = allText.substr(lineStart);
+
+    // 5. 拿到原始 prompt（包含末尾空格）
     std::wstring promptW = GBKToWstring(_prompt);
-    std::wstring cmdW = GBKToWstring(_cmd); // _cmd 转为宽字符
-    std::wstring promptPlusCmdW = promptW + cmdW; // 拼接 prompt+cmd
     int promptLen = (int)promptW.length();
-    int promptCmdLen = (int)promptPlusCmdW.length();
 
-    // ========== 修复：安全日志打印 ==========
+    // ==============================
+    // 正常逻辑：支持 prompt 后任意位置编辑（输入/删除命令/光标移动）
+    // 光标 >= prompt 结束位置 = 允许正常编辑
+    // ==============================
+    bool lineStartsWithPrompt = (currentLine.substr(0, promptLen) == promptW);
+    bool cursorIsAfterPrompt = (cursorPos >= lineStart + promptLen);
+    bool canEdit = lineStartsWithPrompt && cursorIsAfterPrompt;
+
+    // 日志
     NppSSH_LogInfoAuto(
-        "[调试] _prompt=" + _prompt
-        + " → _cmd=" + std::string(_cmd)
-        + " → promptW=" + WStringToLogStr(promptW)
-        + " → cmdW=" + WStringToLogStr(cmdW)
-        + " → lastLine=" + WStringToLogStr(lastLine)
-    );
-
-    // ========== 判定逻辑 ==========
-    // 条件1：原逻辑（最后一行以提示符开头 + 光标在最后一行 + 光标在提示符后）
-    bool isLastLine = (selStart >= lastLineStart);
-    bool isAfterPrompt = (selStart >= (lastLineStart + promptLen));
-    bool isPromptMatch = (lastLine.size() >= promptLen && lastLine.substr(0, promptLen) == promptW);
-
-    // 条件2：新增逻辑（最后一行包含 prompt+cmd，且光标在 prompt+cmd 后）
-    bool isPromptCmdMatch = (lastLine.size() >= promptCmdLen && lastLine.substr(0, promptCmdLen) == promptPlusCmdW);
-    bool isAfterPromptCmd = (selStart >= (lastLineStart + promptCmdLen));
-
-    // 最终可编辑判定：满足原逻辑 OR 满足新增逻辑
-    bool canEdit = (isLastLine && isPromptMatch && isAfterPrompt)
-        || (isLastLine && isPromptCmdMatch && isAfterPromptCmd);
-
-    // 优化日志：输出所有判定条件（同样使用安全转换）
-    NppSSH_LogInfoAuto(
-        "光标位置=" + std::to_string((int)selStart)
-        + " → 最后一行起始=" + std::to_string(lastLineStart)
-        + " → prompt长度=" + std::to_string(promptLen)
-        + " → prompt+cmd长度=" + std::to_string(promptCmdLen)
-        + " → 最后一行开头匹配提示符=" + std::to_string(isPromptMatch ? 1 : 0)
-        + " → 最后一行开头匹配prompt+cmd=" + std::to_string(isPromptCmdMatch ? 1 : 0)
-        + " → 光标在最后一行=" + std::to_string(isLastLine ? 1 : 0)
-        + " → 光标在提示符后=" + std::to_string(isAfterPrompt ? 1 : 0)
-        + " → 光标在prompt+cmd后=" + std::to_string(isAfterPromptCmd ? 1 : 0)
-        + " → 可编辑=" + std::to_string(canEdit ? 1 : 0)
+        "[可编辑判定] "
+        "光标位置=" + IntToStr((int)cursorPos) +
+        " 行起始=" + IntToStr((int)lineStart) +
+        " 提示符长度=" + IntToStr(promptLen) +
+        " prompt结束位置=" + IntToStr((int)(lineStart + promptLen)) +
+        " 行匹配提示符=" + IntToStr(lineStartsWithPrompt ? 1 : 0) +
+        " 光标在提示符后=" + IntToStr(cursorIsAfterPrompt ? 1 : 0) +
+        " 可编辑=" + IntToStr(canEdit ? 1 : 0)
     );
 
     return canEdit;
