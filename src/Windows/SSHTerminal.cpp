@@ -9,7 +9,8 @@ static HINSTANCE s_hInst;
 static thread_local bool s_bProcessingMsg = false;
 
 // 传统编辑框子类化过程（解决消息拦截失效问题）
-// ==============================
+// ============return res = 0;拦截编辑器的操作，自定义具体操作。
+// ============return res = CallWindowProc(oldProc, hWnd, msg, wParam, lParam);放行编辑器原始的操作，
 LRESULT CALLBACK TerminalEditProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     bool bNeedProcess = true;
     switch (msg) {
@@ -78,13 +79,13 @@ LRESULT CALLBACK TerminalEditProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPa
         }
 
         // 2. 拦截上下方向键并打印日志
-        if (msg == WM_KEYDOWN && (wParam == VK_UP || wParam == VK_DOWN)) {
-            NppSSH_LogInfoAuto("调用远程服务器的历史记录");
-            NppSSH_LogInfoAuto("【拦截】上下方向键禁止操作！wParam=" + IntToStr(wParam));
-            res = 0;
-            s_bProcessingMsg = false;
-            return res;
-        }
+        //if (msg == WM_KEYDOWN && (wParam == VK_UP || wParam == VK_DOWN)) {
+        //    NppSSH_LogInfoAuto("调用远程服务器的历史记录");
+        //    NppSSH_LogInfoAuto("【拦截】上下方向键禁止操作！wParam=" + IntToStr(wParam));
+        //    res = 0;
+        //    s_bProcessingMsg = false;
+        //    return res;
+        //}
 
         // 3. 左右方向键放行（无控制）
         if (msg == WM_KEYDOWN && (wParam == VK_LEFT || wParam == VK_RIGHT)) {
@@ -96,7 +97,13 @@ LRESULT CALLBACK TerminalEditProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPa
 
         // 4. 检查是否在可编辑区域
         bool canEdit = terminal->IsCursorInEditableArea();
-
+        if (msg == WM_KEYDOWN && (wParam == VK_UP || wParam == VK_DOWN) && canEdit) {
+            NppSSH_LogInfoAuto("调用远程服务器的历史记录，待实现去远程服务查询历史命令");// 待实现去远程服务查询历史命令
+            NppSSH_LogInfoAuto("【拦截】上下方向键禁止操作！wParam=" + IntToStr(wParam));
+            res = 0;
+            s_bProcessingMsg = false;
+            return res;
+        }
         // ==============================
         // ✅ 终极修复：同时拦截 WM_KEYDOWN + WM_CHAR 退格键
         // 禁止删除 prompt 末尾字符，其余操作全部正常
@@ -268,10 +275,10 @@ LRESULT CALLBACK TerminalEditProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPa
             if (msg == WM_KEYDOWN || msg == WM_CHAR || msg == WM_KEYUP || msg == WM_PASTE ||
                 msg == WM_DEADCHAR || msg == WM_SYSKEYDOWN || msg == WM_SYSCHAR) {
                 NppSSH_LogInfoAuto("【拦截】非可编辑区域，禁止操作！msg=" + IntToStr(msg) + " wParam=" + IntToStr(wParam));
-                res = 0;
+                res = 0;//拦截
             }
             else {
-                res = CallWindowProc(oldProc, hWnd, msg, wParam, lParam);
+                res = CallWindowProc(oldProc, hWnd, msg, wParam, lParam);//放行
             }
         }
         else {
