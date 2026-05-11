@@ -129,10 +129,12 @@ void NppSSHDockPanel::setSSHConnected(bool state) {
             //g_loginBanner += Prompt;
             //::SetWindowTextW(_hOutputEdit, GBKToWstring(g_loginBanner).c_str());
             panelPrompt = "[" + std::string(user) + "@" + std::string(host) + " ~]# ";//localhost
-            SSH_Prompt(this->_panelId);
+            //SSH_Prompt(this->_panelId);
+            //SSH_SetIsPrompt(this->_panelId, true);
 
-            SSH_AppendOutputText(this->_panelId, g_loginBanner);
-            
+            std::string appendPrompt = NppSSH_PanelPrompt(pPanel->_panelId);//测试
+            SSH_PanelPrompt(pPanel->_panelId, appendPrompt);
+            SSH_AppendOutputText(this->_panelId, g_loginBanner, true);
             // 清空 banner，防止下一次复用脏数据
             g_loginBanner.clear();
         }
@@ -403,7 +405,7 @@ void NppSSHDockPanel::initPanel() {
     if (!_hOutputEdit) {
         ::MessageBoxW(s_nppData._nppHandle, L"NPP插件环境_hOutputEdit初始化失败！", L"NppSSH调试提示", MB_OK);
     }
-    
+    SSH_AppendOutputText(_panelId, "✅ NppSSH面板已创建\r\n等待SSH连接...",false);
     
     if (_hSelf && ::IsWindow(_hSelf)) {         // 强制设置面板窗口样式，解决遮挡/闪烁问题
         DWORD dwStyle = ::GetWindowLongPtrW(_hSelf, GWL_STYLE);

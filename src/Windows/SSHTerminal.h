@@ -8,7 +8,7 @@
 #include <consoleapi2.h>
 #include <processenv.h>
 
-class SSHTerminal{
+class SSHTerminal {
 public:
     SSHTerminal();
     ~SSHTerminal();
@@ -34,8 +34,13 @@ public:
     void SetPrompt(const std::string promptStr);
     const std::string& GetPrompt() const;
 
+    // 获取/设置命令是否需要提示符
+    void SetIsPrompt(bool _isPrompt);
+    const bool GetIsPrompt() const;
+
     // 获取编辑框句柄
     HWND GetEditBoxHwnd() const { return _hOutputEdit; }
+    int GetPanelId() const { return _panelId; }
 
 private:
     HWND _hOutputEdit;
@@ -45,6 +50,7 @@ private:
     std::string _cmd;             // 回车需要执行的命令（迁移自cmd）
     std::string _prompt;               // 命令提示符（迁移自Prompt）
     WNDPROC _oldEditProc = nullptr; // 传统子类化保存旧过程
+    bool _isPrompt = false;
 };
 
 HWND SSHTerminal_InitTerminalEditBox(HWND hParent);
@@ -53,8 +59,10 @@ void SSHTerminal_resetSSHTerminal(int panelIndex);
 void SSHTerminal_SizeSSHTerminal(HWND hParent,int panelIndex);
 
 
-void SSHTerminal_AppendOutput(int panelIndex, const std::string& text);
-void SSHTerminal_Prompt(int panelIndex, const std::string Prompt);
+void SSHTerminal_AppendOutput(int panelIndex, const std::string& text,bool isPrompt);
+void SSHTerminal_PanelPrompt(int panelIndex, std::string prompt);
+void SSHTerminal_SetIsPrompt(int panelIndex, bool isPrompt);
+
 SSHTerminal* getSSHTerminal(int panelIndex);
 
 // 工具函数声明（日志专用）

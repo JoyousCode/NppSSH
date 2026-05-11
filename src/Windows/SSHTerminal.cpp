@@ -375,7 +375,6 @@ HWND SSHTerminal::InitTerminalEditBox(HWND hParent) {
         ::MessageBoxW(s_nppData._nppHandle, L"SSH_InitTerminalEditBox: 编辑框句柄无效！", L"NppSSH调试提示", MB_OK | MB_ICONERROR);
         return nullptr;
     }
-    ::SetWindowTextW(_hOutputEdit, L"✅ NppSSH面板已创建\r\n等待SSH连接..._hOutputEdit");
     // 设置样式
     DWORD style = ::GetWindowLongPtrW(_hOutputEdit, GWL_STYLE);
     style |= ES_MULTILINE | ES_AUTOVSCROLL | ES_AUTOHSCROLL | WS_VSCROLL;
@@ -412,7 +411,7 @@ HWND SSHTerminal::InitTerminalEditBox(HWND hParent) {
         NppSSH_LogInfoAuto("终端实例已存在于vector，跳过添加");
     }
 
-    MessageBoxW(s_nppData._nppHandle, L"终端编辑框初始化完成 ✅", L"成功", MB_OK);
+    //MessageBoxW(s_nppData._nppHandle, L"终端编辑框初始化完成 ✅", L"成功", MB_OK);
     return _hOutputEdit;
 }
 /*
@@ -495,9 +494,15 @@ void SSHTerminal::AppendOutputText(const std::string& text) {
     //追加文本（只读控件临时取消只读）
     ::SendMessage(_hOutputEdit, EM_SETREADONLY, FALSE, 0);
 
-    // 如果输出末尾包含命令提示符（如 [root@host ~]# ），更新提示符具体的内容
-    std::string appendPrompt =this -> GetPrompt();
-    wtext += GBKToWstring(appendPrompt);
+    // 如果输出需要追加命令提示符（如 [root@host ~]# ），更新提示符具体的内容
+    if (this->GetIsPrompt()) {
+        //std::string appendPrompt = NppSSH_PanelPrompt(this ->_panelId);
+        std::string appendPrompt = this -> GetPrompt();
+        NppSSH_LogInfoAuto("追加的命令内容=========="+ appendPrompt);
+
+        wtext += GBKToWstring(appendPrompt);
+    }
+    
 
 
     // 光标移到末尾，追加文本
@@ -523,6 +528,7 @@ void SSHTerminal::AppendOutputText(const std::string& text) {
 * 控制键盘的输入操作
 */
 bool SSHTerminal::IsCursorInEditableArea() {
+
     if (!_hOutputEdit || !::IsWindow(_hOutputEdit))
         return false;
 
@@ -559,7 +565,7 @@ bool SSHTerminal::IsCursorInEditableArea() {
     // ==============================
     bool lineStartsWithPrompt = (currentLine.substr(0, promptLen) == promptW);
     bool cursorIsAfterPrompt = (cursorPos >= lineStart + promptLen);
-    bool canEdit = lineStartsWithPrompt && cursorIsAfterPrompt;
+    bool canEdit = lineStartsWithPrompt && cursorIsAfterPrompt && this->GetIsPrompt();
 
     // 日志
     NppSSH_LogInfoAuto(
@@ -596,7 +602,8 @@ void SSHTerminal::SetPrompt(const std::string promptStr) {
 const std::string& SSHTerminal::GetPrompt() const {
     return _prompt;
 }
-
+void SSHTerminal::SetIsPrompt(bool isPrompt) { _isPrompt = isPrompt; }
+const bool SSHTerminal::GetIsPrompt() const{ return _isPrompt; }
 
 HWND SSHTerminal_InitTerminalEditBox(HWND hParent) {
     SSHTerminal* _SSHTerminal = new SSHTerminal();
@@ -629,14 +636,18 @@ void SSHTerminal_SizeSSHTerminal(HWND hParent,int panelIndex) {
 
 }
 
-void SSHTerminal_AppendOutput(int panelIndex, const std::string& text) {
+void SSHTerminal_AppendOutput(int panelIndex, const std::string& text, bool isPrompt) {
     NppSSH_LogInfoAuto("输出指定面板" + std::to_string(panelIndex));
     NppSSH_LogInfoAuto("输出指定面板" + std::string(text));
     NppSSH_LogInfoAuto("输出指定面板" + std::to_string(vectorSSHTerminal.size()));
 
     if (panelIndex < 0) return;
-    panelIndex = panelIndex - 1;
-    SSHTerminal* panel = vectorSSHTerminal[panelIndex];
+    //panelIndex = panelIndex - 1;
+    //SSHTerminal* panel = vectorSSHTerminal[panelIndex];
+    SSHTerminal* panel = getSSHTerminal(panelIndex);
+    panel->SetIsPrompt(isPrompt);
+    //panel->SetPrompt(SSH_Prompt(panel->GetPanelId()));
+
     if (!panel || !panel->GetOutputEditHandle())
         return;
     std::string fixedText;
@@ -651,9 +662,14 @@ void SSHTerminal_AppendOutput(int panelIndex, const std::string& text) {
     }
     panel->AppendOutputText(fixedText);
 }
-void SSHTerminal_Prompt(int panelIndex, const std::string Prompt) {
+void SSHTerminal_PanelPrompt(int panelIndex, const std::string Prompt) {
     SSHTerminal* panel = getSSHTerminal(panelIndex);
+    NppSSH_LogInfoAuto("panel========"+ std::to_string(panelIndex) +"Prompt=========="+Prompt);
     panel->SetPrompt(Prompt);
+}
+void SSHTerminal_SetIsPrompt(int panelIndex, bool isPrompt) {
+    SSHTerminal* panel = getSSHTerminal(panelIndex);
+    panel->SetIsPrompt(isPrompt);
 }
 
 
@@ -677,5 +693,6 @@ SSHTerminal* getSSHTerminal(int panelIndex) {
 
     if (panelIndex < 1) return nullptr;
     panelIndex = panelIndex - 1;
+    NppSSH_LogInfoAuto("最终面板下标============"+std::to_string(panelIndex));
     return vectorSSHTerminal[panelIndex];
 }
