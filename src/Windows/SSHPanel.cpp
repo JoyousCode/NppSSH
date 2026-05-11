@@ -16,8 +16,6 @@ static NppSSHDockPanel* pPanel = nullptr;
 static std::atomic<bool> s_isConnecting = false;
 //static std::atomic<bool> s_isPanelChangingConnection = false;
 
-//面板上的提示词
-static std::string panelPrompt;
 HWND SSHPanel_getLoginPanel() {
     return pPanel->getLoginPanel();
 }
@@ -37,9 +35,6 @@ NppData& SSHPanel_GetGlobalNppData() {
 
 HINSTANCE& SSHPanel_GetGlobalHInst() {
     return s_hInst;
-}
-std::string& SSHPanel_Prompt() {
-    return panelPrompt;
 }
 int& SSH_GetPanelId() { return s_panelId; }//获取点击连接图标面板索引
 int& SSHPanel_iconSize() { return s_iconSize; }//获取点击连接图标面板索引
@@ -125,14 +120,8 @@ void NppSSHDockPanel::setSSHConnected(bool state) {
                 st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond,
                 host);
             g_loginBanner += currentTime;
-            //std::string& Prompt = "[" + std::string(user) + "@" + std::string(host) + " ~]# ";
-            //g_loginBanner += Prompt;
-            //::SetWindowTextW(_hOutputEdit, GBKToWstring(g_loginBanner).c_str());
-            panelPrompt = "[" + std::string(user) + "@" + std::string(host) + " ~]# ";//localhost
-            //SSH_Prompt(this->_panelId);
-            //SSH_SetIsPrompt(this->_panelId, true);
 
-            std::string appendPrompt = NppSSH_PanelPrompt(pPanel->_panelId);//测试
+            std::string appendPrompt = NppSSH_PanelPrompt(pPanel->_panelId);
             SSH_PanelPrompt(pPanel->_panelId, appendPrompt);
             SSH_AppendOutputText(this->_panelId, g_loginBanner, true);
             // 清空 banner，防止下一次复用脏数据

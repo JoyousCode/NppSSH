@@ -590,7 +590,6 @@ void SSHConnection_BindPanelIndex(int panelIndex) {
     if (info.user && info.host) {
         info.prompt = "[" + std::string(user) + "@" + std::string(host) + " ~]# ";
     }
-
     else {
         info.prompt = "[unknown@unknown ~]# ";
     }
@@ -625,6 +624,7 @@ void SSHConnection_DisconnectByPanelIndex(int panelIndex) {
     info.session = nullptr;
     info.sock = INVALID_SOCKET;
     info.connected = false;
+    info.prompt.clear();
 
     // 如果断开的是最后一个面板，同步全局状态
     if (panelIndex == s_lastPanelIndex) {
@@ -693,11 +693,6 @@ std::string SSHConnection_Prompt(int panelIndex) {
     SSHConnInfo& info = it->second;
 
     std::string panelPrompt = info.prompt.empty() ? "unknown" : info.prompt;
-
-
-    // 6. 日志输出（使用拷贝后的字符串，避免原指针失效）
-    NppSSH_LogInfoAuto("SSHConnection_Prompt 面板" + std::to_string(panelIndex)
-        + " 获取成功: " + panelPrompt);
 
     return panelPrompt;
 

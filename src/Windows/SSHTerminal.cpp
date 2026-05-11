@@ -496,11 +496,10 @@ void SSHTerminal::AppendOutputText(const std::string& text) {
 
     // 如果输出需要追加命令提示符（如 [root@host ~]# ），更新提示符具体的内容
     if (this->GetIsPrompt()) {
-        //std::string appendPrompt = NppSSH_PanelPrompt(this ->_panelId);
         std::string appendPrompt = this -> GetPrompt();
-        NppSSH_LogInfoAuto("追加的命令内容=========="+ appendPrompt);
-
         wtext += GBKToWstring(appendPrompt);
+        NppSSH_LogInfoAuto("面板==" + std::to_string(_panelId)
+            + "追加的提示词=========" + appendPrompt);
     }
     
 
@@ -664,7 +663,6 @@ void SSHTerminal_AppendOutput(int panelIndex, const std::string& text, bool isPr
 }
 void SSHTerminal_PanelPrompt(int panelIndex, const std::string Prompt) {
     SSHTerminal* panel = getSSHTerminal(panelIndex);
-    NppSSH_LogInfoAuto("panel========"+ std::to_string(panelIndex) +"Prompt=========="+Prompt);
     panel->SetPrompt(Prompt);
 }
 void SSHTerminal_SetIsPrompt(int panelIndex, bool isPrompt) {
@@ -693,6 +691,5 @@ SSHTerminal* getSSHTerminal(int panelIndex) {
 
     if (panelIndex < 1) return nullptr;
     panelIndex = panelIndex - 1;
-    NppSSH_LogInfoAuto("最终面板下标============"+std::to_string(panelIndex));
     return vectorSSHTerminal[panelIndex];
 }
