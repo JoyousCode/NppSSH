@@ -92,7 +92,7 @@ void NppSSH_LogError(const std::string& event, const std::string& content);
 
 // 转发SSHTerminal的函数声明（SSH_前缀 + 原函数名）
 // 初始化终端编辑框
-HWND SSH_InitTerminalEditBox(HWND hParent);
+HWND SSH_InitTerminalEditBox(HWND hParent, int panelId);
 // 断开终端编辑框
 void SSH_disconnectTerminalEditBox(int panelIndex);
 // 输出文本到终端，isPrompt设置追加后是否追加提示词

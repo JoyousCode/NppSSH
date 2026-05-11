@@ -131,8 +131,8 @@ void NppSSH_LogError(const std::string& event, const std::string& content) {
 
 
 // 转发函数实现（仅调用SSHTerminal对应方法，无任何业务逻辑修改）
-HWND SSH_InitTerminalEditBox(HWND hParent) {
-    return SSHTerminal_InitTerminalEditBox(hParent);
+HWND SSH_InitTerminalEditBox(HWND hParent, int panelId) {
+    return SSHTerminal_InitTerminalEditBox(hParent, panelId);
 }
 void SSH_disconnectTerminalEditBox(int panelIndex) {
     SSHTerminal_disconnectTerminalEditBox(panelIndex);

@@ -41,6 +41,8 @@ public:
     // 获取编辑框句柄
     HWND GetEditBoxHwnd() const { return _hOutputEdit; }
     int GetPanelId() const { return _panelId; }
+    void SetPanelId(int panelId) { _panelId = panelId; }
+
 
 private:
     HWND _hOutputEdit;
@@ -53,7 +55,7 @@ private:
     bool _isPrompt = false;
 };
 
-HWND SSHTerminal_InitTerminalEditBox(HWND hParent);
+HWND SSHTerminal_InitTerminalEditBox(HWND hParent,int panelId);
 void SSHTerminal_disconnectTerminalEditBox(int panelIndex);
 void SSHTerminal_resetSSHTerminal(int panelIndex);
 void SSHTerminal_SizeSSHTerminal(HWND hParent,int panelIndex);
