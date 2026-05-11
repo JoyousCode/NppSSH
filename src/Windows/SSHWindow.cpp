@@ -149,9 +149,7 @@ void SSH_AppendOutputText(int panelIndex, const std::string& text, bool isPrompt
 void SSH_PanelPrompt(int panelIndex, const std::string prompt) {
     SSHTerminal_PanelPrompt(panelIndex, prompt);
 }
-/*
-* 直接设置是否需要提示词
-*/
+// 直接设置是否需要提示词
 void SSH_SetIsPrompt(int panelIndex, bool isPrompt) {
     SSHTerminal_SetIsPrompt(panelIndex, isPrompt);
 }
