@@ -11,6 +11,7 @@ struct SSHConnInfo {
     char* user = nullptr;
     char* pass = nullptr;
     int port = 22;
+    std::string prompt;
 };
 // 全局存储：每个面板独立的连接资源（索引对应面板）
 static std::unordered_map<int, SSHConnInfo> s_panelConnections;
@@ -586,6 +587,14 @@ void SSHConnection_BindPanelIndex(int panelIndex) {
     info.user = _strdup(ssh_user);
     info.pass = _strdup(ssh_pass);
     info.port = ssh_port;
+    if (info.user && info.host) {
+        info.prompt = "[" + std::string(user) + "@" + std::string(host) + " ~]# ";
+    }
+
+    else {
+        info.prompt = "[unknown@unknown ~]# ";
+    }
+    
 
     s_panelConnections[panelIndex] = info;
     s_lastPanelIndex = panelIndex;
@@ -662,4 +671,34 @@ std::string SSHConnection_ExecuteCommand(int panelIndex, const std::string& cmd)
     if (!err.empty()) result += "[错误] " + err + "\n";
     if (exitCode != 0) result += "[退出码:" + std::to_string(exitCode) + "]\n";
     return result;
+}
+std::string SSHConnection_Prompt(int panelIndex) {
+    // 1. 严格校验面板索引合法性（防止负数/越界索引）
+    if (panelIndex < 0) {
+        NppSSH_LogErrorAuto("SSHConnection_Prompt 面板索引非法: " + std::to_string(panelIndex));
+        return "[unknown@unknown ~]# ";
+    }
+
+    // 2. 加锁保护全局容器（防止遍历过程中容器被修改导致崩溃）
+    static std::mutex s_panelConnMutex;
+    std::lock_guard<std::mutex> lock(s_panelConnMutex);
+
+    // 3. 查找面板连接信息（安全判空）
+    auto it = s_panelConnections.find(panelIndex);
+    if (it == s_panelConnections.end()) {
+        NppSSH_LogInfoAuto("SSHConnection_Prompt 面板" + std::to_string(panelIndex) + " 未找到连接信息");
+        return "[unknown@unknown ~]# ";
+    }
+
+    SSHConnInfo& info = it->second;
+
+    std::string panelPrompt = info.prompt.empty() ? "unknown" : info.prompt;
+
+
+    // 6. 日志输出（使用拷贝后的字符串，避免原指针失效）
+    NppSSH_LogInfoAuto("SSHConnection_Prompt 面板" + std::to_string(panelIndex)
+        + " 获取成功: " + panelPrompt);
+
+    return panelPrompt;
+
 }

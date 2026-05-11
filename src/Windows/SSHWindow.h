@@ -73,6 +73,7 @@ void DisconnectPanel(int panelIndex);
 void OnSSHConnected(int panelIndex);
 // 新增：命令执行中转接口声明
 std::string NppSSH_ExecuteCommand(int panelIndex, const std::string& cmd); // 执行SSH命令
+std::string NppSSH_PanelPrompt(int panelIndex);
 
 
 
@@ -95,7 +96,9 @@ HWND SSH_InitTerminalEditBox(HWND hParent);
 // 断开终端编辑框
 void SSH_disconnectTerminalEditBox(int panelIndex);
 // 输出文本到终端
-void SSH_AppendOutputText(int panelIndex, const std::string& text);
-void SSH_Prompt(int panelIndex);
+void SSH_AppendOutputText(int panelIndex, const std::string& text, bool isPrompt);
+void SSH_PanelPrompt(int panelIndex, const std::string prompt);
+void SSH_SetIsPrompt(int panelIndex, bool isPrompt);
+
 void SSH_resetSSHTerminal(int panelIndex);
 void SSH_SizeSSHTerminal(HWND hParent, int panelIndex);
