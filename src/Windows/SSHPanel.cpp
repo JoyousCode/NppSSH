@@ -390,7 +390,7 @@ void NppSSHDockPanel::initPanel() {
     //  从资源中获取EDIT控件句柄（不再手动CreateWindow）
     //_hOutputEdit = ::GetDlgItem(_hSelf, IDC_OUTPUT_EDIT);
     s_iconSize = _iconSize;
-    _hOutputEdit = SSH_InitTerminalEditBox(_hSelf);
+    _hOutputEdit = SSH_InitTerminalEditBox(_hSelf, _panelId);
     if (!_hOutputEdit) {
         ::MessageBoxW(s_nppData._nppHandle, L"NPP插件环境_hOutputEdit初始化失败！", L"NppSSH调试提示", MB_OK);
     }

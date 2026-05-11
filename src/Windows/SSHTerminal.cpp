@@ -498,7 +498,7 @@ void SSHTerminal::AppendOutputText(const std::string& text) {
     if (this->GetIsPrompt()) {
         std::string appendPrompt = this -> GetPrompt();
         wtext += GBKToWstring(appendPrompt);
-        NppSSH_LogInfoAuto("面板==" + std::to_string(_panelId)
+        NppSSH_LogInfoAuto("面板==" + std::to_string(this->_panelId)
             + "追加的提示词=========" + appendPrompt);
     }
     
@@ -604,8 +604,9 @@ const std::string& SSHTerminal::GetPrompt() const {
 void SSHTerminal::SetIsPrompt(bool isPrompt) { _isPrompt = isPrompt; }
 const bool SSHTerminal::GetIsPrompt() const{ return _isPrompt; }
 
-HWND SSHTerminal_InitTerminalEditBox(HWND hParent) {
+HWND SSHTerminal_InitTerminalEditBox(HWND hParent, int panelId) {
     SSHTerminal* _SSHTerminal = new SSHTerminal();
+    _SSHTerminal->SetPanelId(panelId);
     return _SSHTerminal->InitTerminalEditBox(hParent);
 }
 void SSHTerminal_disconnectTerminalEditBox(int panelIndex) {
