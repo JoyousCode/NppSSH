@@ -147,7 +147,6 @@ void SSH_AppendOutputText(int panelIndex, const std::string& text, bool isPrompt
     SSHTerminal_AppendOutput(panelIndex, text, isPrompt);
 }
 void SSH_PanelPrompt(int panelIndex, const std::string prompt) {
-    NppSSH_LogInfoAuto("面板============" + std::to_string(panelIndex)+"提示词====" + prompt);
     SSHTerminal_PanelPrompt(panelIndex, prompt);
 }
 /*

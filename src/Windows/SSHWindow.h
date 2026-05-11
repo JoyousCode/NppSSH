@@ -95,8 +95,9 @@ void NppSSH_LogError(const std::string& event, const std::string& content);
 HWND SSH_InitTerminalEditBox(HWND hParent);
 // 断开终端编辑框
 void SSH_disconnectTerminalEditBox(int panelIndex);
-// 输出文本到终端
+// 输出文本到终端，isPrompt设置追加后是否追加提示词
 void SSH_AppendOutputText(int panelIndex, const std::string& text, bool isPrompt);
+// 设置提示词
 void SSH_PanelPrompt(int panelIndex, const std::string prompt);
 void SSH_SetIsPrompt(int panelIndex, bool isPrompt);
 
