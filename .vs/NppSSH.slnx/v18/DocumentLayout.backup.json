@@ -3,16 +3,16 @@
   "WorkspaceRootPath": "C:\\Users\\Admin\\Desktop\\project\\C\u002B\u002B(notepad\u002B\u002B)\\NppSSH\\",
   "Documents": [
     {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\Admin\\Desktop\\project\\C\u002B\u002B(notepad\u002B\u002B)\\NppSSH\\src\\Windows\\SSHTerminal.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\Windows\\SSHTerminal.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\Admin\\Desktop\\project\\C\u002B\u002B(notepad\u002B\u002B)\\NppSSH\\src\\Windows\\SSHPanel.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
       "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\Windows\\SSHPanel.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\Admin\\Desktop\\project\\C\u002B\u002B(notepad\u002B\u002B)\\NppSSH\\src\\Windows\\SSHPanel.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
       "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\Windows\\SSHPanel.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\Admin\\Desktop\\project\\C\u002B\u002B(notepad\u002B\u002B)\\NppSSH\\src\\Windows\\SSHTerminal.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
-      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\Windows\\SSHTerminal.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\Admin\\Desktop\\project\\C\u002B\u002B(notepad\u002B\u002B)\\NppSSH\\src\\Windows\\SSHTerminal.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
@@ -116,7 +116,7 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": 17,
+          "SelectedChildIndex": 2,
           "Children": [
             {
               "$type": "Document",
@@ -144,13 +144,13 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 2,
+              "DocumentIndex": 0,
               "Title": "SSHTerminal.cpp",
               "DocumentMoniker": "C:\\Users\\Admin\\Desktop\\project\\C\u002B\u002B(notepad\u002B\u002B)\\NppSSH\\src\\Windows\\SSHTerminal.cpp",
               "RelativeDocumentMoniker": "src\\Windows\\SSHTerminal.cpp",
               "ToolTip": "C:\\Users\\Admin\\Desktop\\project\\C\u002B\u002B(notepad\u002B\u002B)\\NppSSH\\src\\Windows\\SSHTerminal.cpp",
               "RelativeToolTip": "src\\Windows\\SSHTerminal.cpp",
-              "ViewState": "AgIAABoCAAAAAAAAAAAowCECAAAEAAAAAAAAAA==",
+              "ViewState": "AgIAAHcAAAAAAAAAAAAAAH8AAAAmAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
               "WhenOpened": "2026-04-30T01:35:17.587Z",
               "EditorCaption": ""
@@ -325,20 +325,19 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 0,
+              "DocumentIndex": 1,
               "Title": "SSHPanel.cpp",
               "DocumentMoniker": "C:\\Users\\Admin\\Desktop\\project\\C\u002B\u002B(notepad\u002B\u002B)\\NppSSH\\src\\Windows\\SSHPanel.cpp",
               "RelativeDocumentMoniker": "src\\Windows\\SSHPanel.cpp",
               "ToolTip": "C:\\Users\\Admin\\Desktop\\project\\C\u002B\u002B(notepad\u002B\u002B)\\NppSSH\\src\\Windows\\SSHPanel.cpp",
               "RelativeToolTip": "src\\Windows\\SSHPanel.cpp",
-              "ViewState": "AgIAABwCAAAAAAAAAAAAACUCAAAZAAAAAAAAAA==",
+              "ViewState": "AgIAABwCAAAAAAAAAAAAACMCAABDAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
-              "WhenOpened": "2026-04-17T08:40:29.416Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-04-17T08:40:29.416Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 1,
+              "DocumentIndex": 2,
               "Title": "SSHPanel.h",
               "DocumentMoniker": "C:\\Users\\Admin\\Desktop\\project\\C\u002B\u002B(notepad\u002B\u002B)\\NppSSH\\src\\Windows\\SSHPanel.h",
               "RelativeDocumentMoniker": "src\\Windows\\SSHPanel.h",
@@ -346,8 +345,7 @@
               "RelativeToolTip": "src\\Windows\\SSHPanel.h",
               "ViewState": "AgIAABsAAAAAAAAAAAAYwCMAAAA6AAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000680|",
-              "WhenOpened": "2026-03-27T03:09:54.857Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-03-27T03:09:54.857Z"
             },
             {
               "$type": "Document",

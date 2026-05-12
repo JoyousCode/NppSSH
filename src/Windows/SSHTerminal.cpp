@@ -110,6 +110,63 @@ LRESULT CALLBACK TerminalEditProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPa
             s_bProcessingMsg = false;
             return res;
         }
+
+        // ========== 新增：回车按键处理逻辑 ==========
+        if (msg == WM_KEYDOWN && (wParam == VK_RETURN || wParam == 13) && canEdit) {
+            NppSSH_LogInfoAuto("【执行】回车触发命令执行！光标位置=" + IntToStr((int)::SendMessageW(hWnd, EM_GETSEL, 0, 0)));
+
+            // 1. 获取终端当前输入的命令（_cmd中存储的是用户输入的命令）
+            std::string cmdToExecute = terminal->GetCmd();
+            if (cmdToExecute.empty()) {
+                NppSSH_LogInfoAuto("【跳过】无命令可执行，仅换行");
+
+                // 手动追加换行 + 提示符 
+                HWND hEdit = terminal->GetEditBoxHwnd();
+
+                // 手动追加换行 + 新提示符（完全模拟正常换行行为）
+                SSHTerminal_AppendOutput(terminal->GetPanelId(), "\r\n", true);
+                if (IsWindow(hEdit)) {
+                    // 强制重置焦点状态，避免键盘输入卡顿
+                    SendMessage(hEdit, WM_KILLFOCUS, 0, 0);
+                    SendMessage(hEdit, WM_SETFOCUS, 0, 0);
+                    // 滚动光标到最新位置（视觉反馈）
+                    SendMessage(hEdit, EM_SCROLLCARET, 0, 0);
+                }
+                // 拦截回车，不让系统处理（避免只读冲突 + 输入锁死）
+                res = 0;
+                s_bProcessingMsg = false;
+                return res;
+                // ==========================================================================
+            }
+
+            // 2. 执行远程命令（核心逻辑）
+            std::string result = NppSSH_ExecuteCommand(terminal->GetPanelId(), cmdToExecute);
+            NppSSH_LogInfoAuto("【命令执行结果】面板ID=" + IntToStr(terminal->GetPanelId())
+                + " 命令=" + cmdToExecute + " 结果长度=" + IntToStr(result.length()));
+
+            // 3. 追加执行结果到终端（带提示符）
+            SSHTerminal_AppendOutput(terminal->GetPanelId(), "\r\n" + result, true);
+
+            // 4. 重置终端命令缓存（执行后清空当前命令）
+            terminal->SetCmd("");
+
+            // 5. 恢复光标和编辑状态（关键：保证回车后终端可继续输入）
+            HWND hEdit = terminal->GetEditBoxHwnd();
+            if (IsWindow(hEdit)) {
+                // 强制重置焦点状态，避免键盘输入卡顿
+                SendMessage(hEdit, WM_KILLFOCUS, 0, 0);
+                SendMessage(hEdit, WM_SETFOCUS, 0, 0);
+                // 滚动光标到最新位置（视觉反馈）
+                SendMessage(hEdit, EM_SCROLLCARET, 0, 0);
+            }
+
+            // 6. 拦截回车的默认行为（避免重复换行）
+            res = 0;
+            s_bProcessingMsg = false;
+            return res;
+        }
+        // ========== 回车逻辑结束 ==========
+
         // ==============================
         // ✅ 终极修复：同时拦截 WM_KEYDOWN + WM_CHAR 退格键
         // 禁止删除 prompt 末尾字符，其余操作全部正常
