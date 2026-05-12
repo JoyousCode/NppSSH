@@ -78,15 +78,6 @@ LRESULT CALLBACK TerminalEditProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPa
             return res;
         }
 
-        // 2. 拦截上下方向键并打印日志
-        //if (msg == WM_KEYDOWN && (wParam == VK_UP || wParam == VK_DOWN)) {
-        //    NppSSH_LogInfoAuto("调用远程服务器的历史记录");
-        //    NppSSH_LogInfoAuto("【拦截】上下方向键禁止操作！wParam=" + IntToStr(wParam));
-        //    res = 0;
-        //    s_bProcessingMsg = false;
-        //    return res;
-        //}
-
         // 3. 左右方向键放行（无控制）
         if (msg == WM_KEYDOWN && (wParam == VK_LEFT || wParam == VK_RIGHT)) {
             res = CallWindowProc(oldProc, hWnd, msg, wParam, lParam);
@@ -100,6 +91,21 @@ LRESULT CALLBACK TerminalEditProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPa
         if (msg == WM_KEYDOWN && (wParam == VK_UP || wParam == VK_DOWN) && canEdit) {
             NppSSH_LogInfoAuto("调用远程服务器的历史记录，待实现去远程服务查询历史命令");// 待实现去远程服务查询历史命令
             NppSSH_LogInfoAuto("【拦截】上下方向键禁止操作！wParam=" + IntToStr(wParam));
+            std::string result = NppSSH_ExecuteCommand(terminal -> GetPanelId(),"ls");
+            SSHTerminal_AppendOutput(terminal -> GetPanelId(),"\r\n"+result,true);
+            // ========== 追加内容后恢复光标和编辑状态 ==========
+            HWND hEdit = terminal->GetEditBoxHwnd();
+            if (IsWindow(hEdit))
+            {
+                // 强制模拟一次“失去焦点 + 重新获得焦点”，重置键盘输入状态
+                SendMessage(hEdit, WM_KILLFOCUS, 0, 0);
+                SendMessage(hEdit, WM_SETFOCUS, 0, 0);
+
+                // 刷新光标显示
+                //SendMessage(hEdit, EM_SCROLLCARET, 0, 0);
+            }
+            // ======================================================
+
             res = 0;
             s_bProcessingMsg = false;
             return res;
@@ -521,10 +527,23 @@ void SSHTerminal::AppendOutputText(const std::string& text) {
     // 恢复子类化
     SetWindowLongPtr(_hOutputEdit, GWLP_WNDPROC, (LONG_PTR)tempOldProc);
 
-    //自动滚动到底部
+
+    // ========== 精准定位光标到新提示符末尾 ==========
+    // 1. 重新获取追加后的总长度（避免wtext拼接导致的长度偏差）
     DWORD len_total = ::GetWindowTextLengthW(_hOutputEdit);
+    // 2. 强制选中末尾（确保光标在最后）
     ::SendMessageW(_hOutputEdit, EM_SETSEL, len_total, len_total);
+    // 3. 滚动到光标位置（视觉反馈）
     ::SendMessageW(_hOutputEdit, EM_SCROLLCARET, 0, 0);
+    // 4. 确保编辑框保留焦点（关键：避免追加后焦点丢失）
+    if (::GetFocus() != _hOutputEdit) {
+        ::SetFocus(_hOutputEdit);
+    }
+    // ======================================================
+    ////自动滚动到底部
+    //DWORD len_total = ::GetWindowTextLengthW(_hOutputEdit);
+    //::SendMessageW(_hOutputEdit, EM_SETSEL, len_total, len_total);
+    //::SendMessageW(_hOutputEdit, EM_SCROLLCARET, 0, 0);
     NppSSH_LogInfoAuto("文本追加完成，当前输出框总长度：" + IntToStr((int)len_total)
         + "，追加长度：" + IntToStr((int)text.length()));
 }
