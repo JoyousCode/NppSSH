@@ -545,6 +545,8 @@ INT_PTR CALLBACK NppSSHDockPanel::SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM 
     }
 
     case WM_DESTROY:
+        ::SetFocus(pPanel->GetOutputEditHandle());//销毁时候要将焦点放到终端模拟器
+
         pPanel = nullptr;
         NppSSH_LogInfoAuto("登录对话框销毁");
         return TRUE;

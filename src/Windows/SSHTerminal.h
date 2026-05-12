@@ -42,6 +42,7 @@ public:
     HWND GetEditBoxHwnd() const { return _hOutputEdit; }
     int GetPanelId() const { return _panelId; }
     void SetPanelId(int panelId) { _panelId = panelId; }
+    WNDPROC GetOldEditProc() { return _oldEditProc; }
 
 
 private:
