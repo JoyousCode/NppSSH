@@ -12,8 +12,17 @@ struct SSHConnInfo {
     char* pass = nullptr;
     int port = 22;
     std::string prompt;
+    std::string dirFile;//面板上所在文件夹的全路径
+    std::string showDir;//面板上具体要显示的当前所在文件夹的名称
+    LIBSSH2_CHANNEL* shellChannel = nullptr; // 新增：持久化shell通道
+    //bool shellCreated = false;               // 新增：shell是否已创建
+    //std::thread* heartbeatThread = nullptr; // 新增：心跳线程
+    //std::atomic<bool> stopHeartbeat = false; // 新增：停止心跳标记
 };
 // 全局存储：每个面板独立的连接资源（索引对应面板）
+
+// 全局 map 管理心跳停止标记
+static std::unordered_map<int, bool> g_heartbeatStop;
 static std::unordered_map<int, SSHConnInfo> s_panelConnections;
 static int s_lastPanelIndex = -1;
 std::string loginBanner;
@@ -357,41 +366,37 @@ bool SSHConnection_Connect(const char* host, int port, const char* user, const c
             }
 
             //执行命令查询上一次登录时间
-            char output[2048] = { 0 };
-            LIBSSH2_CHANNEL* channel = libssh2_channel_open_session(session);
-            if (channel) {
-                // 执行查询上一次登录的命令
-                // 全兼容命令：CentOS 5~9 + Ubuntu 14~24 全部通用（只提取 日期时间 + 来源IP，格式完全对齐）
-                const char* cmd =
-                    "last -n 1 $USER 2>/dev/null "
-                    "| awk 'NR==1 { "
-                    "    if (NF>=8) { "
-                    "        printf \"Last login: %s %s %s %s %s from %s\", $4, $5, $6, $7, $8, $3 "
-                    "    } else if (NF>=6) { "
-                    "        printf \"Last login: %s %s %s from %s\", $4, $5, $6, $3 "
-                    "    } "
-                    "}' "
-                    "| sed 's/  / /g'"; // 清理多余空格
-                if (libssh2_channel_exec(channel, cmd) == 0) {
-                    char buf[1024] = { 0 };
-                    std::string lastLogin;
-                    while (libssh2_channel_read(channel, buf, sizeof(buf) - 1) > 0)
-                    {
-                        lastLogin += buf;
-                        memset(buf, 0, sizeof(buf));
-                    }
-                    // 清理多余换行
-                    while (!lastLogin.empty() && (lastLogin.back() == '\n' || lastLogin.back() == '\r'))
-                        lastLogin.pop_back();
-                    // 追加到输出（如果获取失败，就不显示上一次登录）
-                    if (!lastLogin.empty()) {
-                        loginBanner += lastLogin;
-                        loginBanner += "\r\n";
+            // 修复：获取本次登录时间（服务器端）
+            std::string currentLoginTime;
+            LIBSSH2_CHANNEL* timeChannel = libssh2_channel_open_session(session);
+            if (timeChannel) {
+                // 执行命令获取服务器当前时间（格式：Last login: 2026-05-12 15:07:29 from 客户端IP）
+                const char* timeCmd = "echo \"Last login: $(date '+%Y-%m-%d %H:%M:%S') from $(echo $SSH_CLIENT | awk '{print $1}')\"";
+                if (libssh2_channel_exec(timeChannel, timeCmd) == 0) {
+                    char timeBuf[1024] = { 0 };
+                    while (libssh2_channel_read(timeChannel, timeBuf, sizeof(timeBuf) - 1) > 0) {
+                        currentLoginTime += timeBuf;
+                        memset(timeBuf, 0, sizeof(timeBuf));
                     }
                 }
-                libssh2_channel_close(channel);
-                libssh2_channel_free(channel);
+                libssh2_channel_close(timeChannel);
+                libssh2_channel_free(timeChannel);
             }
+
+            // 替换原有last命令的输出为本次登录时间
+            if (!currentLoginTime.empty()) {
+                loginBanner += currentLoginTime;
+            }
+            else {
+                // 备用：使用本地时间
+                SYSTEMTIME st;
+                GetLocalTime(&st);
+                char localTime[64] = { 0 };
+                sprintf_s(localTime, "Last login: %04d-%02d-%02d %02d:%02d:%02d (本地时间)",
+                    st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+                loginBanner += localTime;
+            }
+            loginBanner += "\r\n";
             
         }
         catch (const std::exception& e) {
@@ -587,18 +592,25 @@ void SSHConnection_BindPanelIndex(int panelIndex) {
     info.user = _strdup(ssh_user);
     info.pass = _strdup(ssh_pass);
     info.port = ssh_port;
+    info.dirFile = "~";// 初始目录为家目录
+    info.showDir = "~";
     if (info.user && info.host) {
-        info.prompt = "[" + std::string(user) + "@" + std::string(host) + " ~]# ";
+        
+        info.prompt = "[" + std::string(info.user) + "@" + std::string(info.host) + " "+ info.showDir +"]# ";
     }
     else {
-        info.prompt = "[unknown@unknown ~]# ";
+        info.prompt = "[unknown@unknown "+ info.showDir +"]# ";
     }
     
 
     s_panelConnections[panelIndex] = info;
+    //s_panelConnections.emplace(panelIndex, std::move(info));
     s_lastPanelIndex = panelIndex;
     
-    NppSSH_LogInfoAuto("面板 " + std::to_string(panelIndex) + " 绑定成功");
+    // 启动心跳线程
+    g_heartbeatStop[panelIndex] = false;
+    std::thread(SSHConnection_HeartbeatThread, panelIndex).detach();
+    NppSSH_LogInfoAuto("面板 " + std::to_string(panelIndex) + " 绑定成功，心跳线程已启动");
 }
 // ---------------- 核心：按面板索引断开 ----------------
 void SSHConnection_DisconnectByPanelIndex(int panelIndex) {
@@ -609,6 +621,16 @@ void SSHConnection_DisconnectByPanelIndex(int panelIndex) {
     if (!info.connected || !info.session || info.sock == INVALID_SOCKET)
         return;
 
+    // 停止心跳
+    g_heartbeatStop[panelIndex] = true;
+
+    // ===================== 安全释放shell =====================
+    if (info.shellChannel) {
+        libssh2_channel_wait_closed(info.shellChannel);
+        libssh2_channel_close(info.shellChannel);
+        libssh2_channel_free(info.shellChannel);
+        info.shellChannel = nullptr;
+    }
     // 关闭当前面板的连接（服务器侧释放）
     libssh2_session_disconnect(info.session, "Panel Disconnect");
     libssh2_session_free(info.session);
@@ -625,6 +647,8 @@ void SSHConnection_DisconnectByPanelIndex(int panelIndex) {
     info.sock = INVALID_SOCKET;
     info.connected = false;
     info.prompt.clear();
+    info.dirFile.clear();
+    info.showDir.clear();
 
     // 如果断开的是最后一个面板，同步全局状态
     if (panelIndex == s_lastPanelIndex) {
@@ -635,43 +659,279 @@ void SSHConnection_DisconnectByPanelIndex(int panelIndex) {
     NppSSH_LogInfoAuto("面板 " + std::to_string(panelIndex) + " 已断开");
 }
 
+
+// 心跳线程（最终无错版）
+static void SSHConnection_HeartbeatThread(int panelIndex) {
+    while (true) {
+        Sleep(25000);
+
+        std::unique_lock<std::mutex> lk(s_globalVarMutex, std::defer_lock);
+        if (!lk.try_lock()) continue;
+
+        auto it = s_panelConnections.find(panelIndex);
+        if (it == s_panelConnections.end() || g_heartbeatStop[panelIndex]) {
+            g_heartbeatStop.erase(panelIndex);
+            return;
+        }
+
+        SSHConnInfo& info = it->second;
+        if (!info.connected || !info.session || !info.shellChannel) {
+            return;
+        }
+
+        // 心跳只发空行，不抢输出
+        libssh2_channel_write(info.shellChannel, "\n", 1);
+    }
+}
+// 新增：cd 命令解析器（兼容所有 cd 命令，更新 dirFile 和 showDir）
+static void ResolveCdTarget(const std::string& cmd, SSHConnInfo& info) {
+    std::string targetPath;
+    if (cmd == "cd" || cmd == "cd ~") {
+        targetPath = "~";
+    }
+    else if (cmd == "cd /") {
+        targetPath = "/";
+    }
+    else if (cmd == "cd .") {
+        targetPath = info.dirFile;
+    }
+    else if (cmd == "cd ..") {
+        if (info.dirFile == "~") {
+            targetPath = "~";
+        }
+        else if (info.dirFile == "/") {
+            targetPath = "/";
+        }
+        else {
+            std::string path = info.dirFile;
+            if (path.back() == '/') path.pop_back();
+            size_t lastSlash = path.find_last_of("/");
+            if (lastSlash != std::string::npos) {
+                targetPath = path.substr(0, lastSlash);
+                if (targetPath.empty()) targetPath = "/";
+            }
+            else {
+                targetPath = "/";
+            }
+        }
+    }
+    else if (cmd.substr(0, 3) == "cd ") {
+        std::string arg = cmd.substr(3);
+        arg.erase(0, arg.find_first_not_of(" \t"));
+        arg.erase(arg.find_last_not_of(" \t") + 1);
+
+        if (arg[0] == '/') {
+            targetPath = arg;
+        }
+        else if (arg[0] == '~') {
+            targetPath = arg;
+        }
+        else {
+            if (info.dirFile == "~") {
+                targetPath = "~/" + arg;
+            }
+            else if (info.dirFile == "/") {
+                targetPath = "/" + arg;
+            }
+            else {
+                targetPath = info.dirFile + "/" + arg;
+            }
+        }
+    }
+    else {
+        targetPath = info.dirFile;
+    }
+
+    if (targetPath.size() > 1 && targetPath.back() == '/') {
+        targetPath.pop_back();
+    }
+
+    // 去服务器验证路径
+    LIBSSH2_CHANNEL* ch = libssh2_channel_open_session(info.session);
+    if (ch) {
+        std::string pwdCmd;
+        if (targetPath == "~") {
+            pwdCmd = "cd && pwd"; // 直接 cd 不带参数，进入家目录
+        }
+        else {
+            pwdCmd = "cd \"" + targetPath + "\" && pwd";
+        }
+
+        if (libssh2_channel_exec(ch, pwdCmd.c_str()) == 0) {
+            char buf[1024] = { 0 };
+            std::string realPath;
+            while (libssh2_channel_read(ch, buf, sizeof(buf) - 1) > 0) {
+                realPath += buf;
+            }
+            realPath.erase(remove_if(realPath.begin(), realPath.end(), [](char c) {
+                return c == '\n' || c == '\r';
+                }), realPath.end());
+
+            // 获取 HOME
+            LIBSSH2_CHANNEL* homeCh = libssh2_channel_open_session(info.session);
+            std::string home;
+            if (homeCh && libssh2_channel_exec(homeCh, "echo $HOME") == 0) {
+                char hbuf[256] = { 0 };
+                while (libssh2_channel_read(homeCh, hbuf, sizeof(hbuf) - 1) > 0) {
+                    home += hbuf;
+                }
+                home.erase(remove_if(home.begin(), home.end(), [](char c) {
+                    return c == '\n' || c == '\r';
+                    }), home.end());
+                libssh2_channel_close(homeCh);
+                libssh2_channel_free(homeCh);
+            }
+
+            // 更新 dirFile 和 showDir
+            if (!home.empty() && realPath == home) {
+                info.dirFile = "~";
+                info.showDir = "~";
+            }
+            else if (!home.empty() && realPath.find(home + "/") == 0) {
+                info.dirFile = "~" + realPath.substr(home.length());
+                info.showDir = info.dirFile.substr(info.dirFile.find_last_of("/") + 1);
+            }
+            else {
+                info.dirFile = realPath;
+                info.showDir = (info.dirFile == "/") ? "/" : info.dirFile.substr(info.dirFile.find_last_of("/") + 1);
+            }
+        }
+        libssh2_channel_close(ch);
+        libssh2_channel_free(ch);
+    }
+}
+
+// 新增：执行pwd获取真实工作目录
+static std::string GetCurrentWorkingDir(LIBSSH2_SESSION* session, int panelIndex) {
+    if (!session) return "~";
+
+    LIBSSH2_CHANNEL* ch = libssh2_channel_open_session(session);
+    if (!ch) return "~";
+
+    std::string pwdResult;
+    if (libssh2_channel_exec(ch, "pwd") == 0) {
+        char buf[4096] = { 0 };
+        while (libssh2_channel_read(ch, buf, sizeof(buf) - 1) > 0) {
+            pwdResult += buf;
+            memset(buf, 0, sizeof(buf));
+        }
+    }
+    libssh2_channel_wait_closed(ch);
+    libssh2_channel_free(ch);
+
+    pwdResult.erase(std::remove(pwdResult.begin(), pwdResult.end(), '\n'), pwdResult.end());
+    pwdResult.erase(std::remove(pwdResult.begin(), pwdResult.end(), '\r'), pwdResult.end());
+
+    // ===================== 修复：传正确 panelIndex =====================
+    std::string homeDir = SSHConnection_ExecuteCommand(panelIndex, "echo $HOME");
+    // ================================================================
+
+    homeDir.erase(std::remove(homeDir.begin(), homeDir.end(), '\n'), homeDir.end());
+    homeDir.erase(std::remove(homeDir.begin(), homeDir.end(), '\r'), homeDir.end());
+
+    if (!homeDir.empty() && pwdResult.find(homeDir) == 0) {
+        pwdResult = "~" + pwdResult.substr(homeDir.length());
+    }
+    return pwdResult.empty() ? "~" : pwdResult;
+}
+
+
+// 最终PuTTY风格：目录真实、提示符干净、无多余斜杠、无阻塞、无Sleep
 std::string SSHConnection_ExecuteCommand(int panelIndex, const std::string& cmd) {
     auto it = s_panelConnections.find(panelIndex);
     if (it == s_panelConnections.end() || !it->second.connected || !it->second.session) {
-        return "❌ 面板" + std::to_string(panelIndex) + "未连接\n";
+        return "❌ 面板未连接\n";
     }
 
-    auto& info = it->second;
+    SSHConnInfo& info = it->second;
+    std::string result;
+
+    // 每次独立通道
     LIBSSH2_CHANNEL* ch = libssh2_channel_open_session(info.session);
-    if (!ch) return "❌ 创建channel失败\n";
-
-    if (libssh2_channel_exec(ch, cmd.c_str()) != 0) {
-        std::string err = "❌ 执行失败：" + GetLibssh2ErrorMsg(info.session) + "\n";
-        libssh2_channel_free(ch);
-        return err;
+    if (!ch) {
+        return "❌ 无法创建命令通道\n";
     }
 
-    char buf[4096] = { 0 };
+    // ==============================================
+    // 核心修复：~ 替换成真实家目录，避免服务器报错
+    // ==============================================
+    std::string realPath = info.dirFile;
+    std::string homeDir;
+
+    // 先获取服务器真实的家目录
+    LIBSSH2_CHANNEL* homeCh = libssh2_channel_open_session(info.session);
+    if (homeCh && libssh2_channel_exec(homeCh, "echo $HOME") == 0) {
+        char buf[256] = { 0 };
+        while (libssh2_channel_read(homeCh, buf, sizeof(buf) - 1) > 0) {
+            homeDir += buf;
+        }
+        homeDir.erase(remove_if(homeDir.begin(), homeDir.end(), [](char c) {
+            return c == '\n' || c == '\r';
+            }), homeDir.end());
+        libssh2_channel_close(homeCh);
+        libssh2_channel_free(homeCh);
+    }
+
+    // 把 ~ 替换成真实路径
+    if (realPath == "~" && !homeDir.empty()) {
+        realPath = homeDir;
+    }
+    else if (!homeDir.empty() && realPath.find("~/") == 0) {
+        realPath = homeDir + realPath.substr(1);
+    }
+
+    // 拼接命令：在真实路径下执行
+    std::string runCmd = cmd;
+    if (!realPath.empty()) {
+        runCmd = "cd \"" + realPath + "\" && " + cmd;
+    }
+
+    // 执行命令
+    int execRet = libssh2_channel_exec(ch, runCmd.c_str());
+
+    // 读取输出
+    char buf[4096];
     std::string out, err;
-    while (libssh2_channel_read(ch, buf, sizeof(buf)) > 0) {
-        out += buf;
-        memset(buf, 0, sizeof(buf));
+    while (true) {
+        int r = libssh2_channel_read(ch, buf, sizeof(buf) - 1);
+        if (r <= 0) break;
+        out.append(buf, r);
     }
-    while (libssh2_channel_read_stderr(ch, buf, sizeof(buf)) > 0) {
-        err += buf;
-        memset(buf, 0, sizeof(buf));
+    while (true) {
+        int r = libssh2_channel_read_stderr(ch, buf, sizeof(buf) - 1);
+        if (r <= 0) break;
+        err.append(buf, r);
     }
 
-    libssh2_channel_wait_closed(ch);
-    int exitCode = libssh2_channel_get_exit_status(ch);
+    libssh2_channel_close(ch);
     libssh2_channel_free(ch);
 
-    std::string result;
-    if (!out.empty()) result += out;
-    if (!err.empty()) result += "[错误] " + err + "\n";
-    if (exitCode != 0) result += "[退出码:" + std::to_string(exitCode) + "]\n";
-    return result;
+    // ====================== 处理 cd 命令（严格不自动纠错） ======================
+    bool isCd = (cmd.substr(0, 3) == "cd " || cmd == "cd");
+    if (isCd) {
+        // 错误直接返回，不修改路径
+        if (!err.empty() || execRet != 0) {
+            std::string failMsg = err.empty() ? "cd 命令执行失败\n" : err;
+            if (execRet != 0) failMsg += "[错误码：" + std::to_string(execRet) + "]";
+            return failMsg;
+        }
+
+        // 无错误时更新路径
+        ResolveCdTarget(cmd, info);
+
+        // 更新提示符
+        if (info.user && info.host) {
+            info.prompt = "[" + std::string(info.user) + "@" + std::string(info.host) + " " + info.showDir + "]# ";
+        }
+        return "";
+    }
+
+    // 普通命令返回结果
+    if (!out.empty()) result = out;
+    if (!err.empty()) result += err;
+    return result.empty() ? "\n" : result;
 }
+
 std::string SSHConnection_Prompt(int panelIndex) {
     // 1. 严格校验面板索引合法性（防止负数/越界索引）
     if (panelIndex < 0) {
