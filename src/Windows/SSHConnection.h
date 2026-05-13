@@ -37,3 +37,4 @@ void SSHConnection_BindPanelIndex(int panelIndex);
 // 命令执行
 std::string SSHConnection_ExecuteCommand(int panelIndex, const std::string& cmd);
 std::string SSHConnection_Prompt(int panelIndex);
+static void SSHConnection_HeartbeatThread(int panelIndex);

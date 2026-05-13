@@ -141,6 +141,7 @@ LRESULT CALLBACK TerminalEditProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPa
 
             // 2. 执行远程命令（核心逻辑）
             std::string result = NppSSH_ExecuteCommand(terminal->GetPanelId(), cmdToExecute);
+            terminal->SetPrompt(NppSSH_PanelPrompt(terminal->GetPanelId()));
             NppSSH_LogInfoAuto("【命令执行结果】面板ID=" + IntToStr(terminal->GetPanelId())
                 + " 命令=" + cmdToExecute + " 结果长度=" + IntToStr(result.length()));
 
