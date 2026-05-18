@@ -120,7 +120,7 @@ void helloDlg()
 
 void onNppSSH()
 {
-    bool ok = NppSSH_IsConnected();
+    bool ok = NppSSH_IsConnected(1);
     if (ok)
         ::MessageBoxW(NULL, L"SSH 连接成功 ✅", L"NppSSH提示", MB_OK);
     else

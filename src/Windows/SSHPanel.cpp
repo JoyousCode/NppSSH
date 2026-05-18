@@ -110,16 +110,16 @@ void NppSSHDockPanel::setSSHConnected(bool state) {
     // 同步更新输出框状态提示
     if (_hOutputEdit && ::IsWindow(_hOutputEdit)) {
         if (state) {
-            OnSSHConnected(this->_panelId);         //调用转发SSH连接设置当前面板连接资源
+            //OnSSHConnected(this->_panelId);         //调用转发SSH连接设置当前面板连接资源
             //TODO 待优化连接成功后的命令执行
             //::SetWindowTextW(_hOutputEdit, L"输出框状态提示SSH连接成功！/r/n可执行SSH命令...");
-            SYSTEMTIME st;
-            GetLocalTime(&st);
-            char currentTime[128];
-            sprintf_s(currentTime, "当前登录: %04d-%02d-%02d %02d:%02d:%02d from %s\r\n",
-                st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond,
-                host);
-            g_loginBanner += currentTime;
+            //SYSTEMTIME st;
+            //GetLocalTime(&st);
+            //char currentTime[128];
+            //sprintf_s(currentTime, "当前登录: %04d-%02d-%02d %02d:%02d:%02d from %s\r\n",
+            //    st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond,
+            //    host);
+            //g_loginBanner += currentTime;
 
             std::string appendPrompt = NppSSH_PanelPrompt(pPanel->_panelId);
             SSH_PanelPrompt(pPanel->_panelId, appendPrompt);
@@ -128,8 +128,8 @@ void NppSSHDockPanel::setSSHConnected(bool state) {
             g_loginBanner.clear();
         }
         else {
-
-            DisconnectPanel(this->_panelId);        //调用转发断开连接释放当前面板连接资源
+            NppSSH_LogInfoAuto("NppSSH_Disconnect====" + std::to_string(this->_panelId));
+            NppSSH_Disconnect(this->_panelId);        //调用转发断开连接释放当前面板连接资源
             ::SetWindowTextW(_hOutputEdit, L"🔌 SSH已断开\n等待新的连接...");
         }
         NppSSH_LogInfoAuto("setSSHConnected==========PanelID======" + std::to_string(this->_panelId));
@@ -482,7 +482,7 @@ INT_PTR CALLBACK NppSSHDockPanel::SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM 
         {
             // 取消连接时重置状态
             if (s_isConnecting) {
-                NppSSH_Disconnect();
+                NppSSH_Disconnect(pPanel->GetPanelIndex());
                 s_isConnecting = false;
                 NppSSH_LogInfoAuto("用户取消连接，已断开SSH");
             }
@@ -492,12 +492,12 @@ INT_PTR CALLBACK NppSSHDockPanel::SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM 
         else {
             if (LOWORD(wParam) == IDC_BTN_CONNECT || LOWORD(wParam) == IDC_BTN_TEST)//连接按钮
             {
-                char host[256] = { 0 };
+                char SSHhost[256] = { 0 };
                 char port[32] = { 0 };
                 char user[256] = { 0 };
                 char pass[256] = { 0 };
 
-                GetDlgItemTextA(hWnd, IDC_HOST, host, 256);
+                GetDlgItemTextA(hWnd, IDC_HOST, SSHhost, 256);
                 GetDlgItemTextA(hWnd, IDC_PORT, port, 32);
                 GetDlgItemTextA(hWnd, IDC_USER, user, 256);
                 GetDlgItemTextA(hWnd, IDC_PASS, pass, 256);
@@ -509,7 +509,7 @@ INT_PTR CALLBACK NppSSHDockPanel::SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM 
                 s_isConnecting = true;
                 NppSSH_LogInfoAuto("用户点击连接按钮，开始调用SSHConnection_Connect");
 
-                bool ok = NppSSH_Connect(host, atoi(port), user, pass);
+                bool ok = NppSSH_Connect(pPanel->GetPanelIndex(), SSHhost, atoi(port), user, pass);
                 s_isConnecting = false;// 异步连接立即重置，避免卡死
                 if (ok) {
                     NppSSH_LogInfoAuto("SSH连接请求已发送，等待异步结果");
@@ -526,7 +526,7 @@ INT_PTR CALLBACK NppSSHDockPanel::SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM 
                     //DisconnectPanel(pPanel->_panelId);// 面板断开SSH函数
                     if (LOWORD(wParam) == IDC_BTN_TEST) {
                         //无论成功还是失败都断开连接，防止占用远程资源
-                        NppSSH_Disconnect();
+                        NppSSH_Disconnect(pPanel->GetPanelIndex());
                         //DisconnectPanel(pPanel->_panelId);        //调用转发断开连接释放当前面板连接资源
                         
                     }
