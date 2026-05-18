@@ -690,6 +690,7 @@ const bool SSHTerminal::GetIsPrompt() const{ return _isPrompt; }
 
 HWND SSHTerminal_InitTerminalEditBox(HWND hParent, int panelId) {
     SSHTerminal* _SSHTerminal = new SSHTerminal();
+    NppSSH_LogInfoAuto("终端绑定的面板ID==" + std::to_string(panelId));
     _SSHTerminal->SetPanelId(panelId);
     return _SSHTerminal->InitTerminalEditBox(hParent);
 }

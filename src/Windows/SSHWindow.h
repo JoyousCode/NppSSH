@@ -34,13 +34,13 @@ extern HINSTANCE& g_hInst;
 
 /////////////////////////////////////////////////////////////初始值在SSHConnection
 // SSH连接全局状态（声明，具体定义在SSHConnection中）
-extern LIBSSH2_SESSION*& sshSession;
-extern SOCKET& sock;
-extern bool& connected;
-extern const char*& host;
-extern int& port;
-extern const char*& user;
-extern const char*& pass;
+//extern LIBSSH2_SESSION*& sshSession;
+//extern SOCKET& sock;
+//extern bool& connected;
+//extern const char* host;
+//extern int& port;
+//extern const char* user;
+//extern const char* pass;
 extern int& getPanelId;				//获取点击连接图标面板索引
 extern std::string& g_loginBanner;	//登录成功执行命令的欢迎内容
 extern std::string& g_Prompt;
@@ -63,14 +63,11 @@ HWND NppSSH_getLoginPanel();	//获得每次登录面板创建的句柄
 
 //////////////////////////////////////////////////////////////////////////别的文件调用SSHConnection的函数内容
 // SSH连接操作函数（声明，具体实现在SSHConnection中）
-bool NppSSH_Connect(const char* host, int port, const char* user, const char* pass);
-void NppSSH_Disconnect();				// 断开SSH连接
-bool NppSSH_IsConnected();				// 判断是否连接
-void NppSSH_ResetConnectionState();		// 重置连接状态（暂未使用）
+bool NppSSH_Connect(int panelId,const char* host, int port, const char* user, const char* pass);
+void NppSSH_Disconnect(int panelId);				// 断开SSH连接
+bool NppSSH_IsConnected(int panelId);				// 判断是否连接
+void NppSSH_ResetConnectionState(int panelId);		// 重置连接状态（暂未使用）
 
-// 窗口类中添加转发函数
-void DisconnectPanel(int panelIndex);
-void OnSSHConnected(int panelIndex);
 // 新增：命令执行中转接口声明
 std::string NppSSH_ExecuteCommand(int panelIndex, const std::string& cmd); // 执行SSH命令
 std::string NppSSH_PanelPrompt(int panelIndex);

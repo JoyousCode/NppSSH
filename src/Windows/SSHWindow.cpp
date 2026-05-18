@@ -15,13 +15,13 @@ int& iconSize = SSHPanel_iconSize();
 //std::string& g_Prompt = SSHPanel_Prompt();
 
 // SSH连接全局状态转发（实际定义在SSHConnection中）
-LIBSSH2_SESSION*& sshSession = SSHConnection_GetSession();
-SOCKET& sock = SSHConnection_GetSocket();
-bool& connected = SSHConnection_GetConnectedState();
-const char*& host = SSHConnection_GetHost();
-int& port = SSHConnection_GetPort();
-const char*& user = SSHConnection_GetUser();
-const char*& pass = SSHConnection_GetPass();
+//LIBSSH2_SESSION*& sshSession = SSHConnection_GetSession();
+//SOCKET& sock = SSHConnection_GetSocket();
+//bool& connected = SSHConnection_GetConnectedState();
+//const char* host = SSHConnection_GetHost();
+//int& port = SSHConnection_GetPort();
+//const char* user = SSHConnection_GetUser();
+//const char* pass = SSHConnection_GetPass();
 std::string& g_loginBanner = SSHConnection_loginBanner();
 
 
@@ -49,29 +49,20 @@ HWND NppSSH_getLoginPanel() {
 
 
 /**************（实际定义在SSHConnection中）***************/
-bool NppSSH_Connect(const char* host, int port, const char* user, const char* pass) {
-    return SSHConnection_Connect(host, port, user, pass);   // SSH连接操作转发
+bool NppSSH_Connect(int panelId,const char* host, int port, const char* user, const char* pass) {
+    return SSHConnection_Connect(panelId,host, port, user, pass);   // SSH连接操作转发
 }
 
-void NppSSH_Disconnect() {
-    SSHConnection_Disconnect();
+void NppSSH_Disconnect(int panelId) {
+    SSHConnection_Disconnect(panelId);
 }
 
-bool NppSSH_IsConnected() {
-    return SSHConnection_IsConnected();
+bool NppSSH_IsConnected(int panelId) {
+    return SSHConnection_IsConnected(panelId);
 }
 
-void NppSSH_ResetConnectionState() {
-    SSHConnection_ResetState();
-}
-
-
-void DisconnectPanel(int panelIndex) {      // 唯一转发：Panel → Window → Connection
-    SSHConnection_DisconnectByPanelIndex(panelIndex);// 2. 转发断开：窗口只做中转，不存数据
-}
-
-void OnSSHConnected(int panelIndex) {   //连接成功后，窗口转发绑定面板ID
-    SSHConnection_BindPanelIndex(panelIndex);
+void NppSSH_ResetConnectionState(int panelId) {
+    SSHConnection_ResetState(panelId);
 }
 
 std::string NppSSH_ExecuteCommand(int panelIndex, const std::string& cmd) {
