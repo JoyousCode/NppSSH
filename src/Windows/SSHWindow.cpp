@@ -10,7 +10,7 @@ std::vector<NppSSHDockPanel*>& g_sshPanels = SSHPanel_GetGlobalPanels();
 std::atomic<int>& g_panelCounter = SSHPanel_GetGlobalPanelCounter();
 NppData& g_nppData = SSHPanel_GetGlobalNppData();
 HINSTANCE& g_hInst = SSHPanel_GetGlobalHInst();
-int& getPanelId = SSH_GetPanelId(); //获取点击连接图标面板索引
+//int& getPanelId = SSH_GetPanelId(); //获取点击连接图标面板索引
 int& iconSize = SSHPanel_iconSize();
 //std::string& g_Prompt = SSHPanel_Prompt();
 
@@ -46,7 +46,9 @@ void RecreatePanelsOnNppStart() {
 HWND NppSSH_getLoginPanel() {
     return SSHPanel_getLoginPanel();        //获得登录面板句柄
 }
-
+HWND NppSSH__getPanelHwnd(int panelId) {
+    return SSHPanel_getPanelHwnd(panelId);
+}
 
 /**************（实际定义在SSHConnection中）***************/
 bool NppSSH_Connect(int panelId,const char* host, int port, const char* user, const char* pass) {
