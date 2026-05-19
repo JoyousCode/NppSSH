@@ -59,6 +59,7 @@ void DeletePanelCountFromIni();
 void RecreatePanelsOnNppStart();
 
 HWND NppSSH_getLoginPanel();	//获得每次登录面板创建的句柄
+HWND NppSSH__getPanelHwnd(int panelId);	//根据面板ID获得面板句柄
 
 
 //////////////////////////////////////////////////////////////////////////别的文件调用SSHConnection的函数内容

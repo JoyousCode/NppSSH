@@ -3,7 +3,6 @@
 #include "SSHSettings.h" // 引入INI工具
 
 // 面板相关全局变量实际定义
-static int s_panelId;
 static std::vector<NppSSHDockPanel*> s_sshPanels;
 static std::atomic<int> s_panelCounter = 0;
 static NppData s_nppData;
@@ -14,7 +13,6 @@ static bool initPanle;//防止未初始化完成就调用面板
 static NppSSHDockPanel* pPanel = nullptr;
 // 标记是否正在连接，避免重复操作
 static std::atomic<bool> s_isConnecting = false;
-//static std::atomic<bool> s_isPanelChangingConnection = false;
 
 HWND SSHPanel_getLoginPanel() {
     return pPanel->getLoginPanel();
@@ -36,7 +34,6 @@ NppData& SSHPanel_GetGlobalNppData() {
 HINSTANCE& SSHPanel_GetGlobalHInst() {
     return s_hInst;
 }
-int& SSH_GetPanelId() { return s_panelId; }//获取点击连接图标面板索引
 int& SSHPanel_iconSize() { return s_iconSize; }//获取点击连接图标面板索引
 
 // INI操作具体实现（替换原注册表函数）
@@ -144,7 +141,7 @@ void NppSSHDockPanel::setSSHConnected(bool state) {
 }
 
 // 断开当前面板的SSH连接（无提示）
-void NppSSHDockPanel::disconnectSSH() {
+void NppSSHDockPanel::disconnectSSH() {//_isSSHConnected= true表示登录成功
     if (_isSSHConnected) {      // 调用SSHConnection的断开逻辑
         //NppSSH_Disconnect();    // 调用转发断开连接释放资源
         //DisconnectPanel(this->_panelId);//通过面板ID断开连接
@@ -380,7 +377,7 @@ void NppSSHDockPanel::initPanel() {
         ::MessageBoxW(s_nppData._nppHandle, L"面板窗口创建失败！", L"NppSSH错误", MB_OK | MB_ICONERROR);
         return;
     }
-
+    _panelHwnd = _hSelf;
     // 注册面板到NPP停靠管理器
     ::SendMessage(s_nppData._nppHandle, NPPM_DMMREGASDCKDLG, 0, reinterpret_cast<LPARAM>(&_dockData));
     ::SendMessage(s_nppData._nppHandle, NPPM_MODELESSDIALOG, MODELESSDIALOGADD, reinterpret_cast<LPARAM>(_hSelf));
@@ -590,19 +587,21 @@ INT_PTR CALLBACK NppSSHDockPanel::run_dlgProc(UINT message, WPARAM wParam, LPARA
         HWND hCtrl = (HWND)lParam;
         if (cmd == IDC_BTN_CONNECT_SSH) {
             NppSSH_LogInfoAuto("用户点击面板连接按钮，显示登录对话框");
-            s_panelId = this->_panelId;     //点击连接存储当前面板ID，方便读取
             ShowSSHLoginWindow_Modal();
         }
         else if (cmd == IDC_BTN_DISCONNECT_SSH) {
             NppSSH_LogInfoAuto("用户点击面板断开按钮"+ std::to_string(this->_panelId));
-            disconnectSSH(); // 断开连接
-            if (_hOutputEdit) {
+            if (_isSSHConnected) {
+                disconnectSSH(); // 断开连接
+                if (_hOutputEdit) {
 
-                MessageBoxW(s_nppData._nppHandle, std::to_wstring(this -> _panelId).c_str(), L"NppSSH", MB_OK | MB_TASKMODAL);
-                //DisconnectPanel(this -> _panelId);// 面板断开SSH函数
-                ::SetWindowTextW(_hOutputEdit, L"✅ SSH已断开\n等待新的连接...");
+                    MessageBoxW(s_nppData._nppHandle, std::to_wstring(this->_panelId).c_str(), L"NppSSH", MB_OK | MB_TASKMODAL);
+                    //DisconnectPanel(this -> _panelId);// 面板断开SSH函数
+                    ::SetWindowTextW(_hOutputEdit, L"✅ SSH已断开\n等待新的连接...");
+                }
+                ::MessageBoxW(s_nppData._nppHandle, L"SSH连接已断开", L"NppSSH提示", MB_OK | MB_ICONINFORMATION);
             }
-            ::MessageBoxW(s_nppData._nppHandle, L"SSH连接已断开", L"NppSSH提示", MB_OK | MB_ICONINFORMATION);
+            
         }
         // 新增：拦截输出编辑框的所有操作
         if (hCtrl == _hOutputEdit) {
@@ -721,3 +720,16 @@ void SSHPanel_RecreatePanelsOnNppStart() {
     }
 }
 
+/*
+* 根据面板ID获得面板句柄
+*/
+HWND SSHPanel_getPanelHwnd(int panelId) {
+    // 遍历 s_sshPanels 查找匹配的面板实例
+    for (const auto& panel : s_sshPanels) {
+        if (panel != nullptr && panel->GetPanelIndex() == panelId) {
+            return panel->get_panelHwnd(); // 找到匹配实例，返回句柄
+        }
+    }
+    //仅返回NULL
+    return NULL;
+}

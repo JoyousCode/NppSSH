@@ -26,10 +26,11 @@ namespace SSHConst {
     constexpr int CONNECT_SOCKET_TIMEOUT_MS = 1000;
     constexpr int SSH_HANDSHAKE_TIMEOUT_MS = 1000;
     constexpr int SSH_AUTH_TIMEOUT_MS = 1000;
-    constexpr int MAIN_THREAD_WAIT_INTERVAL_MS = 50;
-    constexpr int MAX_MAIN_THREAD_WAIT_MS = 10000; // 10秒（原3秒）
-    constexpr int HEARTBEAT_INTERVAL_MS = 25000;
-    constexpr int MAX_HEART_BEAT_WAIT_MS = 30;//心跳间隔时间(秒)
+    constexpr int MAIN_THREAD_WAIT_INTERVAL_MS = 50;//主线程间隔时间
+    constexpr int MAX_MAIN_THREAD_WAIT_MS = 30; // 主线程最大等待时间(秒)
+    //实际发送心跳HEARTBEAT_INTERVAL_MS * MAX_HEART_BEAT_WAIT_MS = 30 * 1
+    constexpr int HEARTBEAT_INTERVAL_MS = 30;//心跳线程间隔时间(秒)
+    constexpr int MAX_HEART_BEAT_WAIT_MS = 1;//心跳最大等待时间(秒)
 
     // 端口范围
     constexpr int MIN_PORT = 1;
@@ -51,8 +52,7 @@ inline bool IsPanelIdExists(int panelId) {
     std::lock_guard<std::mutex> lock(g_panelConnMutex);
     return g_panelConnections.find(panelId) != g_panelConnections.end();
 }
-// 工具函数：根据 panelId 安全获取 SSHConnection 实例（线程安全）
-SSHConnection* GetSSHConnectionByPanelId(int panelId);
+
 // SSH连接类（封装单个面板的连接数据与逻辑）
 class SSHConnection {
 public:
@@ -74,8 +74,6 @@ public:
     bool Connect(const char* host, int port, const char* user, const char* pass);
     void ConnectAsync(const char* host, int port, const char* user, const char* pass, std::promise<bool> promise);
 
-
-
     // 核心功能：断开连接
     void Disconnect();
 
@@ -90,13 +88,10 @@ public:
 
     // 启动/停止心跳线程
     void StartHeartbeat();
-    void StopHeartbeat();
+    //void StopHeartbeat();
 
     // 重置连接状态
     void ResetState();
-
-    // 更新当前目录（供cd命令使用）
-    void UpdateCurrentDir(const std::string& cmd);
 
     // 成员变量的访问器（线程安全）
     void SetHost(const char* host);
@@ -176,13 +171,18 @@ public:
     std::mutex& GetMutex() { return m_mutex; }
     void Set_isAlive(bool isAlive){return m_isAlive.store(isAlive);}
 
+    //设置面板句柄
+    void SetPanelHwnd(HWND panelHwnd) {m_panelHwnd = panelHwnd;}
+
+    //获取连接状态
+    bool Getconnected() {return m_connected.load();}
+
 private:
     // 私有工具函数
     void ReleaseResources(); // 释放资源（内部复用）
-    void ResolveCdTarget(const std::string& cmd); // 解析cd命令目标路径
-    std::string GetCurrentWorkingDir(); // 获取服务器当前工作目录
+    void ResolveCdTarget(const std::string& cmd); // 解析cd命令目标路径，更新当前目录（供cd命令使用）
     std::string GetHomeDir(); // 获取服务器家目录
-    std::string ReplaceTildeWithHome(const std::string& path); // 替换~为真实家目录
+    std::string ReplaceTildeWithHome(const std::string& path); // 替换~为真实家目录，检测PWD命令
 
     // 子函数：初始化WSA
     bool InitWSA(WSADATA& wsaData);
@@ -212,6 +212,7 @@ private:
     std::string m_user;
     std::string m_pass;
     int m_port = 22;
+    HWND m_panelHwnd;
 
     // 目录和提示符
     std::string m_prompt = "[unknown@unknown ~]# ";// 面板上的命令提示符，只有该提示符才能进行命令操作。
@@ -260,3 +261,14 @@ inline std::wstring GBKToWstring(const std::string& str);
 inline std::string GetLibssh2ErrorMsg(LIBSSH2_SESSION* session);
 static void ReleaseConnectionResources(SOCKET sock, LIBSSH2_SESSION* session);
 static bool ValidatePort(int port);
+
+inline bool isCmdSeparator(char c);     // 辅助函数：判断字符是否为命令分隔符
+inline size_t skipWhitespace(const std::string& str, size_t pos);   // 辅助函数：跳过连续的空白字符（空格/制表符）
+inline size_t findArgEnd(const std::string& str, size_t pos);   // 辅助函数：查找命令参数的结束位置（分隔符/空白符）
+inline std::string TrimTrailingNewlines(std::string str);   // 辅助函数：清理字符串末尾所有 \r\n，直到最后一个字符不是换行 / 回车。
+inline std::string TrimTrailingWhitespace(std::string str); // 工具函数：去除字符串末尾所有空白（空格、\t、\n、\r）
+inline bool EndsWithSemicolonAfterTrim(const std::string& cmd); // 工具函数：判断命令【去除末尾空白后】是否以 ; 结尾
+
+
+// 工具函数：根据 panelId 安全获取 SSHConnection 实例（线程安全）
+SSHConnection* GetSSHConnectionByPanelId(int panelId);
