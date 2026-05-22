@@ -7,12 +7,12 @@ static HINSTANCE s_hInst;
 // 新增：防重入标记（避免递归调用）
 static thread_local bool s_bProcessingMsg = false;
 
-// ========== 【新增：自动唤醒编辑框输入状态，解决命令后无法输入】 ==========
+// ========== 【新增：自动唤醒伪终端输入状态，解决命令后无法输入】 ==========
 static void FixEditInputState_Final(HWND hEdit)
 {
     if (!IsWindow(hEdit))
         return;
-    NppSSH_LogInfoAuto("【修复】开始修复................");
+    NppSSH_LogInfoAuto("【修复】开始修复输入未显示，光标消失，焦点丢失");
 
     // 1. 光标定位到末尾（你原有逻辑）
     int len = GetWindowTextLengthW(hEdit);
@@ -69,14 +69,14 @@ static void FixEditInputState_Final(HWND hEdit)
     // 最后再确保一次光标显示（终极保险）
     ShowCaret(hEdit);
 }
-// 传统编辑框子类化过程（解决消息拦截失效问题）
+// 传统伪终端子类化过程（解决消息拦截失效问题）
 // ============return res = 0;拦截编辑器的操作，自定义具体操作。
 // ============return res = CallWindowProc(oldProc, hWnd, msg, wParam, lParam);放行编辑器原始的操作，
 static LRESULT CALLBACK TerminalEditProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     bool bNeedProcess = true;
     switch (msg) {
     case WM_USER + 1001:
-        NppSSH_LogInfoAuto("【修复】修复0000000000000000000000000000000000000000000");
+        NppSSH_LogInfoAuto("【修复】调用FixEditInputState_Final函数修复失效！");
         FixEditInputState_Final(hWnd);
         return 0;
     // 焦点变化时的处理
@@ -206,7 +206,7 @@ static LRESULT CALLBACK TerminalEditProc(HWND hWnd, UINT msg, WPARAM wParam, LPA
                 return res;
             }
 
-            // ============= 【核心：从编辑框提取真实命令】=============
+            // ============= 【核心：从伪终端提取真实命令】=============
             DWORD cursorPos = 0;
             SendMessageW(hWnd, EM_GETSEL, (WPARAM)&cursorPos, NULL);
             int totalLen = GetWindowTextLengthW(hWnd);
@@ -230,7 +230,7 @@ static LRESULT CALLBACK TerminalEditProc(HWND hWnd, UINT msg, WPARAM wParam, LPA
 
             // 强制覆盖 _cmd，永远不会为空
             terminal->SetCmd(realCmd.c_str());
-            NppSSH_LogInfoAuto("【回车同步】从编辑框提取真实命令：" + realCmd);
+            NppSSH_LogInfoAuto("【回车同步】从伪终端提取真实命令：" + realCmd);
 
             // 执行
             NppSSH_LogInfoAuto("【执行】回车触发命令执行！光标位置=" + IntToStr((int)cursorPos)
@@ -240,6 +240,7 @@ static LRESULT CALLBACK TerminalEditProc(HWND hWnd, UINT msg, WPARAM wParam, LPA
             if (cmdToExecute.empty()) {
                 NppSSH_LogInfoAuto("【跳过】无命令可执行，仅换行");
                 SSHTerminal_AppendOutput(terminal->GetPanelId(), "\r\n"+ terminal->GetPrompt());
+                PostMessageW(terminal->Get_TerminalHandle(), WM_USER + 1001, 0, 0);
                 res = 0;
                 s_bProcessingMsg = false;
                 return res;
@@ -256,14 +257,6 @@ static LRESULT CALLBACK TerminalEditProc(HWND hWnd, UINT msg, WPARAM wParam, LPA
             // 清空命令缓存
             terminal->SetCmd("");
 
-            if (IsWindow(terminal->Get_TerminalHandle()))
-            {
-                NppSSH_LogInfoAuto("【修复】修复11111111111111111111111111");
-                // 立即调用一次（非阻塞）
-                FixEditInputState_Final(terminal->Get_TerminalHandle());
-                // 同时PostMessage确保后续执行（双保险）
-                PostMessageW(terminal->Get_TerminalHandle(), WM_USER + 1001, 0, 0);
-            }
             res = 0;
             s_bProcessingMsg = false;
             return res;
@@ -295,7 +288,7 @@ static LRESULT CALLBACK TerminalEditProc(HWND hWnd, UINT msg, WPARAM wParam, LPA
             }
         }
         if (isBackspaceAtPromptEnd) {
-            NppSSH_LogInfoAuto("【拦截】禁止删除prompt末尾字符！光标位置=" + IntToStr((int)::SendMessageW(hWnd, EM_GETSEL, 0, 0)));
+            NppSSH_LogInfoAuto("【拦截】命令提示符="+ terminal->GetPrompt() +"，禁止删除prompt末尾字符！光标位置=" + IntToStr((int)::SendMessageW(hWnd, EM_GETSEL, 0, 0)));
             res = 0;
             s_bProcessingMsg = false;
             return res;
@@ -548,7 +541,7 @@ HWND SSHTerminal::InitTerminalEditBox(HWND hParent) {
     );
 
     if (!_hTerminal) {
-        ::MessageBoxW(s_nppData._nppHandle, L"SSH_InitTerminalEditBox: 编辑框句柄无效！", L"NppSSH调试提示", MB_OK | MB_ICONERROR);
+        ::MessageBoxW(s_nppData._nppHandle, L"SSH_InitTerminalEditBox: 伪终端句柄无效！", L"NppSSH调试提示", MB_OK | MB_ICONERROR);
         return nullptr;
     }
     // 设置样式
@@ -556,7 +549,7 @@ HWND SSHTerminal::InitTerminalEditBox(HWND hParent) {
     style |= ES_MULTILINE | ES_AUTOVSCROLL | ES_AUTOHSCROLL | WS_VSCROLL;
     ::SetWindowLongPtrW(_hTerminal, GWL_STYLE, style);
 
-    // 调整输出编辑框位置，避开顶部按钮栏
+    // 调整输出伪终端位置，避开顶部按钮栏
     SizeSSHTerminal(hParent);
 
     // ==== 挂载子类化 ====
@@ -572,7 +565,7 @@ HWND SSHTerminal::InitTerminalEditBox(HWND hParent) {
         SetProp(_hTerminal, L"SSHTerminalInstance", (HANDLE)this);
         // 4. 设置新的窗口过程
         SetWindowLongPtr(_hTerminal, GWLP_WNDPROC, (LONG_PTR)TerminalEditProc);
-        NppSSH_LogInfoAuto("编辑框子类化完成！hWnd=" + PtrToHexStr(_hTerminal)
+        NppSSH_LogInfoAuto("伪终端子类化完成！hWnd=" + PtrToHexStr(_hTerminal)
             + " 原过程：" + PtrToHexStr(_oldEditProc)
             + " 新过程：" + PtrToHexStr(TerminalEditProc));
     }
@@ -587,7 +580,7 @@ HWND SSHTerminal::InitTerminalEditBox(HWND hParent) {
         NppSSH_LogInfoAuto("终端实例已存在于vector，跳过添加");
     }
 
-    //MessageBoxW(s_nppData._nppHandle, L"终端编辑框初始化完成 ✅", L"成功", MB_OK);
+    //MessageBoxW(s_nppData._nppHandle, L"终端伪终端初始化完成 ✅", L"成功", MB_OK);
     return _hTerminal;
 }
 /*
@@ -646,17 +639,17 @@ void SSHTerminal::SizeSSHTerminal(HWND hParent) {//hParent=面板的_hSelf
         x, y, cx, cy,
         SWP_NOZORDER | SWP_NOACTIVATE
     );
-    //只重绘【终端编辑框】自己让编辑框立刻刷新、重新绘制自己的内容、文字、背景、边框。
-    ::RedrawWindow(_hTerminal, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);// 刷新编辑框内容（防止文字不显示）
+    //只重绘【伪终端】自己让伪终端立刻刷新、重新绘制自己的内容、文字、背景、边框。
+    ::RedrawWindow(_hTerminal, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);// 刷新伪终端内容（防止文字不显示）
 }
 
 /*
-* 追加编辑框终端模拟内容
+* 追加伪终端终端模拟内容
 */
 void SSHTerminal::AppendOutputText(const std::string& text) {
     // 空文本防护，避免非法字符串触发弹框
     if (text.empty() || !_hTerminal) {
-        NppSSH_LogWarnAuto("AppendOutputText: 文本或编辑框为空");
+        NppSSH_LogWarnAuto("AppendOutputText: 文本或伪终端为空");
         return;
     }
     NppSSH_LogInfoAuto("输出文本到输出框" + std::string(text));
@@ -694,17 +687,11 @@ void SSHTerminal::AppendOutputText(const std::string& text) {
     // 强制刷新
     ::RedrawWindow(_hTerminal, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
     //FixEditInputState(_hTerminal);
-    // 若当前编辑框是焦点，不重复抢焦；若非焦点，不主动设置（遵循用户操作）
+    // 若当前伪终端是焦点，不重复抢焦；若非焦点，不主动设置（遵循用户操作）
     if (isEditFocused) {
         SetFocus(_hTerminal); // 仅恢复缓存的焦点状态
     }
 
-    // 文本追加完成后，若命令未执行中则修复输入状态
-    if (!_isCommandRunning && IsWindow(_hTerminal))
-    {
-        NppSSH_LogInfoAuto("【修复】修复22222222222222222222222222");
-        FixEditInputState_Final(_hTerminal);
-    }
     NppSSH_LogInfoAuto("文本追加完成，当前输出框总长度：" + IntToStr((int)len_total)
         + "，追加长度：" + IntToStr((int)text.length()));
 }
@@ -748,10 +735,6 @@ bool SSHTerminal::IsCursorInEditableArea() const {
     // 5. 拿到原始 prompt（包含末尾空格）
     std::wstring promptW = GBKToWstring(_prompt);
     int promptLen = (int)promptW.length();
-    //if (promptLen == 0 || !this->GetIsPrompt()) {
-    //    NppSSH_LogInfoAuto("[可编辑判定] 提示符为空或未启用，不可编辑");
-    //    return true;
-    //}
 
     bool canEdit = false;
     if (promptLen > 0) { // 场景1：提示符非空（命令执行完成）- 原有逻辑
@@ -762,22 +745,11 @@ bool SSHTerminal::IsCursorInEditableArea() const {
     else {// 场景2：提示符为空（命令执行中）- 不允许编辑（避免修改输出）
         canEdit = false;
     }
-    // ==============================
-    // 正常逻辑：支持 prompt 后任意位置编辑（输入/删除命令/光标移动）
-    // 光标 >= prompt 结束位置 = 允许正常编辑
-    // ==============================
-    //bool lineStartsWithPrompt = (currentLine.substr(0, promptLen) == promptW);
-    //bool cursorIsAfterPrompt = (cursorPos >= lineStart + promptLen);
-    // 额外判定：光标不能超过文本总长度
-    //bool cursorInRange = (cursorPos <= totalLen);
-    //bool canEdit = lineStartsWithPrompt && cursorIsAfterPrompt && cursorInRange && this->GetIsPrompt();
-
-    //bool canEdit = lineStartsWithPrompt && cursorIsAfterPrompt && this->GetIsPrompt();//原始
-    //bool canEdit = lineStartsWithPrompt && cursorIsAfterPrompt;
 
     // 日志
     NppSSH_LogInfoAuto(
-        "[可编辑判定] "
+        "【可编辑判定】 "
+        "_prompt="+ _prompt+
         "光标位置=" + IntToStr((int)cursorPos) +
         " 行起始=" + IntToStr((int)lineStart) +
         " 提示符长度=" + IntToStr(promptLen) +
@@ -805,11 +777,6 @@ void SSHTerminal::SetPrompt(const std::string promptStr) {
     _prompt = promptStr;
     //FixEditInputState(_hTerminal); // 复用原有修复函数
     NppSSH_LogInfoAuto("【提示符更新】主动修复输入状态，新提示符：" + promptStr);
-    if (_hTerminal && IsWindow(_hTerminal) && !_isCommandRunning)
-    {
-        NppSSH_LogInfoAuto("【修复】修复33333333333333333333333333");
-        FixEditInputState_Final(_hTerminal);
-    }
 }
 
 const std::string& SSHTerminal::GetPrompt() const {
@@ -842,7 +809,7 @@ void SSHTerminal_SizeSSHTerminal(HWND hParent,int panelIndex) {
         return;
     }
     if (!::IsWindow(panel ->Get_TerminalHandle())) {
-        ::MessageBoxW(s_nppData._nppHandle, L"SSHTerminal_SizeSSHTerminal: 编辑框句柄无效，跳过调整！", L"NppSSH提示", MB_OK | MB_ICONINFORMATION);
+        ::MessageBoxW(s_nppData._nppHandle, L"SSHTerminal_SizeSSHTerminal: 伪终端句柄无效，跳过调整！", L"NppSSH提示", MB_OK | MB_ICONINFORMATION);
         return;
     }
     panel->SizeSSHTerminal(hParent);
@@ -855,9 +822,9 @@ void SSHTerminal_AppendOutput(int panelIndex, const std::string& text) {
     if (panelIndex < 0) return;
     SSHTerminal* panel = getSSHTerminal(panelIndex);
     //panel->SetIsPrompt(isPrompt);
-    if (panel->GetIsCommandRunning()) {
-        NppSSH_LogInfoAuto("【后台执行中】暂不处理输入状态，面板ID=" + IntToStr(panelIndex));
-    }
+    //if (panel->GetIsCommandRunning()) {
+    //    NppSSH_LogInfoAuto("【后台执行中】暂不处理输入状态，面板ID=" + IntToStr(panelIndex));
+    //}
     std::string prompt = NppSSH_PanelPrompt(panel->GetPanelId());
     panel->SetPrompt(prompt);
     NppSSH_LogInfoAuto("【调试】SSHTerminal_AppendOutput设置提示符，命令提示符====" + panel->GetPrompt());
@@ -893,12 +860,6 @@ void SSHTerminal_AppendOutput(int panelIndex, const std::string& text) {
 
     panel->AppendOutputText(fixedText);
 
-    // ========== 新增：命令输出完成后强制修复输入状态 ==========
-    HWND hEdit = panel->Get_TerminalHandle();
-    if (!panel->GetIsCommandRunning() && IsWindow(hEdit)) {
-        //FixEditInputState(hEdit);
-        NppSSH_LogInfoAuto("【命令输出完成】强制刷新编辑框输入状态，面板ID：" + IntToStr(panelIndex));
-    }
 }
 void SSHTerminal_PanelPrompt(int panelIndex, const std::string Prompt) {
     NppSSH_LogInfoAuto("【调试】SSHTerminal_PanelPrompt设置提示符");
@@ -919,10 +880,10 @@ void SSHTerminal_SetIsCommandRunning(int panelIndex, bool isCommandRunning) {
         {
             // 确保在主线程执行UI操作（关键：PostMessage到主窗口，避免线程跨域）
             HWND hEdit = panel->Get_TerminalHandle();
-            NppSSH_LogInfoAuto("【修复】修复4444444444444444444444444444444");
-            FixEditInputState_Final(hEdit);
+            //NppSSH_LogInfoAuto("【修复】修复4444444444444444444444444444444");
+            //FixEditInputState_Final(hEdit);
             PostMessageW(hEdit, WM_USER + 1001, 0, 0); // 自定义消息触发修复
-            NppSSH_LogInfoAuto("【命令完全结束】恢复编辑框焦点，可直接输入");
+            NppSSH_LogInfoAuto("【命令完全结束】恢复伪终端焦点，可直接输入");
         }
     }
 }

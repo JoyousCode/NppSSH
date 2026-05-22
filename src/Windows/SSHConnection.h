@@ -164,7 +164,7 @@ public:
     //后台持续读（官方poll）
     void StartShellReader();
     void StopShellReader();
-
+    
 private:
     // 私有工具函数
     void ReleaseResources(); // 释放资源（内部复用）
@@ -189,12 +189,16 @@ private:
     bool SSHConnection::startsWith(const std::string& str, const std::string& prefix);
 
 private:
+
+    // 实例级锁（保护当前面板的资源访问）
+    mutable std::mutex m_mutex;//除心跳线程和伪终端线程以外的变量公共锁
+    std::thread* m_pConnectThread = nullptr; // 连接线程
     // 连接核心资源（RAII管理，避免裸指针）
     LIBSSH2_SESSION* m_session = nullptr;
     SOCKET m_sock = INVALID_SOCKET;
-    std::atomic<bool> m_connected = false; // 连接状态
-    std::atomic<bool> m_connecting = false; // 连接中标记
-    std::atomic<bool> m_cancelConnect = false;//标记是否取消连接
+    std::atomic<bool> m_connected = { false }; // 连接状态
+    std::atomic<bool> m_connecting = { false }; // 连接中标记
+    std::atomic<bool> m_cancelConnect = { false };//标记是否取消连接
 
     // 连接参数（改用std::string，消除手动free）
     std::string m_host;
@@ -203,36 +207,29 @@ private:
     int m_port = 22;
     HWND m_panelHwnd;
 
-    // 目录和提示符
     std::string m_prompt = "";// 面板上的命令提示符，只有该提示符才能进行命令操作。
     std::atomic<LIBSSH2_CHANNEL*> m_shellChannel{ nullptr };//使用stomic保证内存的可见性
 
-
-    // 心跳相关
+    
     // 心跳线程控制：条件变量+互斥锁
     std::mutex m_heartbeatMtx;
-    std::condition_variable m_heartbeatCv;
-    std::atomic<bool> m_isAlive = true;
-    void HeartbeatThreadFunc();
-    std::atomic<bool> m_stopHeartbeat = false;
     std::thread m_heartbeatThread;
-    std::thread* m_pConnectThread = nullptr; // 连接线程
-
-    // 实例级锁（保护当前面板的资源访问）
-    mutable std::mutex m_mutex;
-
-    // 后台读线程
-    // 标记是否等待命令提示符（仅执行命令时为true）
-    std::atomic<bool> m_waitingForPrompt{ false };
-    std::thread m_shellReaderThread;
-    // 线程控制锁
+    void HeartbeatThreadFunc();
+    std::condition_variable m_heartbeatCv;
+    std::atomic<bool> m_isAlive = { true };
+    std::atomic<bool> m_stopHeartbeat = { false };
+    
+    
+    // 后台读线程，线程控制锁
     std::mutex m_readerMutex;
+    std::thread m_shellReaderThread;
+    void ShellReaderLoop();
     std::condition_variable m_readerCv;
+    std::atomic<bool> m_waitingForPrompt{ false };//标记是否等待命令提示符（仅执行命令时为true）
     std::atomic<bool> m_stopReader{ false };
     std::atomic<bool> m_isReadingOutput{ false };//是否是持续输出
-    void ShellReaderLoop();
-    // 用于过滤命令回显
-    std::string m_currentCommand;
+    std::string m_currentCommand;// 用于过滤命令回显
+    
 };
 
 // SSH连接操作具体声明
@@ -246,7 +243,6 @@ std::string SSHConnection_Prompt(int panelIndex);
 // 工具函数声明
 inline std::wstring GBKToWstring(const std::string& str);
 inline std::string GetLibssh2ErrorMsg(LIBSSH2_SESSION* session);
-static void ReleaseConnectionResources(SOCKET sock, LIBSSH2_SESSION* session);
 static bool ValidatePort(int port);
 
 inline bool isCmdSeparator(char c);     // 辅助函数：判断字符是否为命令分隔符
