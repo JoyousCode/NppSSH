@@ -10,19 +10,7 @@ std::vector<NppSSHDockPanel*>& g_sshPanels = SSHPanel_GetGlobalPanels();
 std::atomic<int>& g_panelCounter = SSHPanel_GetGlobalPanelCounter();
 NppData& g_nppData = SSHPanel_GetGlobalNppData();
 HINSTANCE& g_hInst = SSHPanel_GetGlobalHInst();
-//int& getPanelId = SSH_GetPanelId(); //获取点击连接图标面板索引
 int& iconSize = SSHPanel_iconSize();
-//std::string& g_Prompt = SSHPanel_Prompt();
-
-// SSH连接全局状态转发（实际定义在SSHConnection中）
-//LIBSSH2_SESSION*& sshSession = SSHConnection_GetSession();
-//SOCKET& sock = SSHConnection_GetSocket();
-//bool& connected = SSHConnection_GetConnectedState();
-//const char* host = SSHConnection_GetHost();
-//int& port = SSHConnection_GetPort();
-//const char* user = SSHConnection_GetUser();
-//const char* pass = SSHConnection_GetPass();
-std::string& g_loginBanner = SSHConnection_loginBanner();
 
 
 /**************（实际定义在SSHPanel中）***************/
@@ -67,7 +55,7 @@ void NppSSH_ResetConnectionState(int panelId) {
     SSHConnection_ResetState(panelId);
 }
 
-std::string NppSSH_ExecuteCommand(int panelIndex, const std::string& cmd) {
+bool NppSSH_ExecuteCommand(int panelIndex, const std::string& cmd) {
     return SSHConnection_ExecuteCommand(panelIndex, cmd);   // 命令执行转发
 }
 std::string NppSSH_PanelPrompt(int panelIndex) {
@@ -136,13 +124,16 @@ void SSH_resetSSHTerminal(int panelIndex) {
 void SSH_SizeSSHTerminal(HWND hParent, int panelIndex) {
     SSHTerminal_SizeSSHTerminal(hParent,panelIndex);
 }
-void SSH_AppendOutputText(int panelIndex, const std::string& text, bool isPrompt) {
-    SSHTerminal_AppendOutput(panelIndex, text, isPrompt);
+void SSH_AppendOutputText(int panelIndex, const std::string& text) {
+    SSHTerminal_AppendOutput(panelIndex, text);
 }
 void SSH_PanelPrompt(int panelIndex, const std::string prompt) {
     SSHTerminal_PanelPrompt(panelIndex, prompt);
 }
-// 直接设置是否需要提示词
-void SSH_SetIsPrompt(int panelIndex, bool isPrompt) {
-    SSHTerminal_SetIsPrompt(panelIndex, isPrompt);
+
+void SSH_SetIsCommandRunning(int panelIndex, bool isCommandRunning) {
+    SSHTerminal_SetIsCommandRunning(panelIndex, isCommandRunning);
+}
+void SSH_RestoreFocusAndCaret(int panelIndex) {
+    SSHTerminal_RestoreFocusAndCaret(panelIndex);
 }

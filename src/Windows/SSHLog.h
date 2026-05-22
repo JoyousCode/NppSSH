@@ -38,3 +38,6 @@ void SSHLog_Write(LogLevel level, const std::string& event, const std::string& c
 
 // 简化封装：自动获取调用函数名（用于默认事件名）
 #define SSHLog_WriteAuto(level, content) SSHLog_Write(level, __FUNCTION__, content)
+
+// 初始化日志（插件启动调用）
+void SSHLog_Init();

@@ -19,6 +19,7 @@
 #include "SSHClient.h" 
 #include "Windows/SSHPanel.h"
 #include "SSHSettings.h" // 引入INI工具
+#include "Windows/SSHLog.h"
 
 extern FuncItem funcItem[nbFunc];
 extern NppData nppData;
@@ -70,7 +71,7 @@ extern "C" __declspec(dllexport) void setInfo(NppData notpadPlusData)
 	g_nppData = notpadPlusData;
 	nppData = notpadPlusData;
 	commandMenuInit();
-	
+	SSHLog_Init();
 	RecreatePanelsOnNppStart();// NPP插件环境初始化完成后，自动重建配置中记录的面板
 }
 

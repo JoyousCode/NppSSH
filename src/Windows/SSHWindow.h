@@ -34,16 +34,6 @@ extern HINSTANCE& g_hInst;
 
 /////////////////////////////////////////////////////////////初始值在SSHConnection
 // SSH连接全局状态（声明，具体定义在SSHConnection中）
-//extern LIBSSH2_SESSION*& sshSession;
-//extern SOCKET& sock;
-//extern bool& connected;
-//extern const char* host;
-//extern int& port;
-//extern const char* user;
-//extern const char* pass;
-extern int& getPanelId;				//获取点击连接图标面板索引
-extern std::string& g_loginBanner;	//登录成功执行命令的欢迎内容
-extern std::string& g_Prompt;
 extern int& iconSize;
 
 //////////////////////////////////////////////////////////////////////////别的文件调用SSHPanel的函数内容
@@ -70,7 +60,7 @@ bool NppSSH_IsConnected(int panelId);				// 判断是否连接
 void NppSSH_ResetConnectionState(int panelId);		// 重置连接状态（暂未使用）
 
 // 新增：命令执行中转接口声明
-std::string NppSSH_ExecuteCommand(int panelIndex, const std::string& cmd); // 执行SSH命令
+bool NppSSH_ExecuteCommand(int panelIndex, const std::string& cmd); // 执行SSH命令
 std::string NppSSH_PanelPrompt(int panelIndex);
 
 
@@ -94,10 +84,11 @@ HWND SSH_InitTerminalEditBox(HWND hParent, int panelId);
 // 断开终端编辑框
 void SSH_disconnectTerminalEditBox(int panelIndex);
 // 输出文本到终端，isPrompt设置追加后是否追加提示词
-void SSH_AppendOutputText(int panelIndex, const std::string& text, bool isPrompt);
+void SSH_AppendOutputText(int panelIndex, const std::string& text);
 // 设置提示词
 void SSH_PanelPrompt(int panelIndex, const std::string prompt);
-void SSH_SetIsPrompt(int panelIndex, bool isPrompt);
+void SSH_SetIsCommandRunning(int panelIndex, bool isCommandRunning);
+void SSH_RestoreFocusAndCaret(int panelIndex);
 
 void SSH_resetSSHTerminal(int panelIndex);
 void SSH_SizeSSHTerminal(HWND hParent, int panelIndex);

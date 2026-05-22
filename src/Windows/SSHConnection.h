@@ -9,6 +9,7 @@
 #include <tchar.h>
 #include <mutex>
 #include <thread>
+#include <sstream> 
 #include <stdexcept>
 #include <string>
 #include <future>
@@ -52,7 +53,8 @@ inline bool IsPanelIdExists(int panelId) {
     std::lock_guard<std::mutex> lock(g_panelConnMutex);
     return g_panelConnections.find(panelId) != g_panelConnections.end();
 }
-
+//工具函数，通过 this或者实例对象 指针查找对应的 面板ID（key）
+int SSHConnection_GetPanelId(SSHConnection* self);
 // SSH连接类（封装单个面板的连接数据与逻辑）
 class SSHConnection {
 public:
@@ -81,7 +83,7 @@ public:
     bool IsConnected() const;
 
     // 执行命令（线程安全）
-    std::string ExecuteCommand(const std::string& cmd);
+    bool ExecuteCommand(const std::string& cmd);
 
     // 获取提示符（线程安全）
     std::string GetPrompt() const;
@@ -139,24 +141,6 @@ public:
         return m_sock;
     }
 
-    void SetDirFile(const std::string& dir) {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        m_dirFile = dir;
-    }
-    std::string GetDirFile() const {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        return m_dirFile;
-    }
-
-    void SetShowDir(const std::string& dir) {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        m_showDir = dir;
-    }
-    std::string GetShowDir() const {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        return m_showDir;
-    }
-
     void SetShellChannel(LIBSSH2_CHANNEL* channel) {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_shellChannel = channel;
@@ -177,13 +161,13 @@ public:
     //获取连接状态
     bool Getconnected() {return m_connected.load();}
 
+    //后台持续读（官方poll）
+    void StartShellReader();
+    void StopShellReader();
+
 private:
     // 私有工具函数
     void ReleaseResources(); // 释放资源（内部复用）
-    void ResolveCdTarget(const std::string& cmd); // 解析cd命令目标路径，更新当前目录（供cd命令使用）
-    std::string GetHomeDir(); // 获取服务器家目录
-    std::string ReplaceTildeWithHome(const std::string& path); // 替换~为真实家目录，检测PWD命令
-
     // 子函数：初始化WSA
     bool InitWSA(WSADATA& wsaData);
 
@@ -198,6 +182,11 @@ private:
 
     // 子函数：读取登录Banner和登录时间
     void ReadLoginBanner(LIBSSH2_SESSION* session);
+
+    // 工具函数：提取字符串最后一行
+    std::string extractLastLine(const std::string& str);
+    // 工具函数：判断是否以指定字符串开头
+    bool SSHConnection::startsWith(const std::string& str, const std::string& prefix);
 
 private:
     // 连接核心资源（RAII管理，避免裸指针）
@@ -215,13 +204,8 @@ private:
     HWND m_panelHwnd;
 
     // 目录和提示符
-    std::string m_prompt = "[unknown@unknown ~]# ";// 面板上的命令提示符，只有该提示符才能进行命令操作。
-    std::string m_dirFile = "~"; // 面板上所在文件夹的全路径
-    std::string m_showDir = "~"; // 面板上显示的当前文件夹名称
-    std::string m_homeDir = "";//连接后的用户home目录，执行~,执行历史命令用到
-    bool isCdCommand = false;
-    bool isPwdCommand = false;
-    LIBSSH2_CHANNEL* m_shellChannel = nullptr;
+    std::string m_prompt = "";// 面板上的命令提示符，只有该提示符才能进行命令操作。
+    std::atomic<LIBSSH2_CHANNEL*> m_shellChannel{ nullptr };//使用stomic保证内存的可见性
 
 
     // 心跳相关
@@ -236,24 +220,27 @@ private:
 
     // 实例级锁（保护当前面板的资源访问）
     mutable std::mutex m_mutex;
-};
 
-// SSH连接全局状态封装
-LIBSSH2_SESSION*& SSHConnection_GetSession();
-SOCKET& SSHConnection_GetSocket();
-bool& SSHConnection_GetConnectedState();
-int& SSHConnection_GetPort();
-const char* SSHConnection_GetHost();
-const char* SSHConnection_GetUser();
-const char* SSHConnection_GetPass();
-std::string& SSHConnection_loginBanner();
+    // 后台读线程
+    // 标记是否等待命令提示符（仅执行命令时为true）
+    std::atomic<bool> m_waitingForPrompt{ false };
+    std::thread m_shellReaderThread;
+    // 线程控制锁
+    std::mutex m_readerMutex;
+    std::condition_variable m_readerCv;
+    std::atomic<bool> m_stopReader{ false };
+    std::atomic<bool> m_isReadingOutput{ false };//是否是持续输出
+    void ShellReaderLoop();
+    // 用于过滤命令回显
+    std::string m_currentCommand;
+};
 
 // SSH连接操作具体声明
 bool SSHConnection_Connect(int panelId, const char* host, int port, const char* user, const char* pass);
 void SSHConnection_Disconnect(int panelId);
 bool SSHConnection_IsConnected(int panelId);
 void SSHConnection_ResetState(int panelId);
-std::string SSHConnection_ExecuteCommand(int panelIndex, const std::string& cmd);
+bool SSHConnection_ExecuteCommand(int panelIndex, const std::string& cmd);
 std::string SSHConnection_Prompt(int panelIndex);
 
 // 工具函数声明

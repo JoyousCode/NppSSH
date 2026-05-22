@@ -118,11 +118,11 @@ void NppSSHDockPanel::setSSHConnected(bool state) {
             //    host);
             //g_loginBanner += currentTime;
 
-            std::string appendPrompt = NppSSH_PanelPrompt(pPanel->_panelId);
-            SSH_PanelPrompt(pPanel->_panelId, appendPrompt);
-            SSH_AppendOutputText(this->_panelId, g_loginBanner, true);
-            // 清空 banner，防止下一次复用脏数据
-            g_loginBanner.clear();
+            //std::string appendPrompt = NppSSH_PanelPrompt(pPanel->_panelId);
+            //SSH_PanelPrompt(pPanel->_panelId, appendPrompt);
+            //SSH_AppendOutputText(this->_panelId, g_loginBanner, true);
+            //// 清空 banner，防止下一次复用脏数据
+            //g_loginBanner.clear();
         }
         else {
             NppSSH_LogInfoAuto("NppSSH_Disconnect====" + std::to_string(this->_panelId));
@@ -368,6 +368,8 @@ void NppSSHDockPanel::initPanel() {
 
     // 调用DockingDlgInterface原生create：绑定停靠数据，创建面板窗口
     StaticDialog::create(_dlgID, false);
+    DWORD dwStyle = ::GetWindowLongPtrW(_hSelf, GWL_STYLE);
+    SetWindowLongPtrW(_hSelf, GWL_STYLE, dwStyle | WS_CLIPCHILDREN | WS_CLIPSIBLINGS);
     //DockingDlgInterface::create(&_dockData);
     //StaticDialog::create(IDD_SSH_PANEL);
 
@@ -391,13 +393,13 @@ void NppSSHDockPanel::initPanel() {
     if (!_hOutputEdit) {
         ::MessageBoxW(s_nppData._nppHandle, L"NPP插件环境_hOutputEdit初始化失败！", L"NppSSH调试提示", MB_OK);
     }
-    SSH_AppendOutputText(_panelId, "✅ NppSSH面板已创建\r\n等待SSH连接...",false);
+    SSH_AppendOutputText(_panelId, "✅ NppSSH面板已创建\r\n等待SSH连接...");
     
-    if (_hSelf && ::IsWindow(_hSelf)) {         // 强制设置面板窗口样式，解决遮挡/闪烁问题
-        DWORD dwStyle = ::GetWindowLongPtrW(_hSelf, GWL_STYLE);
-        SetWindowLongPtrW(_hSelf, GWL_STYLE, dwStyle | WS_CLIPCHILDREN | WS_CLIPSIBLINGS);
-        //::SetWindowPos(_hSelf, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);     // 确保面板在停靠容器的顶层，不被覆盖
-    }
+    //if (_hSelf && ::IsWindow(_hSelf)) {         // 强制设置面板窗口样式，解决遮挡/闪烁问题
+    //    DWORD dwStyle = ::GetWindowLongPtrW(_hSelf, GWL_STYLE);
+    //    SetWindowLongPtrW(_hSelf, GWL_STYLE, dwStyle | WS_CLIPCHILDREN | WS_CLIPSIBLINGS);
+    //    //::SetWindowPos(_hSelf, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);     // 确保面板在停靠容器的顶层，不被覆盖
+    //}
     // 加入全局管理，支持标签切换和内存清理
     s_sshPanels.push_back(this);
     // 13. 日志记录（调试/排查）
@@ -511,25 +513,18 @@ INT_PTR CALLBACK NppSSHDockPanel::SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM 
                 if (ok) {
                     NppSSH_LogInfoAuto("SSH连接请求已发送，等待异步结果");
                     MessageBoxW(hWnd, L"SSH 连接成功 ✅", L"NppSSH", MB_OK | MB_TASKMODAL);
+                    if (LOWORD(wParam) == IDC_BTN_TEST) {
+                        //无论成功还是失败都断开连接，防止占用远程资源
+                        NppSSH_Disconnect(pPanel->GetPanelIndex());
+                    }
+                    else {
+                        EndDialog(hWnd, IDOK); // 官方标准关闭
+                    }
                     if (pPanel && LOWORD(wParam) == IDC_BTN_CONNECT) {
                         pPanel->setSSHConnected(true);//更新面板显示效果，绑定面板ID和session
                     }
                     
                     
-                    // 已经由setSSHConnected(true);处理
-                    //NppSSH_LogInfoAuto("连接成功PanelID======" + std::to_string(pPanel->_panelId));
-                    //MessageBoxW(s_nppData._nppHandle, std::to_wstring(pPanel->_panelId).c_str(), L"NppSSH", MB_OK | MB_TASKMODAL);
-                    //OnSSHConnected(pPanel->_panelId); // 面板连接成功后，通知窗口绑定索引
-                    //DisconnectPanel(pPanel->_panelId);// 面板断开SSH函数
-                    if (LOWORD(wParam) == IDC_BTN_TEST) {
-                        //无论成功还是失败都断开连接，防止占用远程资源
-                        NppSSH_Disconnect(pPanel->GetPanelIndex());
-                        //DisconnectPanel(pPanel->_panelId);        //调用转发断开连接释放当前面板连接资源
-                        
-                    }
-                    else {
-                        EndDialog(hWnd, IDOK); // 官方标准关闭
-                    }
                 }else {
                     s_isConnecting = false;
                     MessageBoxW(hWnd, L"SSH 连接失败 ❌", L"NppSSH", MB_ICONERROR);
@@ -540,9 +535,26 @@ INT_PTR CALLBACK NppSSHDockPanel::SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM 
         }
         return TRUE;
     }
-
+    //对话框销毁后的所有操作
     case WM_DESTROY:
-        ::SetFocus(pPanel->GetOutputEditHandle());//销毁时候要将焦点放到终端模拟器
+        // 1. 先将焦点切回终端编辑框
+        //if (pPanel) {
+        //    NppSSH_LogInfoAuto("【设置伪终端焦点！】");
+        //    SSH_RestoreFocusAndCaret(pPanel->GetPanelIndex());
+        //}
+        // 模态对话框销毁 → POST 消息给伪终端 → 自动修复光标
+        if (pPanel)
+        {
+            HWND hEdit = pPanel->GetOutputEditHandle();
+            if (hEdit && IsWindow(hEdit))
+            {
+                // 关键：必须用 PostMessage，不能用 SendMessage
+                PostMessageW(hEdit, WM_USER + 1001, 0, 0);
+                NppSSH_LogInfoAuto("已发送修复消息 WM_USER+1001 到伪终端");
+            }
+        }
+
+        //::SetFocus(pPanel->GetOutputEditHandle());//销毁时候要将焦点放到终端模拟器
 
         pPanel = nullptr;
         NppSSH_LogInfoAuto("登录对话框销毁");

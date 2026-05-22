@@ -121,6 +121,36 @@ SSHConnection* GetSSHConnectionByPanelId(int panelId) {
 
     return conn;
 }
+//工具函数，通过 this或者实例对象 指针查找对应的 面板ID（key）
+int SSHConnection_GetPanelId(SSHConnection* self) {
+    std::lock_guard<std::mutex> lock(g_panelConnMutex);
+    for (auto& pair : g_panelConnections) {
+        if (pair.second.get() == self) {
+            return pair.first; // 返回正确面板ID
+        }
+    }
+    return -1;
+}
+// 工具函数：提取字符串最后一行
+std::string SSHConnection::extractLastLine(const std::string& str) {
+    if (str.empty()) {
+        return "";
+    }
+
+    // 找到最后一个换行符
+    size_t lastPos = str.find_last_of("\r\n");
+    if (lastPos == std::string::npos) {
+        return str; // 没有换行，直接返回整个字符串
+    }
+
+    // 直接返回最后一行，**不做任何清理、不做任何处理**
+    return str.substr(lastPos + 1);
+}
+// 工具函数：判断是否以指定字符串开头
+bool SSHConnection::startsWith(const std::string& str, const std::string& prefix) {
+    if (str.size() < prefix.size()) return false;
+    return str.compare(0, prefix.size(), prefix) == 0;
+}
 // 释放连接资源
 static void ReleaseConnectionResources(SOCKET sock, LIBSSH2_SESSION* session) {
     // 释放shell通道（补充原有逻辑）
@@ -165,15 +195,10 @@ SSHConnection::SSHConnection(SSHConnection&& other) noexcept {
     m_pass = std::move(other.m_pass);
     m_port = other.m_port;
     m_prompt = std::move(other.m_prompt);
-    m_dirFile = std::move(other.m_dirFile);
-    m_showDir = std::move(other.m_showDir);
-    m_homeDir = std::move(other.m_homeDir);
-    m_shellChannel = other.m_shellChannel;
+    m_shellChannel.store(other.m_shellChannel.load());
     m_stopHeartbeat = other.m_stopHeartbeat.load();
     m_heartbeatThread = std::move(other.m_heartbeatThread);
     m_pConnectThread = other.m_pConnectThread;
-    isCdCommand = other.isCdCommand;
-    isPwdCommand = other.isPwdCommand;
 
     // 源对象置空
     other.m_session = nullptr;
@@ -185,8 +210,6 @@ SSHConnection::SSHConnection(SSHConnection&& other) noexcept {
     other.m_shellChannel = nullptr;
     other.m_stopHeartbeat = true;
     other.m_pConnectThread = nullptr;
-    other.isCdCommand = false;
-    other.isPwdCommand = false;
 }
 
 // 移动赋值
@@ -207,15 +230,10 @@ SSHConnection& SSHConnection::operator=(SSHConnection&& other) noexcept {
         m_pass = std::move(other.m_pass);
         m_port = other.m_port;
         m_prompt = std::move(other.m_prompt);
-        m_dirFile = std::move(other.m_dirFile);
-        m_showDir = std::move(other.m_showDir);
-        m_homeDir = std::move(other.m_homeDir);
-        m_shellChannel = other.m_shellChannel;
+        m_shellChannel.store(other.m_shellChannel.load());
         m_stopHeartbeat = other.m_stopHeartbeat.load();
         m_heartbeatThread = std::move(other.m_heartbeatThread);
         m_pConnectThread = other.m_pConnectThread;
-        isCdCommand = other.isCdCommand;
-        isPwdCommand = other.isPwdCommand;
 
         // 源对象置空
         other.m_session = nullptr;
@@ -225,8 +243,6 @@ SSHConnection& SSHConnection::operator=(SSHConnection&& other) noexcept {
         other.m_shellChannel = nullptr;
         other.m_stopHeartbeat = true;
         other.m_pConnectThread = nullptr;
-        other.isCdCommand = false;
-        other.isPwdCommand = false;
     }
     return *this;
 }
@@ -253,6 +269,7 @@ SSHConnection::~SSHConnection() {
 
     // 4. 释放资源（加锁）
     ReleaseResources();
+    StopShellReader();
 }
 
 // 释放资源
@@ -287,8 +304,8 @@ void SSHConnection::ReleaseResources() {
     if (oldChannel) {
         try {
             NppSSH_LogInfoAuto("释放资源.............释放shell通道");
-            libssh2_channel_wait_closed(oldChannel);
             libssh2_channel_close(oldChannel);
+            libssh2_channel_wait_closed(oldChannel);
             libssh2_channel_free(oldChannel);
         }
         catch (...) {}
@@ -298,7 +315,9 @@ void SSHConnection::ReleaseResources() {
     if (oldSession) {
         try {
             NppSSH_LogInfoAuto("释放资源.............释放SSH会话");
-            libssh2_session_disconnect(oldSession, "Connection closed");
+            //发一个 SSH 关闭包,注释掉与Putty和Mobaxterm一致，不发 SSH 断开，直接关 TCP
+            // 发送 SSH 协议断开报文，属于协议规范。暂时注释关闭与其他软件一致
+            //libssh2_session_disconnect(oldSession, "bye");//"bye"正确退出，"Connection closed"强制退出
             libssh2_session_free(oldSession);
         }
         catch (...) {}
@@ -308,7 +327,7 @@ void SSHConnection::ReleaseResources() {
     if (oldSock != INVALID_SOCKET) {
         try {
             NppSSH_LogInfoAuto("释放资源.............关闭Socket");
-            shutdown(oldSock, SD_BOTH);
+            //shutdown(oldSock, SD_BOTH);// 会强制切断 TCP，导致服务器报 Connection closed。导致强制断开
             closesocket(oldSock);
         }
         catch (...) {}
@@ -318,12 +337,7 @@ void SSHConnection::ReleaseResources() {
     m_connected = false;
     m_connecting = false;
     m_cancelConnect = false;
-    m_prompt = "[unknown@unknown ~]# ";
-    m_dirFile = "~"; 
-    m_showDir = "~";
-    m_homeDir = "";
-    isCdCommand = false;
-    isPwdCommand = false;
+    m_prompt = "";
 }
 
 // 设置主机
@@ -379,7 +393,10 @@ void SSHConnection::HeartbeatThreadFunc() {
 
         // 第三步：计数+打印日志（此时已确认未收到停止信号）
         secondCount++;
-        //NppSSH_LogInfoAuto("心跳线程已启动循环，第" + std::to_string(secondCount) + "次" +
+
+        //std::ostringstream oss;
+        //oss << m_heartbeatThread.get_id();
+        //NppSSH_LogInfoAuto("心跳线程[" + oss.str() + "]已启动循环，第" + std::to_string(secondCount) + "次" +
         //    std::to_string(m_stopHeartbeat.load(std::memory_order_acquire)));
 
         // 第四步：心跳逻辑（增加空指针检测，避免访问已释放资源）
@@ -450,6 +467,7 @@ void SSHConnection::StartHeartbeat() {
 
 // 断开连接
 void SSHConnection::Disconnect() {
+    StopShellReader();
     ReleaseResources();
     m_connected.store(false, std::memory_order_release);
 }
@@ -482,383 +500,217 @@ void SSHConnection::ResetState() {
     m_connecting = false;
     m_session = nullptr;
     m_sock = INVALID_SOCKET;
-    m_dirFile = "~";
-    m_showDir = "~";
-    m_prompt = "[unknown@unknown ~]# ";
-    m_homeDir = "";
-    isCdCommand = false;
-    isPwdCommand = false;
 }
-// 获取家目录
-std::string SSHConnection::GetHomeDir() {
-    // 1. 已缓存 → 直接返回（避免重复执行命令）
-    if (!m_homeDir.empty()) {
-        return m_homeDir;
-    }
-
-    // 2. 未连接 → 返回空
-    if (!m_connected || !m_session) {
-        return "";
-    }
-
-    // 3. 创建通道（智能指针自动释放，安全无泄漏）
-    std::unique_ptr<LIBSSH2_CHANNEL, decltype(&libssh2_channel_free)>
-        ch(libssh2_channel_open_session(m_session), libssh2_channel_free);
-    if (!ch) {
-        return "";
-    }
-
-    // 4. 执行获取 HOME 命令
-    if (libssh2_channel_exec(ch.get(), "echo $HOME") != 0) {
-        libssh2_channel_close(ch.get());
-        return "";
-    }
-
-    // 5. 读取返回数据
-    std::string home;
-    char buf[SSHConst::BUF_SIZE_SMALL] = { 0 };
-    int bytesRead = 0;
-
-    while ((bytesRead = libssh2_channel_read(ch.get(), buf, sizeof(buf) - 1)) > 0) {
-        home.append(buf, bytesRead);
-        memset(buf, 0, sizeof(buf));
-    }
-
-    // 6. 关闭通道
-    libssh2_channel_close(ch.get());
-
-    // 7. 清理换行、回车符（标准清理）
-    home.erase(std::remove(home.begin(), home.end(), '\n'), home.end());
-    home.erase(std::remove(home.begin(), home.end(), '\r'), home.end());
-
-    // 8. 缓存到家目录成员变量（持久化存储）
-    m_homeDir = std::move(home);
-
-    // 9. 返回最终路径（/root 或 /home/xxx）
-    return m_homeDir;
-}
-
-// 替换~为真实家目录，检测PWD命令
-std::string SSHConnection::ReplaceTildeWithHome(const std::string& cmd) {
-    // 初始化标记为默认值
-    isCdCommand = false;
-    isPwdCommand = false;
-    std::string result = cmd;
-    std::string home = m_homeDir;
-    std::string fileDir = m_dirFile;//用于拼接当前所在目录
-    
-    // ========== 预处理：统一fileDir格式（末尾确保有/） ==========
-    if (!fileDir.empty() && fileDir.back() != '/') {
-        fileDir += "/";
-    }
-    //NppSSH_LogInfoAuto("预处理命令，处理前====1111===isCdCommand====" + std::to_string(isCdCommand) +
-    //    ",isPwdCommand.load()======" + std::to_string(isPwdCommand)
-    //    + "，m_dirFile====" + m_dirFile + "，m_homeDir====" + m_homeDir + "，fileDir====" + fileDir + "，result====" + result);
-    // ========== 第一步：替换~和~/（严格匹配规则） ==========
-    bool hasTildeReplaced = false; // 标记是否执行了~替换
-    size_t pos = 0;
-    while (pos < result.size()) {
-        // 匹配~/：开头或前面是空格，且后接/
-        if (result[pos] == '~' && pos + 1 < result.size() && result[pos + 1] == '/') {
-            bool frontOk = (pos == 0) || std::isspace(static_cast<unsigned char>(result[pos - 1]));
-            if (frontOk) {
-                result.replace(pos, 2, home + "/");
-                hasTildeReplaced = true;
-                pos += home.size() + 1; // 跳过替换后的字符，避免重复匹配
-                continue;
-            }
-        }
-        // 匹配独立~：前后为空/空格/结束
-        else if (result[pos] == '~') {
-            bool frontOk = (pos == 0) || std::isspace(static_cast<unsigned char>(result[pos - 1]));
-            bool backOk = (pos == result.size() - 1) || std::isspace(static_cast<unsigned char>(result[pos + 1]));
-            if (frontOk && backOk) {
-                result.replace(pos, 1, home);
-                hasTildeReplaced = true;
-                pos += home.size();
-                continue;
-            }
-        }
-        pos++;
-    }
-    NppSSH_LogInfoAuto("预处理命令，第一步结束====2222===isCdCommand====" + std::to_string(isCdCommand) +
-        ",isPwdCommand.load()======" + std::to_string(isPwdCommand)
-        + "，m_dirFile====" + m_dirFile + "，m_homeDir====" + m_homeDir + "，fileDir====" + fileDir + "，result====" + result);
-    // ========== 第二步：检测pwd命令 + 处理cd命令路径拼接 ==========
-    pos = 0;
-    while (pos < result.size()) {
-        // 跳过空白字符，简化命令检测逻辑
-        pos = skipWhitespace(result, pos);
-        if (pos >= result.size()) break;
-
-        // ---------- 检测独立pwd命令 ----------
-        if (result.compare(pos, 3, "pwd") == 0) {
-            // 验证pwd是独立命令（后接分隔符/空白/结束）
-            bool rightOk = (pos + 3 == result.size()) ||
-                std::isspace(static_cast<unsigned char>(result[pos + 3])) ||
-                isCmdSeparator(result[pos + 3]);
-            if (rightOk) {
-                isPwdCommand = true;
-                pos += 3; // 跳过pwd
-                continue;
-            }
-        }
-
-        // ---------- 检测独立cd命令并处理路径拼接 ----------
-        if (result.compare(pos, 2, "cd") == 0) {
-            // 验证cd是独立命令（后接分隔符/空白/结束）
-            bool rightOk = (pos + 2 == result.size()) ||
-                std::isspace(static_cast<unsigned char>(result[pos + 2])) ||
-                isCmdSeparator(result[pos + 2]);
-            if (rightOk) {
-                // 只要检测到【独立的 cd 命令】，直接赋值 true
-                isCdCommand = true;
-                // 找到cd参数的起始位置（跳过cd后的空白）
-                size_t argStart = skipWhitespace(result, pos + 2);
-                if (argStart == std::string::npos || argStart >= result.size()) {
-                    pos = argStart;
-                    continue;
-                }
-
-                // 找到cd参数的结束位置（分隔符/空白）
-                size_t argEnd = findArgEnd(result, argStart);
-                std::string cdArg = result.substr(argStart, argEnd - argStart);
-
-                // 不处理的情况：空参数、绝对路径、~、~/
-                if (cdArg.empty() || cdArg[0] == '/' || cdArg == "~" || (cdArg.size() >= 2 && cdArg.substr(0, 2) == "~/")) {
-                    pos = argEnd;
-                    continue;
-                }
-
-                // ========== 执行相对路径拼接 ==========
-                std::string newPath = fileDir + cdArg;
-                // 替换原参数为拼接后的路径
-                result.replace(argStart, cdArg.size(), newPath);
-                //isCdCommand = true;
-                // 更新pos，跳过替换后的路径
-                pos = argStart + newPath.size();
-                continue;
-            }
-        }
-
-        // ---------- 处理非cd/pwd的字符/分隔符 ----------
-        if (isCmdSeparator(result[pos])) {
-            // 跳过分隔符（支持&&/||等连续分隔符）
-            pos++;
-            if (pos < result.size() && result[pos] == result[pos - 1]) {
-                pos++;
-            }
-        }
-        else {
-            pos++;
-        }
-    }
-    NppSSH_LogInfoAuto("预处理命令，最终第二步结束====3333====isCdCommand===" + std::to_string(isCdCommand) +
-        ",isPwdCommand.load()======" + std::to_string(isPwdCommand)
-        + "，m_dirFile====" + m_dirFile + "，m_homeDir====" + m_homeDir + "，fileDir====" + fileDir + "，result====" + result);
-    return result;
-}
-
-// 解析cd命令目标路径
-void SSHConnection::ResolveCdTarget(const std::string& pwdDir) {
-    // 步骤1：执行远程服务器命令（pwd）获取当前所在文件夹
-    std::string pwdOutput = pwdDir;
-
-    // 执行失败直接退出函数，不赋值
-    if (pwdOutput.empty()) {
+// 启动后台持续读（官方poll）
+// ========== 改造StartShellReader：仅执行命令时启动 ==========
+void SSHConnection::StartShellReader() {
+    std::lock_guard<std::mutex> lock(m_readerMutex);
+    // 前置检查：通道无效/已有运行线程 → 直接返回
+    if (!m_shellChannel || m_shellReaderThread.joinable()) {
+        NppSSH_LogWarnAuto("【WARN】StartShellReader 跳过：通道无效或线程已运行");
         return;
     }
-    pwdOutput.erase(std::remove(pwdOutput.begin(), pwdOutput.end(), '\n'), pwdOutput.end());
-    pwdOutput.erase(std::remove(pwdOutput.begin(), pwdOutput.end(), '\r'), pwdOutput.end());
 
-    // 去掉末尾多余的 /（例如 /usr/ → /usr，/ → 保持 /）
-    while (pwdOutput.size() > 1 && pwdOutput.back() == '/') {
-        pwdOutput.pop_back();
-    }
+    // 重置线程控制状态
+    m_stopReader = false;
+    m_waitingForPrompt = true; // 标记"等待提示符"
+    m_isReadingOutput = true;
+    m_prompt.clear(); // 清空旧提示符
 
-
-    NppSSH_LogInfoAuto("准备赋值的pwd输出=========="+pwdOutput);
-    // 步骤2：将获取到的当前文件夹赋值给m_dirFile
-    m_dirFile = pwdOutput;
-
-    // 步骤3：根据m_dirFile给m_showDir赋值
-    std::string homeDir = GetHomeDir();
-    // 3.1 处理主目录情况（m_dirFile等于主目录时，显示~）
-    if (pwdOutput == homeDir) {
-        //NppSSH_LogInfoAuto("处理主目录情况（m_dirFile等于主目录时，显示~）pwd输出==========" + m_showDir);
-        
-        m_showDir = "~";
-    }
-    // 3.2 处理根目录情况（/）
-    else if (pwdOutput == "/") {
-        //NppSSH_LogInfoAuto("根目录情况（/）pwd输出==========" + m_showDir);
-
-        m_showDir = "/";
-    }
-    // 3.3 处理其他目录（提取最后一个/后的部分）
-    else {
-        //NppSSH_LogInfoAuto("处理其他目录（提取最后一个/后的部分）pwd输出==========" + pwdOutput);
-
-        size_t lastSlash = pwdOutput.find_last_of("/");
-        // 确保路径格式正确（如/usr的lastSlash是0，/usr/的lastSlash是4）
-        if (lastSlash == std::string::npos) {
-            m_showDir = pwdOutput;  // 极端情况（理论上不会出现）
-        }
-        else {
-            std::string dirName = pwdOutput.substr(lastSlash + 1);
-            // 处理路径末尾带/的情况（如/usr/devFile/）
-            m_showDir = dirName.empty() ? "/" : dirName;
-        }
-    }
-
-    // 步骤4：赋值m_prompt
-    if (!m_user.empty() && !m_host.empty()) {
-        m_prompt = "[" + m_user + "@" + m_host + " " + m_showDir + "]# ";
-    }
-    else {
-        m_prompt = "[unknown@unknown " + m_showDir + "]# ";
-    }
+    // 启动线程
+    m_shellReaderThread = std::thread(&SSHConnection::ShellReaderLoop, this);
+    NppSSH_LogInfoAuto("【OK】ShellReader 线程启动（仅本次命令）");
 }
 
-// 执行命令
-std::string SSHConnection::ExecuteCommand(const std::string& cmd) {
-    NppSSH_LogInfoAuto("处理命令前，原生执行命令=========="+cmd+"，命令提示符显示的目录=="+ m_showDir+"，全路径=="+ m_dirFile);
-    // 1. 先检查连接状态（加锁）
-    bool isConnected = false;
-    LIBSSH2_SESSION* session = nullptr;
-    std::string runCmd;
-    {
-        isConnected = m_connected && m_session != nullptr && m_sock != INVALID_SOCKET;
-        session = m_session;
-        runCmd = ReplaceTildeWithHome(cmd); // 将“~”符号转换为home真是路径,拼接当前所在文件夹
-    }
-    if (!isConnected || !session) {
-        return "❌ 面板未连接\n";
+// 停止后台读
+void SSHConnection::StopShellReader() {
+    std::lock_guard<std::mutex> lock(m_readerMutex);
+    m_stopReader = true;
+    m_waitingForPrompt = false; // 取消等待提示符
+
+    if (m_shellReaderThread.joinable()) {
+        try {
+            // 正确的线程等待方式：直接join（无超时）
+            m_shellReaderThread.join();
+        }
+        catch (...) {
+            // 如果join失败，强制分离
+            m_shellReaderThread.detach();
+            NppSSH_LogErrorAuto("【ERROR】ShellReader 线程join失败，强制分离");
+        }
     }
 
-    // 3. 创建命令通道（无锁）
-    std::unique_ptr<LIBSSH2_CHANNEL, decltype(&libssh2_channel_free)>
-        ch(libssh2_channel_open_session(session), libssh2_channel_free);
-    if (!ch) {
-        NppSSH_LogErrorAuto("创建命令通道失败");
-        return "无法创建命令通道";
-    }
+    // 重置线程对象
+    m_shellReaderThread = std::thread();
+    NppSSH_LogInfoAuto("【OK】ShellReader 线程已停止，最终提示符：[" + (m_prompt.empty() ? "空" : m_prompt) + "]");
+}
 
-    // 4. 构造执行命令
-    bool cdFlag = isCdCommand;
-    bool pwdFlag = isPwdCommand;
-    bool isAppendPwd = !(cdFlag == false && pwdFlag == true);
-    //realDir = "~/";//【\"】引号
-    //runCmd = "cd \"" + realDir + "\" && ls && pwd";
-    NppSSH_LogInfoAuto("处理命令后，准备构造执行命令前runCmd==========" + runCmd + "，命令提示符显示的目录==" + m_showDir + "，全路径==" + m_dirFile+ "isCdCommand===========" + std::to_string(cdFlag) + ",isPwdCommand.load()======" + std::to_string(pwdFlag));
 
-    // 规则1：非cd命令 → 先cd到当前目录，再判断是否加pwd
-    if (!cdFlag) {
-        //NppSSH_LogInfoAuto("构造执行命令前===========" + runCmd);
-        runCmd = "cd " + m_dirFile + " && " + runCmd;
-    }
-    // 规则2：cd命令 → 无pwd则追加 pwd
-    if (isAppendPwd) {
-        // 强制换行 + 最后一行输出pwd，方便解析和删除
-        //runCmd += " && echo \"pwd=$PWD\"";
-        bool endWithSemi = EndsWithSemicolonAfterTrim(runCmd);
-        if (endWithSemi) {
-            // 末尾是 ; → 用;
-            runCmd += "     echo \"pwd=$PWD\"";
+// 【官方】poll + read，后台无限流
+void SSHConnection::ShellReaderLoop() {
+    NppSSH_LogInfoAuto("==============================================");
+    NppSSH_LogInfoAuto("=        ShellReaderLoop 线程运行中          =");
+    NppSSH_LogInfoAuto("==============================================");
+    NppSSH_LogInfoAuto("【ShellReaderLoop 正式运行】m_prompt = " + std::string(m_prompt));
+
+    char buf[SSHConst::BUF_SIZE_LARGE];
+    const int IDLE_MS = 10;
+    // 延长超时（兼容长命令/脚本执行）
+    const int MAX_IDLE_COUNT = 1200; // 12秒超时兜底
+    int idleCount = 0;
+    // 输出到面板
+    int panelId = SSHConnection_GetPanelId(this);
+    // 仅在"等待提示符"且连接有效时运行
+    while (m_waitingForPrompt && m_connected && m_shellChannel && !m_stopReader) {
+        int n = libssh2_channel_read(
+            m_shellChannel,
+            buf,
+            sizeof(buf) - 1,
+            LIBSSH2_CHANNEL_EXTENDED_DATA_NORMAL
+        );
+
+        if (n > 0) {
+            buf[n] = 0;
+            std::string chunk(buf);
+
+            if (!m_currentCommand.empty()) {
+                // 只匹配【命令本身】，不匹配后面的换行
+                std::string cmd = m_currentCommand;
+
+                // 安全判断：chunk 开头就是命令字符串
+                auto startsWithCmd = [](const std::string& s, const std::string& prefix) {
+                    if (s.length() < prefix.length()) return false;
+                    return s.compare(0, prefix.length(), prefix) == 0;
+                    };
+
+                if (startsWithCmd(chunk, cmd)) {
+                    // 只删除【命令】，保留后面所有内容（包括 \r\n）
+                    chunk = chunk.substr(cmd.length());
+                    NppSSH_LogInfoAuto("【过滤】仅移除命令文本，保留所有换行");
+                }
+
+                // 只过滤一次
+                m_currentCommand.clear();
+            }
+
+
+            
+            if (panelId >= 0) {
+                SSH_AppendOutputText(panelId, chunk);
+                SSH_SetIsCommandRunning(panelId, true);
+            }
+
+            // 重置空闲计数
+            idleCount = 0;
+
+            // 提取最后一行作为提示符（空行也直接赋值，不处理）
+            std::string lastLine = extractLastLine(chunk);
+            {
+                std::lock_guard<std::mutex> lock(m_mutex);
+                m_prompt = lastLine; // 空行直接赋值，不做任何过滤
+            }
+            NppSSH_LogInfoAuto(chunk+"【更新提示符】=> [" + (m_prompt.empty() ? "空" : m_prompt) + "]");
+            // 核心逻辑：检测到非空提示符 → 停止线程
+            if (!m_prompt.empty()) {
+                NppSSH_LogInfoAuto("【检测到非空提示符】停止ShellReader线程");
+                m_stopReader = true;
+                m_waitingForPrompt = false;
+                break; // 立即退出循环
+            }
+        }
+        else if (n == 0) {
+            // 无数据，短暂休眠
+            Sleep(IDLE_MS);
+            idleCount++;
+
+            // 超时兜底：即使无提示符，也停止线程（避免永久阻塞）
+            if (idleCount >= MAX_IDLE_COUNT) {
+                NppSSH_LogInfoAuto("【ShellReader 超时】12秒无输出，强制停止线程");
+                m_stopReader = true;
+                m_waitingForPrompt = false;
+                break;
+            }
         }
         else {
-            // 末尾不是 ; → 用 &&
-            runCmd += "    &&   echo \"pwd=$PWD\"";
-        }
-    }
-    NppSSH_LogInfoAuto("构造执行命令后=====runCmd======" + runCmd);
-
-    // 5. 执行命令（无锁）
-    int execRet = libssh2_channel_exec(ch.get(), runCmd.c_str());
-    //[执行命令结束====cd ~&& cd / && pwd====执行命令的结果 == = 0]
-    NppSSH_LogInfoAuto("执行命令结束===="+ runCmd+"====执行命令的结果==="+std::to_string(execRet));
-    if (execRet != 0) {
-        std::string errMsg = "命令执行失败 [错误码：" + std::to_string(execRet) + "] " + GetLibssh2ErrorMsg(session);
-        NppSSH_LogErrorAuto(errMsg);
-        libssh2_channel_close(ch.get());
-        return "❌ " + errMsg + "\r\n";
-    }
-
-    // 6. 读取输出（无锁，耗时操作不持锁）
-    char buf[SSHConst::BUF_SIZE_LARGE] = { 0 };
-    std::string out, err;
-    int bytesRead = 0;
-
-    while ((bytesRead = libssh2_channel_read(ch.get(), buf, sizeof(buf) - 1)) > 0) {
-        out.append(buf, bytesRead);
-        memset(buf, 0, sizeof(buf));
-        if (out.size() > 1024 * 1024) {
-            out += "/r/n输出内容过长，已截断";
-            break;
-        }
-    }
-
-    while ((bytesRead = libssh2_channel_read_stderr(ch.get(), buf, sizeof(buf) - 1)) > 0) {
-        err.append(buf, bytesRead);
-        memset(buf, 0, sizeof(buf));
-    }
-    
-    // 7. 关闭通道（无锁）
-    libssh2_channel_send_eof(ch.get());
-    libssh2_channel_wait_eof(ch.get());
-    libssh2_channel_wait_closed(ch.get());
-    libssh2_channel_close(ch.get());
-
-    NppSSH_LogInfoAuto("执行命令输出原始内容====" + out);
-    //去除末尾换行
-    
-    std::string finalOutput = out;
-
-    
-    //isCdCommand     isPwdCommand
-    //true              true    更新
-    //true              false   更新
-    //false             true    不更新
-    //false             false   更新
-    if (execRet == 0 && isAppendPwd) {
-        // 查找最后一行 pwd= 格式内容
-        std::string pwdOutput = out;
-        size_t lastPwdPos = out.rfind("pwd=");
-        if (lastPwdPos != std::string::npos) {
-            // 截取 pwd= 后的路径
-            size_t lineEnd = out.find_first_of("\r\n", lastPwdPos);
-            pwdOutput = out.substr(lastPwdPos + 4);
-            if (lineEnd != std::string::npos) {
-                pwdOutput = out.substr(lastPwdPos + 4, lineEnd - lastPwdPos - 4);
+            // 处理libssh2错误码
+            int err = libssh2_session_last_errno(m_session);
+            std::string errDesc;
+            switch (err) {
+            case LIBSSH2_ERROR_SOCKET_SEND:
+                errDesc = "LIBSSH2_ERROR_SOCKET_SEND(-9)：套接字发送失败（连接已断开）";
+                break;
+            case LIBSSH2_ERROR_SOCKET_RECV:
+                errDesc = "LIBSSH2_ERROR_SOCKET_RECV(-8)：套接字接收失败";
+                break;
+            case LIBSSH2_ERROR_EAGAIN:
+                errDesc = "LIBSSH2_ERROR_EAGAIN(-37)：无数据，需重试";
+                break;
+            case LIBSSH2_ERROR_BAD_USE:
+                errDesc = "LIBSSH2_ERROR_BAD_USE(-78)：API 使用错误";
+                break;
+            default:
+                errDesc = "未知错误码：" + std::to_string(err);
             }
-            // 删除最后一行pwd，不返回给界面
-            finalOutput = out.substr(0, lastPwdPos);
-            // 去除末尾多余的换行/空格
-            while (!finalOutput.empty() && (finalOutput.back() == '\n' || finalOutput.back() == '\r')) {
-                finalOutput.pop_back();
-            }
+            NppSSH_LogInfoAuto("【错误】" + errDesc);
 
+            // 仅非阻塞错误继续等待，其他错误停止线程
+            if (err == LIBSSH2_ERROR_EAGAIN || err == LIBSSH2_ERROR_BAD_USE) {
+                Sleep(IDLE_MS);
+                continue;
+            }
+            else {
+                NppSSH_LogInfoAuto("【致命错误】停止ShellReader线程");
+                m_stopReader = true;
+                m_waitingForPrompt = false;
+                break;
+            }
         }
-        NppSSH_LogInfoAuto("更新持久化存储，解析后的pwd路径==========" + pwdOutput);
-        if (!pwdOutput.empty()) {
-            //更新持久化存储的路径
-            //NppSSH_LogInfoAuto("更新持久化存储的路径");
-            ResolveCdTarget(pwdOutput);
-        }
-        NppSSH_LogInfoAuto("返回给界面的最终内容====" + finalOutput);
     }
-    // 8. 拼接结果  目前的逻辑最终内容的末尾不能有回车或者换行符，否则会多一行。TrimTrailingNewlines去除末尾该内容
-    std::string result;
-    if (!finalOutput.empty()) { result = TrimTrailingNewlines(finalOutput);}
-    if (!finalOutput.empty()) { result += "\r\n当前所在全路径：\""; result += m_dirFile + "\"\r\n"; }
-    if (!err.empty()) result += err;
-    return result.empty() ? "当前全路径：\""+m_dirFile +"\"\r\n" : result;
+    if (panelId >= 0) {
+        NppSSH_LogInfoAuto("【ShellReaderLoop 线程退出】调用SSHTerminal_PanelPrompt函数赋值私有成员变量 _prompt = "+ m_prompt);
+        SSH_PanelPrompt(panelId, m_prompt);
+        SSH_SetIsCommandRunning(panelId, false);
+    }
+
+    NppSSH_LogInfoAuto("【ShellReaderLoop 线程退出】最终提示符：[" + (m_prompt.empty() ? "空" : m_prompt) + "]");
+}
+// 伪终端执行命令（终极纯净版）
+bool SSHConnection::ExecuteCommand(const std::string& cmd) {
+    NppSSH_LogInfoAuto("【ExecuteCommand 执行】命令 = " + cmd);
+
+    // 前置检查：未连接/通道无效 → 返回失败
+    if (!m_connected || !m_shellChannel) {
+        NppSSH_LogErrorAuto("【ERROR】ExecuteCommand 失败：未连接或通道无效");
+        return false;
+    }
+    // 保存当前命令，用于过滤回显
+    m_currentCommand = cmd;
+    // 1. 停止旧线程（防止残留）
+    StopShellReader();
+
+    // 2. 启动本次命令的ShellReader线程
+    StartShellReader();
+
+    // 3. 发送命令
+    std::string command = cmd + "\n";
+    int writeRet = libssh2_channel_write(m_shellChannel, command.c_str(), command.length());
+    if (writeRet < 0) {
+        NppSSH_LogErrorAuto("【ERROR】命令发送失败：" + std::to_string(writeRet));
+        StopShellReader(); // 发送失败立即停止线程
+        return false;
+    }
+    NppSSH_LogInfoAuto("【OK】命令发送完成，等待提示符...");
+
+    // 4. （可选）等待线程自动停止（或业务层按需处理）
+    // 如需同步等待：while(m_waitingForPrompt) { Sleep(10); }
+
+    return true;
 }
 
 // 获取提示符
 std::string SSHConnection::GetPrompt() const {
     std::lock_guard<std::mutex> lock(m_mutex);
-    return m_prompt.empty() ? "[unknown@unknown ~]# " : m_prompt;
+    return m_prompt.empty() ? "" : m_prompt;
 }
 
 // 初始化WSA
@@ -966,6 +818,7 @@ LIBSSH2_SESSION* SSHConnection::InitSSHSession(SOCKET sock, const std::string& h
     }
 
     // 设置会话参数
+    libssh2_session_banner_set(session, "SSH-2.0-NppSSH");
     libssh2_session_set_blocking(session, 1);
     libssh2_session_set_timeout(session, SSHConst::SSH_HANDSHAKE_TIMEOUT_MS);
 
@@ -1003,43 +856,51 @@ bool SSHConnection::AuthenticateSSH(LIBSSH2_SESSION* session, const std::string&
 
 // 读取登录Banner和登录时间
 void SSHConnection::ReadLoginBanner(LIBSSH2_SESSION* session) {
-    if (!session) return;
+    if (!session) { // 必须有伪终端通道才继续
+        return;
+    }
+    if (!m_shellChannel) {
+        NppSSH_LogInfoAuto("【没有伪终端】");
+        return;
+    }
     //配置home
-    std::string homeDir = GetHomeDir();
-    m_dirFile = homeDir;
-    NppSSH_LogInfoAuto("当前登录用户的home完整路径1===="+homeDir);
-    NppSSH_LogInfoAuto("当前登录用户的home完整路径2===="+ m_homeDir);
-
+    //std::string homeDir = GetHomeDir();
+    //m_dirFile = homeDir;
+    //NppSSH_LogInfoAuto("当前登录用户的home完整路径1===="+homeDir);
+    //NppSSH_LogInfoAuto("当前登录用户的home完整路径2===="+ m_homeDir);
+    int panelId = SSHConnection_GetPanelId(this);
     // 读取Banner
-    loginBanner = "\r\n";
+    std::string loginBanner = "\r\n";
     const char* banner = libssh2_session_banner_get(session);
     if (banner) {
         loginBanner += banner;
         loginBanner += "\r\n";
     }
-    libssh2_session_banner_set(session,"20");
-    // 获取登录时间
-    std::unique_ptr<LIBSSH2_CHANNEL, decltype(&libssh2_channel_free)>
-        timeChannel(libssh2_channel_open_session(session), libssh2_channel_free);
-
-    if (timeChannel) {
-        const char* timeCmd = "echo \"Last login: $(date '+%Y-%m-%d %H:%M:%S') from $(echo $SSH_CLIENT | awk '{print $1}')\"";
-        if (libssh2_channel_exec(timeChannel.get(), timeCmd) == 0) {
-            char timeBuf[SSHConst::BUF_SIZE_MEDIUM] = { 0 };
-            std::string currentLoginTime;
-            int bytesRead = 0;
-
-            while ((bytesRead = libssh2_channel_read(timeChannel.get(), timeBuf, sizeof(timeBuf) - 1)) > 0) {
-                currentLoginTime += timeBuf;
-                memset(timeBuf, 0, sizeof(timeBuf));
-            }
-
-            if (!currentLoginTime.empty()) {
-                loginBanner += currentLoginTime;
-            }
-            //NppSSH_LogInfoAuto("读取session的loginBanner=====" + loginBanner);
-        }
-        libssh2_channel_close(timeChannel.get());
+    
+    // 获取登录时间  使用 伪终端 m_shellChannel 
+    std::string currentLoginTime;
+    char buf[SSHConst::BUF_SIZE_MEDIUM] = { 0 };
+    int bytesRead = 0;
+    // 读取伪终端输出（获取 Last login 信息）
+    while ((bytesRead = libssh2_channel_read(
+        m_shellChannel,
+        buf,
+        sizeof(buf) - 1,
+        LIBSSH2_CHANNEL_EXTENDED_DATA_NORMAL
+    )) > 0)
+    {
+        buf[bytesRead] = 0;
+        currentLoginTime += buf;
+        memset(buf, 0, sizeof(buf));
+    }
+    // 将获取到的登录信息拼接到欢迎语
+    if (!currentLoginTime.empty()) {
+        loginBanner += currentLoginTime;
+    }
+    m_prompt = extractLastLine(currentLoginTime);
+    if (m_prompt.empty()) {
+        NppSSH_LogInfoAuto("【注意】===========提示词为空");
+        m_prompt = "";
     }
 
     // 备用：本地时间
@@ -1051,13 +912,14 @@ void SSHConnection::ReadLoginBanner(LIBSSH2_SESSION* session) {
             st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
         loginBanner += localTime;
         loginBanner += "\r\n";
+        loginBanner += m_prompt;
     }
-
-    if (!m_user.empty() && !m_host.empty()) {
-        m_prompt = "[" + m_user + "@" + m_host + " " + m_showDir + "]# ";
-    }
-    else {
-        m_prompt = "[unknown@unknown " + m_showDir + "]# ";
+    
+    if (panelId >= 0) {
+        SSH_AppendOutputText(panelId, loginBanner);
+        NppSSH_LogInfoAuto("【欢迎语获取退出】调用SSHTerminal_PanelPrompt函数赋值私有成员变量 _prompt = " + m_prompt);
+        SSH_PanelPrompt(panelId, m_prompt);
+        SSH_SetIsCommandRunning(panelId, false);
     }
 }
 bool SSHConnection::Connect(const char* host, int port, const char* user, const char* pass) {
@@ -1207,11 +1069,59 @@ void SSHConnection::ConnectAsync(const char* host, int port, const char* user, c
             m_connected = true;
         }
 
+        //连接成功后，申请 PTY 伪终端
+        LIBSSH2_CHANNEL* channel = libssh2_channel_open_session(session);
+        if (channel) {
+            // 申请伪终端（关键！）
+            //int rc = libssh2_channel_request_pty(channel, "xterm-256color");
+            int rc = libssh2_channel_request_pty(channel, "xterm");
+            if (rc != 0) {
+                NppSSH_LogInfoAuto("【伪终端降级】xterm-256color降级xterm");
+                rc = libssh2_channel_request_pty(channel, "xterm");
+            }
+            if (rc != 0) {
+                NppSSH_LogInfoAuto("【伪终端降级】xterm降级vt100");
+                rc = libssh2_channel_request_pty(channel, "vt100");
+            }
+            if (rc != 0) {
+                NppSSH_LogInfoAuto("【伪终端降级】vt100降级dumb");
+                rc = libssh2_channel_request_pty(channel, "dumb");
+            }
+            if (rc == 0) {
+                libssh2_channel_request_pty_size(channel, 120, 40);
+                
+                // 启动交互式 shell
+                libssh2_channel_shell(channel);
+                m_shellChannel = channel;
+            }
+            else {
+                NppSSH_LogErrorAuto("request pty failed");
+                libssh2_channel_free(channel);
+                m_shellChannel = nullptr;
+            }
+        }
         // 步骤7：读取Banner和启动心跳（锁外执行）
-        ReadLoginBanner(session);
+        // 增加 3次重试机制，确保通道完全就绪
+        // ==============================================
+        
         StartHeartbeat();
 
         NppSSH_LogInfoAuto("SSH连接成功！");
+
+        bool bannerOk = false;
+        for (int i = 0; i < 3; i++) {
+            if (m_shellChannel != nullptr) {
+                ReadLoginBanner(session);
+                bannerOk = true;
+                break;
+            }
+            NppSSH_LogInfoAuto("【重试】等待伪终端就绪：第" + std::to_string(i + 1) + "次");
+            Sleep(10); // 极短等待，几乎无感知
+        }
+
+        if (!bannerOk) {
+            NppSSH_LogErrorAuto("【错误】3次重试后，伪终端仍未就绪");
+        }
         ok = true;
     }
     catch (const std::exception& e) {
@@ -1345,10 +1255,11 @@ void SSHConnection_ResetState(int panelId) {
     }
 }
 
-std::string SSHConnection_ExecuteCommand(int panelIndex, const std::string& cmd) {
+bool SSHConnection_ExecuteCommand(int panelIndex, const std::string& cmd) {
     // 1. 工具函数：判断面板ID是否存在
     if (!IsPanelIdExists(panelIndex)) {
-        return "命令执行失败，当前面板连接异常";
+        NppSSH_LogErrorAuto("命令执行失败，当前面板连接异常");
+        return false;
     }
 
     // 2. 工具函数：获取连接实例
@@ -1356,12 +1267,14 @@ std::string SSHConnection_ExecuteCommand(int panelIndex, const std::string& cmd)
 
     // 3. 实例为空 → 返回异常
     if (!conn) {
-        return "命令执行失败，当前面板连接异常";
+        NppSSH_LogErrorAuto("命令执行失败，当前面板连接异常");
+        return false;
     }
 
     // 4. 判断是否已连接
     if (!conn->IsConnected()) {//true已连接
-        return "命令执行失败，当前未连接";
+        NppSSH_LogErrorAuto("命令执行失败，当前未连接");
+        return false;
     }
     //NppSSH_LogInfoAuto("准备执行命令！！！！！！！");
     // 5. 已连接 → 执行命令并返回结果
@@ -1371,7 +1284,8 @@ std::string SSHConnection_ExecuteCommand(int panelIndex, const std::string& cmd)
 std::string SSHConnection_Prompt(int panelIndex) {
     // 1. 工具函数判断面板是否存在
     if (!IsPanelIdExists(panelIndex)) {
-        return "[unknown@unknown ~]# ";
+        NppSSH_LogInfoAuto("当前未连接，不能获取提示符");
+        return "";
     }
 
     // 2. 工具函数获取实例
@@ -1379,13 +1293,16 @@ std::string SSHConnection_Prompt(int panelIndex) {
 
     // 3. 实例不存在 → 返回默认提示符
     if (!conn) {
-        return "[unknown@unknown ~]# ";
+        NppSSH_LogInfoAuto("当前实例不存在，不能获取提示符");
+        return "";
     }
 
     // 4. 未连接 → 返回默认提示符
     if (!conn->IsConnected()) {
-        return "[unknown@unknown ~]# ";
+        NppSSH_LogInfoAuto("当前实例未连接，不能获取提示符");
+        return "";
     }
+    NppSSH_LogInfoAuto("【调试】SSHConnection_Prompt获取提示符="+ conn->GetPrompt());
 
     // 5. 已连接 → 返回真实提示符
     return conn->GetPrompt();
