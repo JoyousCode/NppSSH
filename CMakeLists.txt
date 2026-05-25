@@ -85,6 +85,7 @@ target_link_libraries(NppSSH PRIVATE
     shlwapi.lib
     advapi32.lib
     crypt32.lib
+    imm32.lib
 )
 
 

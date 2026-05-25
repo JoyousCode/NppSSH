@@ -40,6 +40,7 @@ public:
     WNDPROC GetOldEditProc() const { return _oldEditProc; }
     void SetIsCommandRunning(bool isCommandRunning) {_isCommandRunning = isCommandRunning;}
     const bool GetIsCommandRunning() const {return _isCommandRunning;}
+    HWND Get_hwndParent() const { return _hwndParent; }
 
 private:
     HWND _hTerminal;
@@ -61,8 +62,7 @@ void SSHTerminal_SizeSSHTerminal(HWND hParent,int panelIndex);
 void SSHTerminal_AppendOutput(int panelIndex, const std::string& text);
 void SSHTerminal_PanelPrompt(int panelIndex, std::string prompt);
 void SSHTerminal_SetIsCommandRunning(int panelIndex, bool isCommandRunning);
-void SSHTerminal_RestoreFocusAndCaret(int panelIndex);
-
+void SSHTerminal_SetEnglishType(int panelIndex);
 
 SSHTerminal* getSSHTerminal(int panelIndex);
 

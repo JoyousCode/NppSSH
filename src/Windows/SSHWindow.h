@@ -88,7 +88,7 @@ void SSH_AppendOutputText(int panelIndex, const std::string& text);
 // 设置提示词
 void SSH_PanelPrompt(int panelIndex, const std::string prompt);
 void SSH_SetIsCommandRunning(int panelIndex, bool isCommandRunning);
-void SSH_RestoreFocusAndCaret(int panelIndex);
+void SSH_SetEnglishType(int panelIndex);
 
 void SSH_resetSSHTerminal(int panelIndex);
 void SSH_SizeSSHTerminal(HWND hParent, int panelIndex);

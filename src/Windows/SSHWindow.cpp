@@ -134,6 +134,7 @@ void SSH_PanelPrompt(int panelIndex, const std::string prompt) {
 void SSH_SetIsCommandRunning(int panelIndex, bool isCommandRunning) {
     SSHTerminal_SetIsCommandRunning(panelIndex, isCommandRunning);
 }
-void SSH_RestoreFocusAndCaret(int panelIndex) {
-    SSHTerminal_RestoreFocusAndCaret(panelIndex);
+void SSH_SetEnglishType(int panelIndex) {
+    SSHTerminal_SetEnglishType(panelIndex);
+
 }

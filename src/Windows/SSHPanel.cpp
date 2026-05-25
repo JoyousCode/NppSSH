@@ -537,11 +537,6 @@ INT_PTR CALLBACK NppSSHDockPanel::SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM 
     }
     //对话框销毁后的所有操作
     case WM_DESTROY:
-        // 1. 先将焦点切回终端编辑框
-        //if (pPanel) {
-        //    NppSSH_LogInfoAuto("【设置伪终端焦点！】");
-        //    SSH_RestoreFocusAndCaret(pPanel->GetPanelIndex());
-        //}
         // 模态对话框销毁 → POST 消息给伪终端 → 自动修复光标
         if (pPanel)
         {
@@ -550,6 +545,7 @@ INT_PTR CALLBACK NppSSHDockPanel::SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM 
             {
                 // 关键：必须用 PostMessage，不能用 SendMessage
                 PostMessageW(hEdit, WM_USER + 1001, 0, 0);
+                SSH_SetEnglishType(pPanel->GetPanelIndex());//强制将微软拼音的输入模式改为英文模式
                 NppSSH_LogInfoAuto("已发送修复消息 WM_USER+1001 到伪终端");
             }
         }

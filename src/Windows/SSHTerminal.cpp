@@ -7,6 +7,77 @@ static HINSTANCE s_hInst;
 // 新增：防重入标记（避免递归调用）
 static thread_local bool s_bProcessingMsg = false;
 
+
+// 辅助函数：转16进制字符串，方便日志查看
+inline std::string IntToHexStr(DWORD val) {
+    char buf[32];
+    sprintf_s(buf, "%08X", val);
+    return std::string(buf);
+}
+// 输入法中英文切换（真正安全、无循环）
+// bForceEnglish: true=强制英文(修复时用) | false=手动切换(Shift用)
+inline void imm_chineseType(HWND hEdit)
+{
+    if (!hEdit) {
+        NppSSH_LogInfoAuto("【IME错误】句柄无效");
+        return;
+    }
+
+    NppSSH_LogInfoAuto("【IME调用】强制微软拼音→英文，hWnd=" + PtrToHexStr(hEdit));
+
+    // 1. 强制焦点
+    SetFocus(hEdit);
+    Sleep(10); // 极短等待，让系统同步
+
+    // 2. 跨线程输入同步
+    DWORD currTid = GetCurrentThreadId();
+    DWORD editTid = GetWindowThreadProcessId(hEdit, NULL);
+    AttachThreadInput(editTid, currTid, TRUE);
+
+    // 3. 获取 IME 上下文
+    HIMC hImc = ImmGetContext(hEdit);
+    if (!hImc) {
+        hImc = ImmCreateContext();
+        ImmAssociateContext(hEdit, hImc);
+        NppSSH_LogInfoAuto("【IME】创建新上下文");
+    }
+
+    // ==========================================
+    // 读取原始状态
+    // ==========================================
+    DWORD conv = 0, sentence = 0;
+    ImmGetConversionStatus(hImc, &conv, &sentence);
+    NppSSH_LogInfoAuto("【IME修改前】conv=0x" + IntToHexStr(conv));
+
+    // ==========================================
+    // 【微软拼音 官方正确英文模式】
+    // ==========================================
+    conv = IME_CMODE_ALPHANUMERIC; // 0x0004 → 纯英文
+    sentence = IME_SMODE_NONE;
+
+    // ==========================================
+    // 【关键】先打开IME，再设置英文！
+    // ==========================================
+    ImmSetOpenStatus(hImc, TRUE);       // 必须打开
+    ImmSetConversionStatus(hImc, conv, sentence);
+    ImmSetOpenStatus(hImc, FALSE);      // 关闭中文输入
+
+    // 验证结果
+    DWORD newConv = 0;
+    ImmGetConversionStatus(hImc, &newConv, &sentence);
+    NppSSH_LogInfoAuto("【IME修改后】conv=0x" + IntToHexStr(newConv));
+
+    // 绑定生效
+    ImmAssociateContext(hEdit, hImc);
+    ImmReleaseContext(hEdit, hImc);
+    AttachThreadInput(editTid, currTid, FALSE);
+
+    // 强制刷新任务栏
+    PostMessage(HWND_BROADCAST, WM_INPUTLANGCHANGE, 0, 0);
+    PostMessage(hEdit, WM_IME_NOTIFY, IMN_SETOPENSTATUS, 0);
+
+    NppSSH_LogInfoAuto("【✅ 最终成功】微软拼音已锁定 英文模式");
+}
 // ========== 【新增：自动唤醒伪终端输入状态，解决命令后无法输入】 ==========
 static void FixEditInputState_Final(HWND hEdit)
 {
@@ -42,7 +113,6 @@ static void FixEditInputState_Final(HWND hEdit)
 
     // 显示光标（关键！）
     ShowCaret(hEdit);
-
     // ==============================
     // 标准 Win32 跨线程输入复活（你原有逻辑）
     // ==============================
@@ -81,6 +151,8 @@ static LRESULT CALLBACK TerminalEditProc(HWND hWnd, UINT msg, WPARAM wParam, LPA
         return 0;
     // 焦点变化时的处理
     //case WM_SETFOCUS:
+    //    imm_chineseType(hWnd); // 窗口获得焦点时，再次强制英文
+    //    break;
     //case WM_KILLFOCUS:
     case WM_KEYDOWN:
     case WM_KEYUP:
@@ -110,7 +182,7 @@ static LRESULT CALLBACK TerminalEditProc(HWND hWnd, UINT msg, WPARAM wParam, LPA
     LRESULT res = 0;
     try {
         NppSSH_LogInfoAuto("TerminalEditProc监听！msg=" + IntToStr(msg) + " hWnd=" + PtrToHexStr(hWnd));
-
+        
         SSHTerminal* terminal = (SSHTerminal*)GetProp(hWnd, L"SSHTerminalInstance");
         if (!terminal) {
             for (auto& t : vectorSSHTerminal) {
@@ -528,8 +600,10 @@ HWND SSHTerminal::InitTerminalEditBox(HWND hParent) {
     int y = TOP;
     int cx = rc.right - LEFT - RIGHT;
     int cy = rc.bottom - TOP - BOTTOM;
+
+    // WS_EX_TRANSPARENT + 控件默认风格 不支持 IME
     _hTerminal = ::CreateWindowExW(//ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY | WS_VSCROLL | WS_TABSTOP
-        WS_EX_CLIENTEDGE,
+        WS_EX_CLIENTEDGE | WS_EX_NOPARENTNOTIFY | WS_EX_ACCEPTFILES,
         L"EDIT",
         L"初始化成功", // 文字设为空
         WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY,
@@ -537,13 +611,20 @@ HWND SSHTerminal::InitTerminalEditBox(HWND hParent) {
         _hwndParent,
         (HMENU)IDC_OUTPUT_EDIT,
         s_hInst, // 用全局插件实例句柄
-        NULL
+        this
     );
+
+    //强制将微软拼音的输入模式改为英文模式（开启 IME 支持）
+    ImmAssociateContext(_hTerminal, ImmCreateContext());
 
     if (!_hTerminal) {
         ::MessageBoxW(s_nppData._nppHandle, L"SSH_InitTerminalEditBox: 伪终端句柄无效！", L"NppSSH调试提示", MB_OK | MB_ICONERROR);
         return nullptr;
     }
+    
+    //防闪烁样式设置
+    DWORD exStyle = ::GetWindowLongPtr(_hTerminal, GWL_EXSTYLE);
+    ::SetWindowLongPtr(_hTerminal, GWL_EXSTYLE, exStyle | WS_EX_TRANSPARENT);
     // 设置样式
     DWORD style = ::GetWindowLongPtrW(_hTerminal, GWL_STYLE);
     style |= ES_MULTILINE | ES_AUTOVSCROLL | ES_AUTOHSCROLL | WS_VSCROLL;
@@ -887,25 +968,16 @@ void SSHTerminal_SetIsCommandRunning(int panelIndex, bool isCommandRunning) {
         }
     }
 }
-void SSHTerminal_RestoreFocusAndCaret(int panelIndex)
-{
-    SSHTerminal* term = getSSHTerminal(panelIndex);
-    if (!term) return;
-
-    HWND hWnd = term->Get_TerminalHandle();
-    if (!hWnd) return;
-
-    // ==============================
-    // 标准 Win32 终极修复光标（必生效）
-    // ==============================
-    PostMessage(NULL, WM_NULL, 0, 0); // 让消息队列空一次
-    SetFocus(NULL);              // 强制失焦
-    SetFocus(hWnd);              // 重新获焦
-    SendMessage(hWnd, EM_SETSEL, -1, -1);  // 光标移到末尾
-    SendMessage(hWnd, EM_SCROLLCARET, 0, 0); // 滚动到光标
-    InvalidateRect(hWnd, NULL, TRUE);      // 强制重绘
-    UpdateWindow(hWnd);
+void SSHTerminal_SetEnglishType(int panelIndex) {
+    SSHTerminal* panel = getSSHTerminal(panelIndex);
+    if (panel)
+    {
+        HWND TerminalHWND = panel->Get_TerminalHandle();
+        imm_chineseType(TerminalHWND);
+    }
 }
+
+
 /*
 * 获取当前面板
 */
