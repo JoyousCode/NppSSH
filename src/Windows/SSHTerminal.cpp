@@ -26,8 +26,8 @@ inline void imm_chineseType(HWND hEdit)
     NppSSH_LogInfoAuto("【IME调用】强制微软拼音→英文，hWnd=" + PtrToHexStr(hEdit));
 
     // 1. 强制焦点
-    SetFocus(hEdit);
-    Sleep(10); // 极短等待，让系统同步
+    //SetFocus(hEdit);
+    //Sleep(10); // 极短等待，让系统同步
 
     // 2. 跨线程输入同步
     DWORD currTid = GetCurrentThreadId();
