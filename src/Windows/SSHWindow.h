@@ -24,6 +24,16 @@
 #include <atomic>
 
 //#define WM_SSH_CONNECT_RESULT (WM_USER + 100)
+// 自定义SSH消息体系（完全替代WM_）
+#define SSH_KEYDOWN        (WM_USER + 1001)
+#define SSH_KEYUP          (WM_USER + 1002)
+#define SSH_CHAR           (WM_USER + 1003)
+#define SSH_PASTE          (WM_USER + 1004)
+#define SSH_SETFOCUS       (WM_USER + 1005)
+#define SSH_KILLFOCUS      (WM_USER + 1006)
+#define SSH_SYSKEYDOWN     (WM_USER + 1007)
+#define SSH_SYSCHAR        (WM_USER + 1008)
+#define SSH_DEADCHAR       (WM_USER + 1009)
 
 /////////////////////////////////////////////////////////////初始值在SSHPanel
 // 全局变量声明（供SSHClient调用）

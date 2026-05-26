@@ -588,6 +588,18 @@ INT_PTR CALLBACK NppSSHDockPanel::run_dlgProc(UINT message, WPARAM wParam, LPARA
         }
         return TRUE;
     }
+    // 子类化配套父窗口消息,要在父类做默认处理
+    //case WM_KEYUP:
+    //case WM_CHAR:
+    //case WM_DEADCHAR:
+    //case WM_SYSKEYDOWN:
+    //case WM_SYSCHAR:
+    //case WM_PASTE:
+    //case WM_SETFOCUS:
+    //case WM_KILLFOCUS:
+    //    //NppSSH_LogInfoAuto("【调试：父类窗口消息默认处理，防止子类化再处理失效】");
+
+    //    return TRUE;
     // 处理按钮点击消息
     case WM_COMMAND: 
     {
@@ -613,15 +625,23 @@ INT_PTR CALLBACK NppSSHDockPanel::run_dlgProc(UINT message, WPARAM wParam, LPARA
         }
         // 新增：拦截输出编辑框的所有操作
         if (hCtrl == _hOutputEdit) {
+            NppSSH_LogInfoAuto("【调试拦截输出编辑框的所有操作】");
+
             UINT notifyCode = HIWORD(wParam);
             // 拦截光标移动、文本修改、粘贴等操作
 
             switch (notifyCode) {
             case EN_SETFOCUS: // 编辑框获焦时，强制光标到可编辑区域
+            {
+                NppSSH_LogInfoAuto("【调试EN_SETFOCUSEN_SETFOCUSEN_SETFOCUS】");
                 ::SendMessage(_hOutputEdit, EM_SETREADONLY, FALSE, 0);
+
+                
                 break;
+            }
+                
             case EN_CHANGE: // 文本变化时，检查是否在合法区域
-                DWORD totalLen = ::GetWindowTextLengthW(_hOutputEdit);
+                NppSSH_LogInfoAuto("【调试EN_CHANGEEN_CHANGEEN_CHANGEEN_CHANGE】");
                 break;
             }
             return TRUE;
@@ -629,24 +649,7 @@ INT_PTR CALLBACK NppSSHDockPanel::run_dlgProc(UINT message, WPARAM wParam, LPARA
     }
     // 新增：拦截键盘消息（仅允许在合法区域输入）
     case WM_KEYDOWN : {
-        // 仅处理输出编辑框的按键
-        if (GetFocus() == _hOutputEdit) {
-            DWORD selStart, selEnd;
-            ::SendMessageW(_hOutputEdit, EM_GETSEL, (WPARAM)&selStart, (LPARAM)&selEnd);
-
-            // 处理回车（执行命令）
-            if (wParam == VK_RETURN) {
-                NppSSH_LogInfoAuto("endendend========");
-                // 1. 获取合法区域的文本（命令部分）
-               
-                return TRUE; // 拦截回车，不传递
-            }
-            // 处理删除键（仅允许删除合法区域的字符）
-            if (wParam == VK_BACK || wParam == VK_DELETE) {
-                DWORD selStart, selEnd;
-                ::SendMessageW(_hOutputEdit, EM_GETSEL, (WPARAM)&selStart, (LPARAM)&selEnd);
-            }
-        }
+        NppSSH_LogInfoAuto("【面板过程调试WM_KEYDOWNWM_KEYDOWNWM_KEYDOWNWM_KEYDOWN】");
         break;
     }
     // 响应NPP停靠管理器的浮动/停靠消息，更新面板状态

@@ -25,7 +25,7 @@ inline void imm_chineseType(HWND hEdit)
 
     NppSSH_LogInfoAuto("【IME调用】强制微软拼音→英文，hWnd=" + PtrToHexStr(hEdit));
 
-    // 1. 强制焦点
+    // 1. 强制焦点（调用imm_chineseType函数前已经设置，暂时废弃）
     //SetFocus(hEdit);
     //Sleep(10); // 极短等待，让系统同步
 
@@ -34,7 +34,7 @@ inline void imm_chineseType(HWND hEdit)
     DWORD editTid = GetWindowThreadProcessId(hEdit, NULL);
     AttachThreadInput(editTid, currTid, TRUE);
 
-    // 3. 获取 IME 上下文
+    // 3. 获取 IME 上下文 系统自带的IME（不再手动创建！）
     HIMC hImc = ImmGetContext(hEdit);
     if (!hImc) {
         hImc = ImmCreateContext();
@@ -42,22 +42,16 @@ inline void imm_chineseType(HWND hEdit)
         NppSSH_LogInfoAuto("【IME】创建新上下文");
     }
 
-    // ==========================================
     // 读取原始状态
-    // ==========================================
     DWORD conv = 0, sentence = 0;
     ImmGetConversionStatus(hImc, &conv, &sentence);
     NppSSH_LogInfoAuto("【IME修改前】conv=0x" + IntToHexStr(conv));
 
-    // ==========================================
     // 【微软拼音 官方正确英文模式】
-    // ==========================================
     conv = IME_CMODE_ALPHANUMERIC; // 0x0004 → 纯英文
     sentence = IME_SMODE_NONE;
 
-    // ==========================================
-    // 【关键】先打开IME，再设置英文！
-    // ==========================================
+    // 先打开IME，再设置英文！
     ImmSetOpenStatus(hImc, TRUE);       // 必须打开
     ImmSetConversionStatus(hImc, conv, sentence);
     ImmSetOpenStatus(hImc, FALSE);      // 关闭中文输入
@@ -78,7 +72,7 @@ inline void imm_chineseType(HWND hEdit)
 
     NppSSH_LogInfoAuto("【✅ 最终成功】微软拼音已锁定 英文模式");
 }
-// ========== 【新增：自动唤醒伪终端输入状态，解决命令后无法输入】 ==========
+// ========== 【自动唤醒伪终端输入状态，解决命令后无法输入】 ==========
 static void FixEditInputState_Final(HWND hEdit)
 {
     if (!IsWindow(hEdit))
@@ -96,6 +90,8 @@ static void FixEditInputState_Final(HWND hEdit)
     // ==============================
     SetForegroundWindow(hEdit);
     SetFocus(hEdit);
+    NppSSH_LogInfoAuto("【设置焦点11111111111111111】");
+
 
     // 获取字体高度
     HDC hdc = GetDC(hEdit);
@@ -124,6 +120,8 @@ static void FixEditInputState_Final(HWND hEdit)
 
     // 重新绑定键盘输入
     SetFocus(hEdit);
+    NppSSH_LogInfoAuto("【设置焦点2222222222222222】");
+
     ShowCaret(hEdit); // 再次确保显示
 
     // 解绑
@@ -149,6 +147,21 @@ static LRESULT CALLBACK TerminalEditProc(HWND hWnd, UINT msg, WPARAM wParam, LPA
         NppSSH_LogInfoAuto("【修复】调用FixEditInputState_Final函数修复失效！");
         FixEditInputState_Final(hWnd);
         return 0;
+    case WM_USER + 1005:
+    {
+        NppSSH_LogInfoAuto("【调试EN_SETFOCUS】");
+        // 关闭只读（必须）
+        ::SendMessage(hWnd, EM_SETREADONLY, FALSE, 0);
+
+        // 🔥 只修光标，不设置焦点！！！（这是破环关键）
+        // 只调用轻量修复，不调用完整 FixEditInputState_Final
+        int len = GetWindowTextLengthW(hWnd);
+        SendMessageW(hWnd, EM_SETSEL, len, len);
+        SendMessageW(hWnd, EM_SCROLLCARET, 0, 0);
+        ShowCaret(hWnd);
+        return 0;
+    }
+        
     // 焦点变化时的处理
     //case WM_SETFOCUS:
     //    imm_chineseType(hWnd); // 窗口获得焦点时，再次强制英文
@@ -614,8 +627,8 @@ HWND SSHTerminal::InitTerminalEditBox(HWND hParent) {
         this
     );
 
-    //强制将微软拼音的输入模式改为英文模式（开启 IME 支持）
-    ImmAssociateContext(_hTerminal, ImmCreateContext());
+    //强制将微软拼音的输入模式改为英文模式（开启 IME 支持）,已废弃，由imm_chineseType函数内容直接开启支持实现
+    //ImmAssociateContext(_hTerminal, ImmCreateContext());
 
     if (!_hTerminal) {
         ::MessageBoxW(s_nppData._nppHandle, L"SSH_InitTerminalEditBox: 伪终端句柄无效！", L"NppSSH调试提示", MB_OK | MB_ICONERROR);
@@ -771,6 +784,8 @@ void SSHTerminal::AppendOutputText(const std::string& text) {
     // 若当前伪终端是焦点，不重复抢焦；若非焦点，不主动设置（遵循用户操作）
     if (isEditFocused) {
         SetFocus(_hTerminal); // 仅恢复缓存的焦点状态
+        NppSSH_LogInfoAuto("【设置焦点3333333333333333】");
+
     }
 
     NppSSH_LogInfoAuto("文本追加完成，当前输出框总长度：" + IntToStr((int)len_total)
