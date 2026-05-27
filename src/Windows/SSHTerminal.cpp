@@ -1,5 +1,6 @@
 // SSHTerminal.cpp模拟终端，具体实现
 #include "SSHTerminal.h"
+#include <thread>
 static std::vector<SSHTerminal*> vectorSSHTerminal;
 static NppData s_nppData;
 static HINSTANCE s_hInst;
@@ -338,14 +339,20 @@ static LRESULT CALLBACK TerminalEditProc(HWND hWnd, UINT msg, WPARAM wParam, LPA
 
             // 执行命令
             terminal->SetIsCommandRunning(true); // 标记后台命令开始执行
-            bool result = NppSSH_ExecuteCommand(terminal->GetPanelId(), cmdToExecute);
-            terminal->SetPrompt(NppSSH_PanelPrompt(terminal->GetPanelId()));
+            // 立即放行，不等待
+            std::string cmdCopy = cmdToExecute;
+            int panelId = terminal->GetPanelId();
+
+            std::thread([panelId, cmdCopy]() {
+                bool result = NppSSH_ExecuteCommand(panelId, cmdCopy);
+                }).detach();
+            //terminal->SetPrompt(NppSSH_PanelPrompt(terminal->GetPanelId()));
             NppSSH_LogInfoAuto("【调试】TerminalEditProc设置提示符，命令提示符====" + terminal->GetPrompt());
             NppSSH_LogInfoAuto("【命令执行结果】面板ID=" + IntToStr(terminal->GetPanelId())
-                + " 命令=" + cmdToExecute + " 命令执行结果===" + std::to_string(result) + " ，命令提示符====" + terminal->GetPrompt());
+                + " 命令=" + cmdToExecute +  " ，命令提示符====" + terminal->GetPrompt());
 
             // 清空命令缓存
-            terminal->SetCmd("");
+            //terminal->SetCmd("");
 
             res = 0;
             s_bProcessingMsg = false;
@@ -810,6 +817,10 @@ bool SSHTerminal::IsCursorInEditableArea() const {
         NppSSH_LogInfoAuto("[可编辑判定] 后台命令执行中，禁止编辑");
         return false;
     }
+    if (_prompt.empty()) {
+        NppSSH_LogInfoAuto("[可编辑判定] prompt 为空，允许编辑（防止死锁）");
+        return true; // ✅ 兜底
+    }
     // 1. 获取光标位置
     DWORD selStart = 0;
     ::SendMessageW(_hTerminal, EM_GETSEL, (WPARAM)&selStart, NULL);
@@ -922,12 +933,13 @@ void SSHTerminal_AppendOutput(int panelIndex, const std::string& text) {
 
     if (panelIndex < 0) return;
     SSHTerminal* panel = getSSHTerminal(panelIndex);
-    //panel->SetIsPrompt(isPrompt);
     //if (panel->GetIsCommandRunning()) {
     //    NppSSH_LogInfoAuto("【后台执行中】暂不处理输入状态，面板ID=" + IntToStr(panelIndex));
     //}
-    std::string prompt = NppSSH_PanelPrompt(panel->GetPanelId());
-    panel->SetPrompt(prompt);
+    // 
+    // 每次追加实时更新命令提示符（暂时抛弃，由于有新的命令提示符会自动设置）
+    //std::string prompt = NppSSH_PanelPrompt(panel->GetPanelId());
+    //panel->SetPrompt(prompt);
     NppSSH_LogInfoAuto("【调试】SSHTerminal_AppendOutput设置提示符，命令提示符====" + panel->GetPrompt());
 
 
@@ -985,6 +997,9 @@ void SSHTerminal_SetIsCommandRunning(int panelIndex, bool isCommandRunning) {
             //FixEditInputState_Final(hEdit);
             PostMessageW(hEdit, WM_USER + 1001, 0, 0); // 自定义消息触发修复
             NppSSH_LogInfoAuto("【命令完全结束】恢复伪终端焦点，可直接输入");
+
+            // ✅ 新增：强制刷新可编辑状态
+            PostMessageW(hEdit, WM_KEYDOWN, VK_F5, 0);
         }
     }
 }
@@ -996,7 +1011,13 @@ void SSHTerminal_SetEnglishType(int panelIndex) {
         imm_chineseType(TerminalHWND);
     }
 }
-
+std::string SSHTerminal_getPanelPrompt(int panelIndex) {
+    SSHTerminal* panel = getSSHTerminal(panelIndex);
+    if (panel)
+    {
+        return panel->GetPrompt();
+    }
+}
 
 /*
 * 获取当前面板

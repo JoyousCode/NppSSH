@@ -63,6 +63,7 @@ void SSHTerminal_AppendOutput(int panelIndex, const std::string& text);
 void SSHTerminal_PanelPrompt(int panelIndex, std::string prompt);
 void SSHTerminal_SetIsCommandRunning(int panelIndex, bool isCommandRunning);
 void SSHTerminal_SetEnglishType(int panelIndex);
+std::string SSHTerminal_getPanelPrompt(int panelIndex);
 
 SSHTerminal* getSSHTerminal(int panelIndex);
 

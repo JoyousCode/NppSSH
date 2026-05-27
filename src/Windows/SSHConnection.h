@@ -44,7 +44,7 @@ namespace SSHConst {
 }
 
 // 全局管理：面板索引 -> SSHConnection实例（改用智能指针）
-extern std::unordered_map<int, std::unique_ptr<SSHConnection>> g_panelConnections;
+extern std::unordered_map<int, std::shared_ptr<SSHConnection>> g_panelConnections;
 extern std::mutex g_panelConnMutex; // 保护全局面板映射的锁
 // 检查指定面板ID是否存在于全局连接映射中（线程安全）
 // IsPanelIdExists(panelId) → 判断面板是否存在
@@ -202,7 +202,15 @@ private:
 
     //工具函数，InitSSHSession函数初始化SSH会话并握手，检查socket是否有效
     bool SSHConnection::IsSocketAlive(SOCKET sock);
-    
+    enum class ShellExitReason {
+        Unknown,
+        PromptReceived,
+        StoppedByUser,
+        SocketDead,
+        RetryExhausted
+    };
+
+    ShellExitReason exitReason = ShellExitReason::Unknown;
 
 private:
 
@@ -243,6 +251,7 @@ private:
     std::condition_variable m_readerCv;
     std::atomic<bool> m_waitingForPrompt{ false };//标记是否等待命令提示符（仅执行命令时为true）
     std::atomic<bool> m_stopReader{ false };
+    std::atomic<bool> m_commandFinished{ false };
     std::atomic<bool> m_isReadingOutput{ false };//是否是持续输出
     std::string m_currentCommand;// 用于过滤命令回显
     
