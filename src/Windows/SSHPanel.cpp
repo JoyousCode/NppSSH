@@ -615,11 +615,11 @@ INT_PTR CALLBACK NppSSHDockPanel::run_dlgProc(UINT message, WPARAM wParam, LPARA
                 disconnectSSH(); // 断开连接
                 if (_hOutputEdit) {
 
-                    MessageBoxW(s_nppData._nppHandle, std::to_wstring(this->_panelId).c_str(), L"NppSSH", MB_OK | MB_TASKMODAL);
+                    //MessageBoxW(s_nppData._nppHandle, std::to_wstring(this->_panelId).c_str(), L"NppSSH", MB_OK | MB_TASKMODAL);
                     //DisconnectPanel(this -> _panelId);// 面板断开SSH函数
                     ::SetWindowTextW(_hOutputEdit, L"✅ SSH已断开\n等待新的连接...");
                 }
-                ::MessageBoxW(s_nppData._nppHandle, L"SSH连接已断开", L"NppSSH提示", MB_OK | MB_ICONINFORMATION);
+                //::MessageBoxW(s_nppData._nppHandle, L"SSH连接已断开", L"NppSSH提示", MB_OK | MB_ICONINFORMATION);
             }
             
         }

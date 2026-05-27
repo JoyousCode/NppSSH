@@ -233,7 +233,65 @@ std::string SSHConnection::extractLastLine(const std::string& str) {
     // 直接返回最后一行，**不做任何清理、不做任何处理**
     return str.substr(lastPos + 1);
 }
-// 工具函数：检查socket是否有效
+//工具函数，InitSSHSession函数初始化SSH会话并握手，检查socket是否有效
+bool SSHConnection::IsSocketAlive(SOCKET sock) {
+    if (sock == INVALID_SOCKET) {
+        return false;
+    }
+
+    // 1. 检查socket错误状态
+    int error = 0;
+    socklen_t len = sizeof(error);
+    int ret = getsockopt(sock, SOL_SOCKET, SO_ERROR, (char*)&error, &len);
+
+    if (ret != 0) {
+        NppSSH_LogDebugAuto("getsockopt失败: " + std::to_string(WSAGetLastError()));
+        return false;
+    }
+
+    if (error != 0) {
+        NppSSH_LogDebugAuto("Socket错误码: " + std::to_string(error));
+        return false;
+    }
+
+    // 2. 使用select检查socket是否可读（Windows兼容版本）
+    fd_set readfds;
+    FD_ZERO(&readfds);
+    FD_SET(sock, &readfds);
+
+    timeval timeout = { 0, 100000 }; // 100ms超时 (0秒, 100000微秒)
+
+    int select_ret = select(0, &readfds, nullptr, nullptr, &timeout);
+
+    if (select_ret < 0) {
+        int err = WSAGetLastError();
+        NppSSH_LogDebugAuto("select失败: " + std::to_string(err));
+        return false;
+    }
+
+    if (select_ret > 0 && FD_ISSET(sock, &readfds)) {
+        // socket可读，说明连接正常
+        return true;
+    }
+
+    // 3. 补充检查：尝试发送0字节数据
+    char dummy = 0;
+    ret = send(sock, &dummy, 0, 0); // 使用0标志，而不是MSG_NOSIGNAL或MSG_DONTWAIT
+
+    if (ret < 0) {
+        int err = WSAGetLastError();
+        // 在Windows上，WSAEWOULDBLOCK表示socket是可写的但暂时阻塞
+        // WSAEISCONN表示已连接
+        if (err != WSAEWOULDBLOCK && err != WSAEISCONN) {
+            NppSSH_LogDebugAuto("send测试失败: " + std::to_string(err));
+            return false;
+        }
+    }
+
+    return true;
+}
+// 工具函数：SSH握手成功后，再次检查socket是否有效，
+// 连接成功后，CreatePtyChannel函数申请PTY伪终端再次检测socket是否有效。
 bool SSHConnection::IsSocketValid(SOCKET sock) {
     if (sock == INVALID_SOCKET) {
         return false;
@@ -1455,11 +1513,13 @@ bool SSHConnection::CreatePtyChannel() {
         return false;
     }
 
+    //一共尝试15次，总尝试次数*每次操作最大等待次数 = 5*3
     const int MAX_TOTAL_ATTEMPTS = 5;          // 总尝试次数
     const int MAX_WAIT_ATTEMPTS = 3;         // 每次操作最大等待次数
     const int BASE_WAIT_MS = 1000;           // 基础等待时间
     const int MAX_WAIT_MS = 10000;           // 最大等待时间
 
+    // 每个类型尝试3次，可直接改变TERMINAL_TYPES的内容，不影响任何重试逻辑
     const std::vector<std::string> TERMINAL_TYPES = {
         "xterm-256color", "xterm", "vt100", "dumb", "linux"
     };
