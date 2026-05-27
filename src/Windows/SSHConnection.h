@@ -183,10 +183,80 @@ private:
     // 子函数：读取登录Banner和登录时间
     void ReadLoginBanner(LIBSSH2_SESSION* session);
 
+    // 子函数：申请Pty伪终端读取登录欢迎语
+    bool SSHConnection::CreatePtyChannel();
+
     // 工具函数：提取字符串最后一行
     std::string extractLastLine(const std::string& str);
     // 工具函数：判断是否以指定字符串开头
     bool SSHConnection::startsWith(const std::string& str, const std::string& prefix);
+
+    // 工具函数：判断伪终端是否就绪
+    bool SSHConnection::IsShellReady();
+
+    // 工具函数：根据阻塞方向等待socket
+    bool SSHConnection::WaitSocketWithBackoff(SOCKET sock, LIBSSH2_SESSION* session,int base_wait_ms, int max_attempts);
+
+    // 工具函数：检查socket是否有效
+    bool SSHConnection::IsSocketValid(SOCKET sock);
+
+    bool SSHConnection::IsSocketAlive(SOCKET sock) {
+        if (sock == INVALID_SOCKET) {
+            return false;
+        }
+
+        // 1. 检查socket错误状态
+        int error = 0;
+        socklen_t len = sizeof(error);
+        int ret = getsockopt(sock, SOL_SOCKET, SO_ERROR, (char*)&error, &len);
+
+        if (ret != 0) {
+            NppSSH_LogDebugAuto("getsockopt失败: " + std::to_string(WSAGetLastError()));
+            return false;
+        }
+
+        if (error != 0) {
+            NppSSH_LogDebugAuto("Socket错误码: " + std::to_string(error));
+            return false;
+        }
+
+        // 2. 使用select检查socket是否可读（Windows兼容版本）
+        fd_set readfds;
+        FD_ZERO(&readfds);
+        FD_SET(sock, &readfds);
+
+        timeval timeout = { 0, 100000 }; // 100ms超时 (0秒, 100000微秒)
+
+        int select_ret = select(0, &readfds, nullptr, nullptr, &timeout);
+
+        if (select_ret < 0) {
+            int err = WSAGetLastError();
+            NppSSH_LogDebugAuto("select失败: " + std::to_string(err));
+            return false;
+        }
+
+        if (select_ret > 0 && FD_ISSET(sock, &readfds)) {
+            // socket可读，说明连接正常
+            return true;
+        }
+
+        // 3. 补充检查：尝试发送0字节数据
+        char dummy = 0;
+        ret = send(sock, &dummy, 0, 0); // 使用0标志，而不是MSG_NOSIGNAL或MSG_DONTWAIT
+
+        if (ret < 0) {
+            int err = WSAGetLastError();
+            // 在Windows上，WSAEWOULDBLOCK表示socket是可写的但暂时阻塞
+            // WSAEISCONN表示已连接
+            if (err != WSAEWOULDBLOCK && err != WSAEISCONN) {
+                NppSSH_LogDebugAuto("send测试失败: " + std::to_string(err));
+                return false;
+            }
+        }
+
+        return true;
+    }
+    
 
 private:
 
@@ -243,6 +313,7 @@ std::string SSHConnection_Prompt(int panelIndex);
 // 工具函数声明
 inline std::wstring GBKToWstring(const std::string& str);
 inline std::string GetLibssh2ErrorMsg(LIBSSH2_SESSION* session);
+inline std::string GetLibssh2ErrorExplanation(int error_code);
 static bool ValidatePort(int port);
 
 inline bool isCmdSeparator(char c);     // 辅助函数：判断字符是否为命令分隔符

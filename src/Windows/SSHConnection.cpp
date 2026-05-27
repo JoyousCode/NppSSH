@@ -43,10 +43,97 @@ inline std::wstring GBKToWstring(const std::string& str) {
 // 获取libssh2错误信息
 inline std::string GetLibssh2ErrorMsg(LIBSSH2_SESSION* session) {
     if (!session) return "无效的session";
+
     char* errmsg = nullptr;
     int code = libssh2_session_last_error(session, &errmsg, nullptr, 0);
-    if (!errmsg) return "未知错误（错误码：" + std::to_string(code) + "）";
-    return std::string(errmsg) + "（错误码：" + std::to_string(code) + "）";
+
+    std::string result;
+
+    // 如果有libssh2提供的错误消息
+    if (errmsg && strlen(errmsg) > 0) {
+        result = std::string(errmsg);
+    }
+    else {
+        // 如果没有详细错误消息，使用错误码映射
+        result = "未知错误";
+    }
+
+    // 添加错误码
+    result += "（错误码：" + std::to_string(code) + "）";
+
+    // 根据错误码添加详细解释
+    std::string explanation = GetLibssh2ErrorExplanation(code);
+    if (!explanation.empty()) {
+        result += " [" + explanation + "]";
+    }
+
+    return result;
+}
+
+// 获取libssh2错误码的详细解释
+inline std::string GetLibssh2ErrorExplanation(int error_code) {
+    switch (error_code) {
+        // 通用错误
+    case LIBSSH2_ERROR_NONE: return "无错误";
+    case LIBSSH2_ERROR_SOCKET_NONE: return "Socket无效或未初始化";
+    case LIBSSH2_ERROR_BANNER_SEND: return "发送SSH banner失败";
+    case LIBSSH2_ERROR_BANNER_RECV: return "接收SSH banner失败，服务器未响应或响应无效";
+    case LIBSSH2_ERROR_INVALID_MAC: return "MAC验证失败，可能被篡改";
+    case LIBSSH2_ERROR_KEX_FAILURE: return "密钥交换失败，算法不兼容";
+    case LIBSSH2_ERROR_ALLOC: return "内存分配失败";
+    case LIBSSH2_ERROR_SOCKET_SEND: return "Socket发送失败，网络问题";
+    case LIBSSH2_ERROR_SOCKET_RECV: return "Socket接收失败，网络问题";
+    case LIBSSH2_ERROR_SOCKET_DISCONNECT: return "Socket连接已断开";
+    case LIBSSH2_ERROR_PROTO: return "SSH协议错误";
+    case LIBSSH2_ERROR_PASSWORD_EXPIRED: return "密码已过期";
+    case LIBSSH2_ERROR_FILE: return "文件操作失败";
+    case LIBSSH2_ERROR_METHOD_NONE: return "未设置认证方法";
+    case LIBSSH2_ERROR_AUTHENTICATION_FAILED: return "认证失败，用户名或密码错误";
+    case LIBSSH2_ERROR_PUBLICKEY_UNVERIFIED: return "公钥未验证";
+    case LIBSSH2_ERROR_CHANNEL_OUTOFORDER: return "通道顺序错误";
+    case LIBSSH2_ERROR_CHANNEL_FAILURE: return "通道操作失败";
+    case LIBSSH2_ERROR_CHANNEL_REQUEST_DENIED: return "通道请求被服务器拒绝";
+    case LIBSSH2_ERROR_CHANNEL_UNKNOWN: return "未知通道";
+    case LIBSSH2_ERROR_CHANNEL_WINDOW_EXCEEDED: return "通道窗口大小超出";
+    case LIBSSH2_ERROR_CHANNEL_PACKET_EXCEEDED: return "通道数据包大小超出";
+    case LIBSSH2_ERROR_CHANNEL_CLOSED: return "通道已关闭";
+    case LIBSSH2_ERROR_CHANNEL_EOF_SENT: return "已发送EOF";
+    case LIBSSH2_ERROR_SCP_PROTOCOL: return "SCP协议错误";
+    case LIBSSH2_ERROR_ZLIB: return "ZLIB压缩错误";
+    case LIBSSH2_ERROR_SOCKET_TIMEOUT: return "Socket操作超时";
+    case LIBSSH2_ERROR_SFTP_PROTOCOL: return "SFTP协议错误";
+    case LIBSSH2_ERROR_REQUEST_DENIED: return "请求被服务器拒绝";
+    case LIBSSH2_ERROR_METHOD_NOT_SUPPORTED: return "方法不被支持";
+    case LIBSSH2_ERROR_INVAL: return "无效参数";
+    case LIBSSH2_ERROR_INVALID_POLL_TYPE: return "无效的轮询类型";
+    case LIBSSH2_ERROR_PUBLICKEY_PROTOCOL: return "公钥协议错误";
+    case LIBSSH2_ERROR_EAGAIN: return "操作会阻塞，请在非阻塞模式下重试";
+    case LIBSSH2_ERROR_BUFFER_TOO_SMALL: return "缓冲区太小";
+    case LIBSSH2_ERROR_BAD_USE: return "API使用错误";
+    case LIBSSH2_ERROR_COMPRESS: return "压缩错误";
+    case LIBSSH2_ERROR_OUT_OF_BOUNDARY: return "超出边界";
+    case LIBSSH2_ERROR_AGENT_PROTOCOL: return "SSH代理协议错误";
+    case LIBSSH2_ERROR_ENCRYPT: return "加密错误";
+    case LIBSSH2_ERROR_BAD_SOCKET: return "无效的socket";
+    case LIBSSH2_ERROR_KNOWN_HOSTS: return "已知主机验证失败";
+    case LIBSSH2_ERROR_HOSTKEY_INIT: return "主机密钥初始化失败";
+    case LIBSSH2_ERROR_HOSTKEY_SIGN: return "主机密钥签名失败";
+    case LIBSSH2_ERROR_DECRYPT: return "解密失败";
+    case LIBSSH2_ERROR_KEY_EXCHANGE_FAILURE: return "密钥交换失败";
+    case LIBSSH2_ERROR_TIMEOUT: return "操作超时";
+
+        // 系统错误码范围（通常为负值）
+    default:
+        if (error_code < 0) {
+            if (error_code >= -100) {
+                return "libssh2内部错误";
+            }
+            else {
+                return "系统错误或网络错误";
+            }
+        }
+        return "";
+    }
 }
 // 辅助函数：判断字符是否为命令分隔符
 inline bool isCmdSeparator(char c) {
@@ -145,6 +232,132 @@ std::string SSHConnection::extractLastLine(const std::string& str) {
 
     // 直接返回最后一行，**不做任何清理、不做任何处理**
     return str.substr(lastPos + 1);
+}
+// 工具函数：检查socket是否有效
+bool SSHConnection::IsSocketValid(SOCKET sock) {
+    if (sock == INVALID_SOCKET) {
+        return false;
+    }
+
+    // 通过select检查socket是否可读（但不会阻塞）
+    fd_set fd;
+    struct timeval tv = { 0, 0 };  // 零超时
+
+    FD_ZERO(&fd);
+    FD_SET(sock, &fd);
+
+    int rc = select(sock + 1, &fd, nullptr, nullptr, &tv);
+
+    if (rc < 0) {
+        // select错误，socket可能无效
+        int err = WSAGetLastError();
+        if (err == WSAENOTSOCK) {
+            return false;
+        }
+    }
+
+    return true;
+}
+// 工具函数：根据阻塞方向等待socket
+// 优化的等待函数：带指数退避
+bool SSHConnection::WaitSocketWithBackoff(SOCKET sock, LIBSSH2_SESSION* session,
+    int base_wait_ms, int max_attempts) {
+    for (int attempt = 1; attempt <= max_attempts; attempt++) {
+        // 计算当前等待时间（带退避）
+        int wait_ms = base_wait_ms * attempt;
+
+        // 检查阻塞方向
+        long directions = libssh2_session_block_directions(session);
+
+        if (directions == 0) {
+            NppSSH_LogInfoAuto("【WaitSocket】无阻塞方向，无需等待");
+            return true;
+        }
+
+        NppSSH_LogInfoAuto("【WaitSocket】等待方向: " + std::to_string(directions) +
+            ", 时间: " + std::to_string(wait_ms) + "ms");
+
+        fd_set fd_read, fd_write;
+        struct timeval tv;
+
+        FD_ZERO(&fd_read);
+        FD_ZERO(&fd_write);
+
+        if (directions & LIBSSH2_SESSION_BLOCK_INBOUND) {
+            FD_SET(sock, &fd_read);
+        }
+        if (directions & LIBSSH2_SESSION_BLOCK_OUTBOUND) {
+            FD_SET(sock, &fd_write);
+        }
+
+        // 设置超时
+        tv.tv_sec = wait_ms / 1000;
+        tv.tv_usec = (wait_ms % 1000) * 1000;
+
+        int rc = select(sock + 1,
+            (directions & LIBSSH2_SESSION_BLOCK_INBOUND) ? &fd_read : nullptr,
+            (directions & LIBSSH2_SESSION_BLOCK_OUTBOUND) ? &fd_write : nullptr,
+            nullptr, &tv);
+
+        if (rc > 0) {
+            NppSSH_LogInfoAuto("【WaitSocket】socket可读写");
+
+            // 再次检查阻塞方向是否清除
+            directions = libssh2_session_block_directions(session);
+            if (directions == 0) {
+                NppSSH_LogInfoAuto("【WaitSocket】阻塞方向已清除");
+            }
+            return true;
+        }
+        else if (rc == 0) {
+            NppSSH_LogInfoAuto("【WaitSocket】等待超时 (" +
+                std::to_string(attempt) + "/" +
+                std::to_string(max_attempts) + ")");
+
+            // 检查socket是否仍然有效
+            if (!IsSocketValid(sock)) {
+                NppSSH_LogErrorAuto("【WaitSocket】socket已失效");
+                return false;
+            }
+
+            // 重新检查阻塞方向
+            long new_directions = libssh2_session_block_directions(session);
+            if (new_directions != directions) {
+                NppSSH_LogInfoAuto("【WaitSocket】阻塞方向已改变: " +
+                    std::to_string(new_directions));
+                // 阻塞方向改变，重新等待
+                directions = new_directions;
+            }
+        }
+        else {
+            int err = WSAGetLastError();
+            NppSSH_LogErrorAuto("【WaitSocket】select错误: " + std::to_string(err));
+            return false;
+        }
+    }
+
+    NppSSH_LogErrorAuto("【WaitSocket】达到最大等待次数");
+    return false;
+}
+// 工具函数：判断伪终端是否就绪
+bool SSHConnection::IsShellReady()
+{
+    // 1. 先判断通道指针是否存在
+    LIBSSH2_CHANNEL* ch = m_shellChannel.load(std::memory_order_acquire);
+    if (!ch)
+        return false;
+
+    // 2. 判断通道是否已退出（!=0 表示已关闭）
+    int exitStatus = libssh2_channel_get_exit_status(ch);
+    if (exitStatus != 0)
+        return false;
+
+    // 3. 判断是否收到 EOF（流结束）
+    if (libssh2_channel_eof(ch))
+        return false;
+
+    // 4. 能走到这里 = 通道已创建、未关闭、未EOF、就绪可用
+    return true;
 }
 // 工具函数：判断是否以指定字符串开头
 bool SSHConnection::startsWith(const std::string& str, const std::string& prefix) {
@@ -760,83 +973,130 @@ bool SSHConnection::InitWSA(WSADATA& wsaData) {
 
 // 创建并连接Socket
 SOCKET SSHConnection::CreateAndConnectSocket(const std::string& host, int port, std::string& errorMsg) {
-    // 创建Socket
-    SOCKET sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (sock == INVALID_SOCKET) {
-        int err = WSAGetLastError();
-        errorMsg = "Socket创建失败（错误码：" + std::to_string(err) + "）";
-        return INVALID_SOCKET;
-    }
+    const int MAX_RETRIES = 3;               // 最大重试次数
+    const int BASE_WAIT_MS = 1000;          // 基础等待时间1秒
 
-    // 域名/IP解析
-    addrinfo hints = { 0 };
-    hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_protocol = IPPROTO_TCP;
+    SOCKET final_socket = INVALID_SOCKET;
+    std::string last_error = "";
+    for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        // 清空前一次的错误信息
+        errorMsg.clear();
 
-    addrinfo* result = nullptr;
-    int ret = getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &result);
-    if (ret != 0 || !result) {
-        errorMsg = "IP解析失败（错误码：" + std::to_string(ret) + "）：" + host + ":" + std::to_string(port);
-        closesocket(sock);
-        return INVALID_SOCKET;
-    }
-
-    // 设置非阻塞模式
-    u_long nonblock = 1;
-    ioctlsocket(sock, FIONBIO, &nonblock);
-
-    // 非阻塞连接
-    int connectRet = connect(sock, result->ai_addr, (int)result->ai_addrlen);
-    freeaddrinfo(result);
-
-    // 处理非阻塞连接的立即失败
-    if (connectRet == SOCKET_ERROR) {
-        int err = WSAGetLastError();
-        if (err != WSAEWOULDBLOCK) {
-            errorMsg = "Socket连接立即失败（错误码：" + std::to_string(err) + "）";
-            closesocket(sock);
-            return INVALID_SOCKET;
+        // 打印重试日志
+        if (attempt > 1) {
+            int wait_time = BASE_WAIT_MS * (1 << (attempt - 2)); // 指数退避：1秒, 2秒, 4秒
+            NppSSH_LogInfoAuto("Socket连接重试 " + std::to_string(attempt) + "/" +
+                std::to_string(MAX_RETRIES) + "：等待 " +
+                std::to_string(wait_time) + "ms 后重试...");
+            std::this_thread::sleep_for(std::chrono::milliseconds(wait_time));
         }
+
+        NppSSH_LogInfoAuto("Socket连接尝试 " + std::to_string(attempt) + "/" +
+            std::to_string(MAX_RETRIES) + "：正在连接 " +
+            host + ":" + std::to_string(port));
+
+        // 1. 创建Socket
+        SOCKET sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        if (sock == INVALID_SOCKET) {
+            int err = WSAGetLastError();
+            errorMsg = "Socket创建失败（错误码：" + std::to_string(err) + "）";
+            NppSSH_LogErrorAuto(errorMsg);
+            last_error = errorMsg;
+            continue;  // 继续下一次重试
+        }
+
+        // 2. 域名/IP解析
+        addrinfo hints = { 0 };
+        hints.ai_family = AF_INET;
+        hints.ai_socktype = SOCK_STREAM;
+        hints.ai_protocol = IPPROTO_TCP;
+
+        addrinfo* result = nullptr;
+        int ret = getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &result);
+        if (ret != 0 || !result) {
+            errorMsg = "IP解析失败（错误码：" + std::to_string(ret) + "）：" + host + ":" + std::to_string(port);
+            NppSSH_LogErrorAuto(errorMsg);
+            closesocket(sock);
+            last_error = errorMsg;
+            continue;  // 继续下一次重试
+        }
+
+        // 3. 设置非阻塞模式
+        u_long nonblock = 1;
+        ioctlsocket(sock, FIONBIO, &nonblock);
+
+        // 4. 非阻塞连接
+        int connectRet = connect(sock, result->ai_addr, (int)result->ai_addrlen);
+        freeaddrinfo(result);
+
+        // 5. 处理非阻塞连接的立即失败
+        if (connectRet == SOCKET_ERROR) {
+            int err = WSAGetLastError();
+            if (err != WSAEWOULDBLOCK) {
+                errorMsg = "Socket连接立即失败（错误码：" + std::to_string(err) + "）";
+                NppSSH_LogErrorAuto(errorMsg);
+                closesocket(sock);
+                last_error = errorMsg;
+                continue;  // 继续下一次重试
+            }
+        }
+
+        // 6. Select超时检测（原有的select逻辑完全不变）
+        fd_set wfds;
+        FD_ZERO(&wfds);
+        FD_SET(sock, &wfds);
+
+        timeval tv = { 0 };
+        tv.tv_sec = SSHConst::CONNECT_SOCKET_TIMEOUT_MS / 1000;
+        tv.tv_usec = (SSHConst::CONNECT_SOCKET_TIMEOUT_MS % 1000) * 1000;
+
+        int select_ret = select(0, nullptr, &wfds, nullptr, &tv);
+        if (select_ret <= 0) {
+            errorMsg = "Socket连接超时（" + std::to_string(SSHConst::CONNECT_SOCKET_TIMEOUT_MS) + "ms）：" + host + ":" + std::to_string(port);
+            NppSSH_LogErrorAuto(errorMsg);
+            closesocket(sock);
+            last_error = errorMsg;
+            continue;  // 继续下一次重试
+        }
+
+        // 7. 检查连接结果
+        int err_code = 0;
+        int len = sizeof(err_code);
+        getsockopt(sock, SOL_SOCKET, SO_ERROR, (char*)&err_code, &len);
+        if (err_code != 0) {
+            errorMsg = "Socket连接失败（错误码：" + std::to_string(err_code) + "）";
+            if (err_code == 10061) errorMsg += "（端口未开放/拒绝连接）";
+            if (err_code == 10065) errorMsg += "（网络不可达）";
+            NppSSH_LogErrorAuto(errorMsg);
+            closesocket(sock);
+            last_error = errorMsg;
+            continue;  // 继续下一次重试
+        }
+
+        // 8. 恢复阻塞模式
+        nonblock = 0;
+        ioctlsocket(sock, FIONBIO, &nonblock);
+
+        // 连接成功
+        NppSSH_LogInfoAuto("✓ Socket连接成功！总尝试次数：" + std::to_string(attempt));
+        return sock;
     }
 
-    // Select超时检测
-    fd_set wfds;
-    FD_ZERO(&wfds);
-    FD_SET(sock, &wfds);
-
-    timeval tv = { 0 };
-    tv.tv_sec = SSHConst::CONNECT_SOCKET_TIMEOUT_MS / 1000;
-    tv.tv_usec = (SSHConst::CONNECT_SOCKET_TIMEOUT_MS % 1000) * 1000;
-
-    int select_ret = select(0, nullptr, &wfds, nullptr, &tv);
-    if (select_ret <= 0) {
-        errorMsg = "Socket连接超时（" + std::to_string(SSHConst::CONNECT_SOCKET_TIMEOUT_MS) + "ms）：" + host + ":" + std::to_string(port);
-        closesocket(sock);
-        return INVALID_SOCKET;
+    // 所有重试都失败了
+    errorMsg = "Socket连接在 " + std::to_string(MAX_RETRIES) + " 次重试后仍然失败";
+    if (!last_error.empty()) {
+        errorMsg += "，最后错误：" + last_error;
     }
-
-    // 检查连接结果
-    int err_code = 0;
-    int len = sizeof(err_code);
-    getsockopt(sock, SOL_SOCKET, SO_ERROR, (char*)&err_code, &len);
-    if (err_code != 0) {
-        errorMsg = "Socket连接失败（错误码：" + std::to_string(err_code) + "）";
-        if (err_code == 10061) errorMsg += "（端口未开放/拒绝连接）";
-        if (err_code == 10065) errorMsg += "（网络不可达）";
-        closesocket(sock);
-        return INVALID_SOCKET;
-    }
-
-    // 恢复阻塞模式
-    nonblock = 0;
-    ioctlsocket(sock, FIONBIO, &nonblock);
-
-    return sock;
+    NppSSH_LogErrorAuto(errorMsg);
+    return INVALID_SOCKET;
 }
 
-// 初始化SSH会话并握手
+// 初始化SSH会话并握手（带加密算法优化和指数退避重试）
+// 初始化SSH会话并握手（优化版本：指数退避重试 + 多种算法配置）
 LIBSSH2_SESSION* SSHConnection::InitSSHSession(SOCKET sock, const std::string& host, int port, std::string& errorMsg) {
+    const int MAX_RETRIES = 3;               // 每个算法配置的最大重试次数
+    const int BASE_WAIT_MS = 1000;          // 基础等待时间1秒
+
     // 初始化libssh2
     if (libssh2_init(0) != 0) {
         errorMsg = "libssh2初始化失败";
@@ -844,35 +1104,264 @@ LIBSSH2_SESSION* SSHConnection::InitSSHSession(SOCKET sock, const std::string& h
         return nullptr;
     }
 
-    // 创建会话
-    LIBSSH2_SESSION* session = libssh2_session_init();
-    if (!session) {
-        errorMsg = "libssh2_session_init失败";
+    // 检查socket状态
+    if (!IsSocketAlive(sock)) {
+        errorMsg = "Socket在SSH握手前已断开";
         NppSSH_LogErrorAuto(errorMsg);
         return nullptr;
     }
 
-    // 设置会话参数
-    libssh2_session_banner_set(session, "SSH-2.0-NppSSH");
-    libssh2_session_set_blocking(session, 1);
-    libssh2_session_set_timeout(session, SSHConst::SSH_HANDSHAKE_TIMEOUT_MS);
+    // 记录开始时间
+    auto start_time = std::chrono::steady_clock::now();
+    LIBSSH2_SESSION* session = nullptr;
 
-    // SSH握手
-    if (libssh2_session_handshake(session, sock) != 0) {
-        errorMsg = "SSH握手失败：" + GetLibssh2ErrorMsg(session);
-        NppSSH_LogErrorAuto(errorMsg);
+    // 定义多种算法配置，从简单到复杂
+    struct AlgorithmConfig {
+        const char* name;
+        const char* kex_algorithms;
+        const char* ciphers;
+        int timeout_ms;  // 该配置的超时时间
+    };
+
+    std::vector<AlgorithmConfig> algorithm_configs = {
+        // 配置1：最广兼容（老设备 + 老OpenSSH，group1+group14-sha1）
+        {
+            "广兼容(KEX老)",
+            "diffie-hellman-group1-sha1,diffie-hellman-group14-sha1,"
+            "diffie-hellman-group14-sha256,diffie-hellman-group-exchange-sha256,"
+            "curve25519-sha256,curve25519-sha256@libssh.org,"
+            "ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521",
+            "aes128-cbc,3des-cbc,aes256-cbc,aes128-ctr,aes256-ctr",
+            15000
+        },
+        // 配置2：标准（大多数服务器，优先现代算法）
+        {
+            "标准(KEX混合)",
+            "curve25519-sha256,curve25519-sha256@libssh.org,"
+            "ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,"
+            "diffie-hellman-group-exchange-sha256,"
+            "diffie-hellman-group16-sha512,diffie-hellman-group14-sha256,"
+            "diffie-hellman-group14-sha1",
+            "aes256-ctr,aes192-ctr,aes128-ctr,aes256-cbc,aes128-cbc,3des-cbc",
+            10000
+        },
+        // 配置3：现代（新服务器，不含弱算法）
+        {
+            "现代(KEX强)",
+            "curve25519-sha256,curve25519-sha256@libssh.org,"
+            "ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,"
+            "diffie-hellman-group-exchange-sha256,"
+            "diffie-hellman-group16-sha512,diffie-hellman-group18-sha512,"
+            "diffie-hellman-group14-sha256",
+            "chacha20-poly1305@openssh.com,aes256-ctr,aes128-ctr,aes256-cbc,aes128-cbc",
+            10000
+        }
+    };
+
+    int total_attempts = 0;
+    bool handshake_success = false;
+
+    // 尝试不同的算法配置
+    for (size_t config_idx = 0; config_idx < algorithm_configs.size() && !handshake_success; config_idx++) {
+        const auto& config = algorithm_configs[config_idx];
+        NppSSH_LogInfoAuto("尝试算法配置: " + std::string(config.name));
+
+        // 检查总耗时
+        auto current_time = std::chrono::steady_clock::now();
+        auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(current_time - start_time).count();
+        if (elapsed_ms > 30000) {  // 30秒总超时
+            errorMsg = "SSH握手总耗时超过30秒，放弃尝试";
+            NppSSH_LogErrorAuto(errorMsg);
+            break;
+        }
+
+        // 对当前配置进行指数退避重试
+        for (int retry = 1; retry <= MAX_RETRIES && !handshake_success; retry++) {
+            total_attempts++;
+
+            // 指数退避等待
+            if (retry > 1) {
+                int wait_time = BASE_WAIT_MS * (1 << (retry - 2)); // 1秒, 2秒, 4秒
+                NppSSH_LogInfoAuto("SSH握手尝试 " + std::to_string(total_attempts) +
+                    " (配置: " + config.name +
+                    ", 重试: " + std::to_string(retry) + "/" + std::to_string(MAX_RETRIES) +
+                    ")：等待 " + std::to_string(wait_time) + "ms 后重试...");
+
+                // 等待期间检查socket状态
+                if (!IsSocketAlive(sock)) {
+                    errorMsg = "Socket在等待期间失效";
+                    NppSSH_LogErrorAuto(errorMsg);
+                    if (session) {
+                        libssh2_session_free(session);
+                        session = nullptr;
+                    }
+                    return nullptr;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(wait_time));
+            }
+            else {
+                NppSSH_LogInfoAuto("SSH握手尝试 " + std::to_string(total_attempts) +
+                    " (配置: " + config.name +
+                    ", 首次尝试)");
+            }
+
+            // 清理之前的会话
+            if (session) {
+                libssh2_session_free(session);
+                session = nullptr;
+            }
+
+            // 创建新会话
+            session = libssh2_session_init();
+            if (!session) {
+                errorMsg = "libssh2_session_init失败";
+                NppSSH_LogWarnAuto(errorMsg);
+                continue;  // 继续下一次重试
+            }
+
+            // 设置会话参数
+            // 1. 设置banner（有些服务器对banner有要求）
+            libssh2_session_banner_set(session, "SSH-2.0-NppSSH_Client");
+
+            // 2. 设置超时（不同配置使用不同超时）
+            libssh2_session_set_timeout(session, config.timeout_ms);
+
+            // 3. 设置为阻塞模式
+            libssh2_session_set_blocking(session, 1);
+
+            // 4. 设置算法偏好
+            NppSSH_LogInfoAuto("设置密钥交换算法: " + std::string(config.kex_algorithms));
+            libssh2_session_method_pref(session, LIBSSH2_METHOD_KEX, config.kex_algorithms);
+
+            NppSSH_LogInfoAuto("设置加密算法: " + std::string(config.ciphers));
+            libssh2_session_method_pref(session, LIBSSH2_METHOD_CRYPT_CS, config.ciphers);
+            libssh2_session_method_pref(session, LIBSSH2_METHOD_CRYPT_SC, config.ciphers);
+
+            // 5. 设置MAC算法和压缩算法为最简单
+            libssh2_session_method_pref(session, LIBSSH2_METHOD_MAC_CS, "hmac-sha1");
+            libssh2_session_method_pref(session, LIBSSH2_METHOD_MAC_SC, "hmac-sha1");
+            libssh2_session_method_pref(session, LIBSSH2_METHOD_COMP_CS, "none");
+            libssh2_session_method_pref(session, LIBSSH2_METHOD_COMP_SC, "none");
+
+            // 6. 在握手前再次检查socket
+            if (!IsSocketAlive(sock)) {
+                errorMsg = "Socket在握手前失效";
+                NppSSH_LogErrorAuto(errorMsg);
+                libssh2_session_free(session);
+                session = nullptr;
+                continue;  // 继续重试
+            }
+
+            // 尝试SSH握手
+            NppSSH_LogInfoAuto("开始SSH握手...");
+            auto handshake_start = std::chrono::steady_clock::now();
+
+            int handshake_ret = libssh2_session_handshake(session, sock);
+
+            auto handshake_end = std::chrono::steady_clock::now();
+            auto handshake_ms = std::chrono::duration_cast<std::chrono::milliseconds>(handshake_end - handshake_start).count();
+            NppSSH_LogInfoAuto("握手耗时: " + std::to_string(handshake_ms) + "ms");
+
+            if (handshake_ret == 0) {
+                // 握手成功
+                std::string negotiated_kex = libssh2_session_methods(session, LIBSSH2_METHOD_KEX);
+                std::string negotiated_cipher = libssh2_session_methods(session, LIBSSH2_METHOD_CRYPT_CS);
+
+                NppSSH_LogInfoAuto("✓ SSH握手成功：" + host + ":" + std::to_string(port));
+                NppSSH_LogInfoAuto("  使用算法配置: " + std::string(config.name));
+                NppSSH_LogInfoAuto("  协商的KEX算法: " + negotiated_kex);
+                NppSSH_LogInfoAuto("  协商的加密算法: " + negotiated_cipher);
+                NppSSH_LogInfoAuto("  总尝试次数: " + std::to_string(total_attempts));
+                NppSSH_LogInfoAuto("  总耗时: " + std::to_string(elapsed_ms) + "ms");
+
+                handshake_success = true;
+                return session;  // 成功，直接返回
+            }
+            else {
+                // 握手失败
+                errorMsg = GetLibssh2ErrorMsg(session) +
+                    "（错误码：" + std::to_string(handshake_ret) + "）";
+
+                // 获取详细错误
+                char* err_msg = nullptr;
+                libssh2_session_last_error(session, &err_msg, nullptr, 0);
+                if (err_msg && strlen(err_msg) > 0) {
+                    NppSSH_LogErrorAuto("libssh2详细错误: " + std::string(err_msg));
+
+                    // 针对"Failed getting banner"错误的特殊处理
+                    if (strstr(err_msg, "Failed getting banner") != nullptr) {
+                        NppSSH_LogWarnAuto("⚠️ 检测到banner获取失败，可能原因：");
+                        NppSSH_LogWarnAuto("  1. 服务器未正确响应");
+                        NppSSH_LogWarnAuto("  2. 网络连接不稳定");
+                        NppSSH_LogWarnAuto("  3. 防火墙/代理问题");
+                    }
+                }
+
+                // 检查错误类型
+                if (handshake_ret == LIBSSH2_ERROR_SOCKET_DISCONNECT ||
+                    handshake_ret == LIBSSH2_ERROR_SOCKET_TIMEOUT) {
+                    NppSSH_LogWarnAuto("⚠️ 网络连接问题，将尝试下一个配置");
+                    // 网络问题，跳出当前配置的循环，尝试下一个配置
+                    break;
+                }
+
+                if (handshake_ret == LIBSSH2_ERROR_PROTO) {
+                    NppSSH_LogWarnAuto("⚠️ 协议错误，将尝试下一个配置");
+                    // 协议错误，跳出当前配置的循环
+                    break;
+                }
+
+                if (retry < MAX_RETRIES) {
+                    NppSSH_LogInfoAuto("握手失败，将指数退避后重试...");
+                }
+                else {
+                    NppSSH_LogInfoAuto("当前算法配置达到最大重试次数，将尝试下一个配置...");
+                }
+
+                // 清理当前会话
+                libssh2_session_free(session);
+                session = nullptr;
+            }
+        }
+
+        // 清理当前会话（如果还存在）
+        if (session) {
+            libssh2_session_free(session);
+            session = nullptr;
+        }
+    }
+
+    // 如果执行到这里，说明所有算法配置都失败了
+    if (session) {
         libssh2_session_free(session);
-        return nullptr;
+        session = nullptr;
     }
 
-    NppSSH_LogInfoAuto("SSH握手成功：" + host + ":" + std::to_string(port));
-    return session;
+    // 详细错误诊断
+    NppSSH_LogErrorAuto("❌ SSH握手最终失败");
+    NppSSH_LogErrorAuto("诊断信息：");
+    NppSSH_LogErrorAuto("  目标: " + host + ":" + std::to_string(port));
+    NppSSH_LogErrorAuto("  总尝试次数: " + std::to_string(total_attempts));
+    NppSSH_LogErrorAuto("  最后错误: " + errorMsg);
+    NppSSH_LogErrorAuto("  总耗时: " +
+        std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - start_time).count()) + "ms");
+
+    // 提供可能的解决方案
+    NppSSH_LogErrorAuto("建议检查：");
+    NppSSH_LogErrorAuto("  1. 服务器SSH服务是否正常运行（netstat -an | grep :22）");
+    NppSSH_LogErrorAuto("  2. 防火墙是否允许SSH连接");
+    NppSSH_LogErrorAuto("  3. 服务器是否配置了AllowUsers/AllowGroups限制");
+    NppSSH_LogErrorAuto("  4. 网络连接是否稳定");
+
+    return nullptr;
 }
 
 // SSH密码认证
 bool SSHConnection::AuthenticateSSH(LIBSSH2_SESSION* session, const std::string& user, const std::string& pass, std::string& errorMsg) {
     if (!session) {
         errorMsg = "无效的SSH会话";
+        NppSSH_LogErrorAuto(errorMsg);
         return false;
     }
 
@@ -956,6 +1445,200 @@ void SSHConnection::ReadLoginBanner(LIBSSH2_SESSION* session) {
         SSH_PanelPrompt(panelId, m_prompt);
         SSH_SetIsCommandRunning(panelId, false);
     }
+}
+
+bool SSHConnection::CreatePtyChannel() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    if (!m_session || m_sock == INVALID_SOCKET) {
+        NppSSH_LogErrorAuto("【CreatePtyChannel】会话/Socket无效");
+        return false;
+    }
+
+    const int MAX_TOTAL_ATTEMPTS = 5;          // 总尝试次数
+    const int MAX_WAIT_ATTEMPTS = 3;         // 每次操作最大等待次数
+    const int BASE_WAIT_MS = 1000;           // 基础等待时间
+    const int MAX_WAIT_MS = 10000;           // 最大等待时间
+
+    const std::vector<std::string> TERMINAL_TYPES = {
+        "xterm-256color", "xterm", "vt100", "dumb", "linux"
+    };
+
+    // 第一步：创建通道
+    LIBSSH2_CHANNEL* channel = nullptr;
+
+    for (int attempt = 1; attempt <= MAX_TOTAL_ATTEMPTS; attempt++) {
+        NppSSH_LogInfoAuto("【CreatePtyChannel】尝试创建通道 (" +
+            std::to_string(attempt) + "/" +
+            std::to_string(MAX_TOTAL_ATTEMPTS) + ")");
+
+        // 尝试创建通道
+        channel = libssh2_channel_open_session(m_session);
+
+        if (channel) {
+            NppSSH_LogInfoAuto("【CreatePtyChannel】通道创建成功");
+            break;
+        }
+
+        int last_err = libssh2_session_last_errno(m_session);
+
+        if (last_err == LIBSSH2_ERROR_EAGAIN) {
+            // Socket正忙，需要等待
+            NppSSH_LogInfoAuto("【CreatePtyChannel】通道创建EAGAIN，等待socket...");
+
+            // 计算线性和指数退避等待时间
+            // 原理：等待时间 = 重试次数 * 基本等待时间，如果等待时间大于最大等待时间，则直接用最大等待时间
+            int wait_time;
+            if (attempt <= 3) {
+                wait_time = BASE_WAIT_MS * attempt;  // 前3次线性
+            }
+            else {
+                wait_time = std::min(BASE_WAIT_MS * (1 << (attempt - 3)), MAX_WAIT_MS);  // 后面指数
+            }
+            if (WaitSocketWithBackoff(m_sock, m_session, wait_time, MAX_WAIT_ATTEMPTS)) {
+                // 等待成功，继续下一次尝试
+                continue;
+            }
+            else {
+                NppSSH_LogErrorAuto("【CreatePtyChannel】等待socket超时，继续尝试...");
+
+                if (attempt == MAX_TOTAL_ATTEMPTS) {
+                    NppSSH_LogErrorAuto("【CreatePtyChannel】达到最大尝试次数，通道创建失败");
+                    return false;
+                }
+            }
+        }
+        else {
+            // 其他错误
+            std::string err = "通道创建失败: " + GetLibssh2ErrorMsg(m_session) +
+                " (错误码: " + std::to_string(last_err) + ")";
+            NppSSH_LogErrorAuto(err);
+
+            if (attempt == MAX_TOTAL_ATTEMPTS) {
+                return false;
+            }
+
+            // 如果不是致命错误，可以重试
+            int wait_time = BASE_WAIT_MS * attempt;
+            std::this_thread::sleep_for(std::chrono::milliseconds(wait_time));
+        }
+    }
+
+    if (!channel) {
+        NppSSH_LogErrorAuto("【CreatePtyChannel】最终通道创建失败");
+        return false;
+    }
+
+    // 第二步：设置PTY伪终端
+    std::string used_terminal = "";
+    bool pty_success = false;
+
+    for (const auto& term_type : TERMINAL_TYPES) {
+        NppSSH_LogInfoAuto("【CreatePtyChannel】尝试PTY终端类型: " + term_type);
+
+        for (int attempt = 1; attempt <= MAX_WAIT_ATTEMPTS; attempt++) {
+            int ret = libssh2_channel_request_pty(
+                channel,
+                term_type.c_str(),
+                nullptr,     // 终端模式（默认）
+                80, 24,      // 行列数
+                0, 0         // 像素宽高（忽略）
+            );
+
+            if (ret == 0) {
+                // PTY设置成功
+                pty_success = true;
+                used_terminal = term_type;
+                NppSSH_LogInfoAuto("【CreatePtyChannel】PTY终端类型 " + term_type + " 设置成功");
+                break;
+            }
+            else if (ret == LIBSSH2_ERROR_EAGAIN) {
+                NppSSH_LogInfoAuto("【CreatePtyChannel】PTY设置EAGAIN，等待socket (" +
+                    std::to_string(attempt) + "/" +
+                    std::to_string(MAX_WAIT_ATTEMPTS) + ")");
+
+                int wait_time = BASE_WAIT_MS * attempt;
+                if (WaitSocketWithBackoff(m_sock, m_session, wait_time, 1)) {
+                    // 等待后继续重试
+                    continue;
+                }
+                else {
+                    NppSSH_LogWarnAuto("【CreatePtyChannel】PTY等待超时，尝试下一个终端类型");
+                    break;
+                }
+            }
+            else {
+                // 其他错误，记录并尝试下一个终端类型
+                std::string err_msg = GetLibssh2ErrorMsg(m_session);
+                NppSSH_LogInfoAuto("【CreatePtyChannel】PTY终端类型 " + term_type +
+                    " 失败: " + err_msg + " (错误码: " + std::to_string(ret) + ")");
+                break;
+            }
+        }
+
+        if (pty_success) {
+            break;
+        }
+    }
+
+    if (!pty_success) {
+        std::string err = "所有PTY终端类型设置失败: " + GetLibssh2ErrorMsg(m_session);
+        NppSSH_LogErrorAuto(err);
+        libssh2_channel_free(channel);
+        return false;
+    }
+
+    // 第三步：启动shell
+    NppSSH_LogInfoAuto("【CreatePtyChannel】准备启动shell...");
+
+    for (int attempt = 1; attempt <= MAX_TOTAL_ATTEMPTS; attempt++) {
+        int ret = libssh2_channel_shell(channel);
+
+        if (ret == 0) {
+            // Shell启动成功
+            m_shellChannel.store(channel, std::memory_order_release);
+
+            std::string log_msg = "【CreatePtyChannel】伪终端创建成功";
+            if (!used_terminal.empty()) {
+                log_msg += " (终端类型: " + used_terminal + ")";
+            }
+            NppSSH_LogInfoAuto(log_msg);
+            return true;
+        }
+        else if (ret == LIBSSH2_ERROR_EAGAIN) {
+            NppSSH_LogInfoAuto("【CreatePtyChannel】Shell启动EAGAIN，等待socket (" +
+                std::to_string(attempt) + "/" +
+                std::to_string(MAX_TOTAL_ATTEMPTS) + ")");
+
+            int wait_time = std::min(BASE_WAIT_MS * attempt, MAX_WAIT_MS);
+
+            if (WaitSocketWithBackoff(m_sock, m_session, wait_time, MAX_WAIT_ATTEMPTS)) {
+                // 等待后继续尝试
+                continue;
+            }
+            else {
+                NppSSH_LogWarnAuto("【CreatePtyChannel】Shell启动等待超时");
+
+                if (attempt == MAX_TOTAL_ATTEMPTS) {
+                    NppSSH_LogErrorAuto("【CreatePtyChannel】Shell启动达到最大尝试次数");
+                    break;
+                }
+            }
+        }
+        else {
+            // 其他错误
+            std::string err = "Shell启动失败: " + GetLibssh2ErrorMsg(m_session) +
+                " (错误码: " + std::to_string(ret) + ")";
+            NppSSH_LogErrorAuto(err);
+            break;
+        }
+    }
+
+    // 启动shell失败
+    std::string err = "Shell启动最终失败: " + GetLibssh2ErrorMsg(m_session);
+    NppSSH_LogErrorAuto(err);
+    libssh2_channel_free(channel);
+    return false;
 }
 bool SSHConnection::Connect(const char* host, int port, const char* user, const char* pass) {
     //NppSSH_LogInfoAuto("开始进行连接==========1");
@@ -1052,9 +1735,14 @@ void SSHConnection::ConnectAsync(const char* host, int port, const char* user, c
         // 步骤4：SSH握手
         LIBSSH2_SESSION* session = InitSSHSession(sock, l_host, l_port, err);
         if (!session) {
+            
+            if (!IsSocketValid(sock)) {
+                NppSSH_LogErrorAuto("握手过程中Socket已失效");
+            }
+            NppSSH_LogErrorAuto("步骤4：SSH握手失败 → " + err);
+
             closesocket(sock);
             WSACleanup();
-            NppSSH_LogErrorAuto("步骤4：SSH握手失败 → " + err);
             guard();
             return;
         }
@@ -1105,57 +1793,38 @@ void SSHConnection::ConnectAsync(const char* host, int port, const char* user, c
         }
 
         //连接成功后，申请 PTY 伪终端
-        LIBSSH2_CHANNEL* channel = libssh2_channel_open_session(session);
-        if (channel) {
-            // 申请伪终端（关键！）
-            //int rc = libssh2_channel_request_pty(channel, "xterm-256color");
-            int rc = libssh2_channel_request_pty(channel, "xterm");
-            if (rc != 0) {
-                NppSSH_LogInfoAuto("【伪终端降级】xterm-256color降级xterm");
-                rc = libssh2_channel_request_pty(channel, "xterm");
-            }
-            if (rc != 0) {
-                NppSSH_LogInfoAuto("【伪终端降级】xterm降级vt100");
-                rc = libssh2_channel_request_pty(channel, "vt100");
-            }
-            if (rc != 0) {
-                NppSSH_LogInfoAuto("【伪终端降级】vt100降级dumb");
-                rc = libssh2_channel_request_pty(channel, "dumb");
-            }
-            if (rc == 0) {
-                libssh2_channel_request_pty_size(channel, 120, 40);
-                
-                // 启动交互式 shell
-                libssh2_channel_shell(channel);
-                m_shellChannel.store(channel, std::memory_order_release);
-            }
-            else {
-                NppSSH_LogErrorAuto("request pty failed");
-                libssh2_channel_free(channel);
-                m_shellChannel.store(nullptr, std::memory_order_release);
-            }
+        bool isReqPTY = CreatePtyChannel();
+        if (!isReqPTY) {
+            ReleaseResources();//申请失败，释放资源
+            return;
         }
         // 步骤7：读取Banner和启动心跳（锁外执行）
         // 增加 3次重试机制，确保通道完全就绪
-        // ==============================================
-        
         StartHeartbeat();
 
         NppSSH_LogInfoAuto("SSH连接成功！");
 
-        bool bannerOk = false;
-        for (int i = 0; i < 3; i++) {
-            if (m_shellChannel.load(std::memory_order_acquire) != nullptr) {
+
+        int retryCount = 0;
+        const int MAX_RETRY = 10;    // 增加重试次数
+        const int RETRY_DELAY_MS = 200; // 每次重试延迟200ms
+        while (retryCount < MAX_RETRY) {
+            if (IsShellReady()) {
+                NppSSH_LogInfoAuto("伪终端就绪成功！");
                 ReadLoginBanner(session);
-                bannerOk = true;
                 break;
             }
-            NppSSH_LogInfoAuto("【重试】等待伪终端就绪：第" + std::to_string(i + 1) + "次");
-            Sleep(10); // 极短等待，几乎无感知
+            retryCount++;
+            NppSSH_LogInfoAuto("【重试】等待伪终端就绪：第" + std::to_string(retryCount) + "次");
+            // 增加延迟，避免高频重试
+            std::this_thread::sleep_for(std::chrono::milliseconds(RETRY_DELAY_MS));
         }
 
-        if (!bannerOk) {
-            NppSSH_LogErrorAuto("【错误】3次重试后，伪终端仍未就绪");
+        if (retryCount >= MAX_RETRY) {
+            NppSSH_LogErrorAuto("【错误】" + std::to_string(MAX_RETRY) + "次重试后，伪终端仍未就绪");
+            // 清理资源
+            ReleaseResources();
+            return;
         }
         ok = true;
     }

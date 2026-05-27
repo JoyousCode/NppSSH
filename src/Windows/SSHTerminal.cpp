@@ -142,6 +142,11 @@ static void FixEditInputState_Final(HWND hEdit)
 // ============return res = CallWindowProc(oldProc, hWnd, msg, wParam, lParam);放行编辑器原始的操作，
 static LRESULT CALLBACK TerminalEditProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     bool bNeedProcess = true;
+    if (msg == WM_GETDLGCODE)// 告诉系统所有键盘我全吃了，不发给父窗口
+    {
+        NppSSH_LogInfoAuto("【完全拦截】处理键盘消息");
+        return DLGC_WANTALLKEYS | DLGC_WANTCHARS | DLGC_WANTMESSAGE;
+    }
     switch (msg) {
     case WM_USER + 1001:
         NppSSH_LogInfoAuto("【修复】调用FixEditInputState_Final函数修复失效！");
