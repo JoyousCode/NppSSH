@@ -655,13 +655,8 @@ void SSHConnection::HeartbeatThreadFunc() {
 
     // 循环运行，直到收到停止信号
     while (true) {
-        // 第一步：先检测停止信号（打印日志前检测，避免无效日志）
-        if (m_stopHeartbeat.load(std::memory_order_acquire)) { // 改用acquire内存序
-            NppSSH_LogInfoAuto("收到停止信号，立即退出");
-            goto THREAD_EXIT;
-        }
-
-        // 第二步：带超时的等待（替代sleep_for，支持即时唤醒）
+        
+        // 第一步：带超时的等待（替代sleep_for，支持即时唤醒）
         {
             std::unique_lock<std::mutex> lock(m_heartbeatMtx);
             // 等待1秒，或被唤醒（停止信号触发时唤醒）
@@ -673,7 +668,7 @@ void SSHConnection::HeartbeatThreadFunc() {
             }
         }
 
-        // 第三步：计数+打印日志（此时已确认未收到停止信号）
+        // 第二步：计数+打印日志（此时已确认未收到停止信号）
         secondCount++;
 
         //std::ostringstream oss;
@@ -681,24 +676,34 @@ void SSHConnection::HeartbeatThreadFunc() {
         //NppSSH_LogInfoAuto("心跳线程[" + oss.str() + "]已启动循环，第" + std::to_string(secondCount) + "次" +
         //    std::to_string(m_stopHeartbeat.load(std::memory_order_acquire)));
 
+        // 第三步：先检测停止信号（打印日志前检测，避免无效日志）
+        if (m_stopHeartbeat.load(std::memory_order_acquire)) { // 改用acquire内存序
+            NppSSH_LogInfoAuto("收到停止信号，立即退出");
+            goto THREAD_EXIT;
+        }
+        // 每秒写探测（不发包）
+        //if (!IsSocketWritable(m_sock)) {
+        //    NppSSH_LogErrorAuto("【FATAL】Socket 已死，立即断开");
+        //    Disconnect();
+        //    goto THREAD_EXIT;
+        //}
+
+        if (secondCount < SSHConst::HEARTBEAT_INTERVAL_MS) {
+            continue;  // 没到时间，不发心跳
+        }
         // 第四步：心跳逻辑（增加空指针检测，避免访问已释放资源）
-        if (secondCount >= SSHConst::HEARTBEAT_INTERVAL_MS) {
-            secondCount = 0;
-            // 双重检测：停止信号+资源有效性
-            if (m_stopHeartbeat.load(std::memory_order_acquire)) {
-                goto THREAD_EXIT;
+        secondCount = 0;
+        if (m_session != nullptr && m_connected.load(std::memory_order_acquire)) {
+            //发送心跳包
+            int next_interval = 0;
+            int ret = libssh2_keepalive_send(m_session, &next_interval);
+            if (ret == 0) {
+                NppSSH_LogInfoAuto("心跳包发送成功（SSH_MSG_IGNORE），下次间隔：" + std::to_string(next_interval) + "s");
             }
-            if (m_session != nullptr && m_connected.load(std::memory_order_acquire)) {
-                int next_interval = 0;
-                int ret = libssh2_keepalive_send(m_session, &next_interval);
-                if (ret == 0) {
-                    NppSSH_LogInfoAuto("心跳包发送成功（SSH_MSG_IGNORE），下次间隔：" + std::to_string(next_interval) + "s");
-                }
-                else {
-                    NppSSH_LogInfoAuto("心跳包发送失败，连接可能已断开");
-                    Disconnect();
-                    goto THREAD_EXIT;
-                }
+            else {
+                NppSSH_LogInfoAuto("心跳包发送失败，连接可能已断开");
+                Disconnect();
+                goto THREAD_EXIT;
             }
         }
     }
@@ -953,7 +958,7 @@ void SSHConnection::ShellReaderLoop() {
 
         case ShellExitReason::StoppedByUser:
             SSH_AppendOutputText(panelId,
-                "\r\n[!] 命令已被用户中断（Ctrl+C / 停止）\r\n"+ panelPrompt);
+                "\r\n[!] 输出已被中断（Ctrl+C / 服务器停止）\r\n"+ panelPrompt);
             break;
 
         case ShellExitReason::SocketDead:
@@ -1464,11 +1469,6 @@ void SSHConnection::ReadLoginBanner(LIBSSH2_SESSION* session) {
         NppSSH_LogInfoAuto("【没有伪终端】");
         return;
     }
-    //配置home
-    //std::string homeDir = GetHomeDir();
-    //m_dirFile = homeDir;
-    //NppSSH_LogInfoAuto("当前登录用户的home完整路径1===="+homeDir);
-    //NppSSH_LogInfoAuto("当前登录用户的home完整路径2===="+ m_homeDir);
     int panelId = SSHConnection_GetPanelId(this);
     // 读取Banner
     std::string loginBanner = "\r\n";

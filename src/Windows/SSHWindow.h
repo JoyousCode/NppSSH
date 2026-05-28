@@ -37,6 +37,7 @@
 #define SSH_KILLFOCUS      (WM_USER + 1008)
 #define SSH_FIX_STATE      (WM_USER + 1009)
 #define SSH_SET_READONLY   (WM_USER + 1010)
+#define WM_APPEND_OUTPUT_TEXT (WM_USER + 2001)
 
 /////////////////////////////////////////////////////////////初始值在SSHPanel
 // 全局变量声明（供SSHClient调用）

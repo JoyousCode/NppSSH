@@ -202,6 +202,25 @@ private:
 
     //工具函数，InitSSHSession函数初始化SSH会话并握手，检查socket是否有效
     bool SSHConnection::IsSocketAlive(SOCKET sock);
+
+    bool SSHConnection::IsSocketWritable(SOCKET sock) {
+        fd_set wfds;
+        struct timeval tv = { 0, 100000 }; // 100us
+
+        FD_ZERO(&wfds);
+        FD_SET(sock, &wfds);
+
+        int ret = select(0, nullptr, &wfds, nullptr, &tv);
+        if (ret <= 0) {
+            return false;
+        }
+
+        // 再检查 SO_ERROR
+        int err = 0;
+        int len = sizeof(err);
+        getsockopt(sock, SOL_SOCKET, SO_ERROR, (char*)&err, &len);
+        return err == 0;
+    }
     enum class ShellExitReason {
         Unknown,
         PromptReceived,
