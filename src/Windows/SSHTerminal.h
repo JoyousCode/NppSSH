@@ -12,6 +12,8 @@ class SSHTerminal {
 public:
     SSHTerminal();
     ~SSHTerminal();
+    // 子类化终端编辑框过程监听
+    static LRESULT CALLBACK TerminalEditProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
     // 初始化终端编辑框（迁移自initPanel的编辑框创建逻辑）
     HWND InitTerminalEditBox(HWND hParent);
     void disConnection();
@@ -45,6 +47,7 @@ public:
 private:
     HWND _hTerminal;
     HWND _hwndParent = nullptr;
+    bool _initialized = false;
 
     int _panelId;
     std::string _cmd;             // 回车需要执行的命令（迁移自cmd）
@@ -71,4 +74,3 @@ SSHTerminal* getSSHTerminal(int panelIndex);
 inline std::wstring GBKToWstring(const std::string& gbkStr);
 inline std::string PtrToHexStr(void* ptr);
 inline std::string IntToStr(int num);
-static LRESULT CALLBACK TerminalEditProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);

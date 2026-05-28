@@ -8,7 +8,43 @@ static HINSTANCE s_hInst;
 // 新增：防重入标记（避免递归调用）
 static thread_local bool s_bProcessingMsg = false;
 
+// 安全地把 std::wstring 转为 std::string 日志专用（避免乱码和异常）
+inline std::string WStringToLogStr(const std::wstring& wstr) {
+    if (wstr.empty()) return "";
+    int len = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    std::string out(len, 0);
+    WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, &out[0], len, nullptr, nullptr);
+    return out;
+}
+// 工具函数：指针转十六进制字符串（日志专用）
+inline std::string PtrToHexStr(void* ptr) {
+    char buf[32] = { 0 };
+    sprintf_s(buf, "0x%p", ptr);
+    return std::string(buf);
+}
 
+// 工具函数：数字转字符串（日志专用）
+inline std::string IntToStr(int num) {
+    return std::to_string(num);
+}
+// 编码转换工具（自动识别 UTF8 / GBK，彻底解决Windows弹框乱码）
+inline std::wstring GBKToWstring(const std::string& str) {
+    if (str.empty())
+        return L"";
+
+    wchar_t buf[1024] = { 0 };
+
+    // 1. 优先按 UTF-8 转换（libssh2 错误信息都是 UTF-8）
+    int len = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, nullptr, 0);
+    if (len > 0 && len < 1024) {
+        MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, buf, len);
+        return buf;
+    }
+
+    // 2. 失败则使用 GBK（系统本地编码）
+    MultiByteToWideChar(CP_ACP, 0, str.c_str(), -1, buf, _countof(buf));
+    return buf;
+}
 // 辅助函数：转16进制字符串，方便日志查看
 inline std::string IntToHexStr(DWORD val) {
     char buf[32];
@@ -26,7 +62,14 @@ inline void imm_chineseType(HWND hEdit)
 
     NppSSH_LogInfoAuto("【IME调用】强制微软拼音→英文，hWnd=" + PtrToHexStr(hEdit));
 
-    // 1. 强制焦点（调用imm_chineseType函数前已经设置，暂时废弃）
+    // 1. 设置焦点（调用imm_chineseType函数前已经设置，暂时废弃）
+    HWND hFocus = ::GetFocus();
+    bool isEditFocused = (hFocus != hEdit);
+    if (isEditFocused) {
+        SetFocus(hEdit); // 仅恢复缓存的焦点状态
+        NppSSH_LogInfoAuto("【设置焦点3333333333333333】");
+
+    }
     //SetFocus(hEdit);
     //Sleep(10); // 极短等待，让系统同步
 
@@ -141,8 +184,32 @@ static void FixEditInputState_Final(HWND hEdit)
 // 传统伪终端子类化过程（解决消息拦截失效问题）
 // ============return res = 0;拦截编辑器的操作，自定义具体操作。
 // ============return res = CallWindowProc(oldProc, hWnd, msg, wParam, lParam);放行编辑器原始的操作，
-static LRESULT CALLBACK TerminalEditProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+LRESULT CALLBACK SSHTerminal::TerminalEditProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     bool bNeedProcess = true;
+    LRESULT res = 0;
+    SSHTerminal* terminal = (SSHTerminal*)GetProp(hWnd, L"SSHTerminalInstance");
+    if (!terminal) {
+        for (auto& t : vectorSSHTerminal) {
+            if (t && t->Get_TerminalHandle() == hWnd) {
+                terminal = t;
+                SetProp(hWnd, L"SSHTerminalInstance", (HANDLE)terminal);
+                break;
+            }
+        }
+    }
+
+    if (!terminal) {
+        NppSSH_LogInfoAuto("TerminalEditProc未找到终端！hWnd=" + PtrToHexStr(hWnd) + " msg=" + IntToStr(msg));
+        WNDPROC oldProc = (WNDPROC)GetWindowLongPtr(hWnd, GWLP_USERDATA);
+        res = oldProc ? CallWindowProc(oldProc, hWnd, msg, wParam, lParam) : DefWindowProc(hWnd, msg, wParam, lParam);
+        s_bProcessingMsg = false;
+        return res;
+    }
+
+    WNDPROC oldProc = (WNDPROC)GetWindowLongPtr(hWnd, GWLP_USERDATA);
+    if (!oldProc) {
+        oldProc = DefWindowProc;
+    }
     if (msg == WM_GETDLGCODE)// 告诉系统所有键盘我全吃了，不发给父窗口
     {
         NppSSH_LogInfoAuto("【完全拦截】处理键盘消息");
@@ -150,24 +217,40 @@ static LRESULT CALLBACK TerminalEditProc(HWND hWnd, UINT msg, WPARAM wParam, LPA
     }
     switch (msg) {
     case WM_USER + 1001:
-        NppSSH_LogInfoAuto("【修复】调用FixEditInputState_Final函数修复失效！");
-        FixEditInputState_Final(hWnd);
+        //NppSSH_LogInfoAuto("【修复】调用FixEditInputState_Final函数修复失效！");
+        //FixEditInputState_Final(hWnd);
         return 0;
-    case WM_USER + 1005:
+    case WM_APPEND_OUTPUT_TEXT:
     {
-        NppSSH_LogInfoAuto("【调试EN_SETFOCUS】");
-        // 关闭只读（必须）
-        ::SendMessage(hWnd, EM_SETREADONLY, FALSE, 0);
+        NppSSH_LogInfoAuto("【WM_APPEND_OUTPUT_TEXT】分支已进入");
+        if (!terminal) {
+            NppSSH_LogInfoAuto("【WM_APPEND_OUTPUT_TEXT】terminal 为空，直接返回");
+            break;
+        }
 
-        // 🔥 只修光标，不设置焦点！！！（这是破环关键）
-        // 只调用轻量修复，不调用完整 FixEditInputState_Final
-        int len = GetWindowTextLengthW(hWnd);
-        SendMessageW(hWnd, EM_SETSEL, len, len);
-        SendMessageW(hWnd, EM_SCROLLCARET, 0, 0);
-        ShowCaret(hWnd);
+        HWND TerminalHandle = terminal->Get_TerminalHandle();
+        if (!IsWindow(TerminalHandle)) {
+            NppSSH_LogInfoAuto("【WM_APPEND_OUTPUT_TEXT】TerminalHandle 无效");
+            break;
+        }
+
+        std::wstring* pText = (std::wstring*)lParam;
+        if (!pText) {
+            NppSSH_LogInfoAuto("【WM_APPEND_OUTPUT_TEXT】lParam 为空，直接返回");
+            break;
+        }
+        NppSSH_LogInfoAuto("【WM_APPEND_OUTPUT_TEXT】收到文本，长度=" + IntToStr((int)pText->size()));
+
+        // ✅ 1. 光标到末尾
+        int len = GetWindowTextLengthW(TerminalHandle);
+        SendMessageW(TerminalHandle, EM_SETSEL, len, len);
+        SendMessageW(TerminalHandle, EM_REPLACESEL, FALSE, (LPARAM)pText->c_str());
+        // ✅ 5. 简单滚动
+        SendMessageW(TerminalHandle, EM_SCROLLCARET, 0, 0);
+        delete pText;
+        NppSSH_LogInfoAuto("【WM_APPEND_OUTPUT_TEXT】追加完成");
         return 0;
     }
-        
     // 焦点变化时的处理
     //case WM_SETFOCUS:
     //    imm_chineseType(hWnd); // 窗口获得焦点时，再次强制英文
@@ -198,33 +281,9 @@ static LRESULT CALLBACK TerminalEditProc(HWND hWnd, UINT msg, WPARAM wParam, LPA
     }
     s_bProcessingMsg = true;
 
-    LRESULT res = 0;
+    
     try {
         NppSSH_LogInfoAuto("TerminalEditProc监听！msg=" + IntToStr(msg) + " hWnd=" + PtrToHexStr(hWnd));
-        
-        SSHTerminal* terminal = (SSHTerminal*)GetProp(hWnd, L"SSHTerminalInstance");
-        if (!terminal) {
-            for (auto& t : vectorSSHTerminal) {
-                if (t && t->Get_TerminalHandle() == hWnd) {
-                    terminal = t;
-                    SetProp(hWnd, L"SSHTerminalInstance", (HANDLE)terminal);
-                    break;
-                }
-            }
-        }
-
-        if (!terminal) {
-            NppSSH_LogInfoAuto("TerminalEditProc未找到终端！hWnd=" + PtrToHexStr(hWnd) + " msg=" + IntToStr(msg));
-            WNDPROC oldProc = (WNDPROC)GetWindowLongPtr(hWnd, GWLP_USERDATA);
-            res = oldProc ? CallWindowProc(oldProc, hWnd, msg, wParam, lParam) : DefWindowProc(hWnd, msg, wParam, lParam);
-            s_bProcessingMsg = false;
-            return res;
-        }
-
-        WNDPROC oldProc = (WNDPROC)GetWindowLongPtr(hWnd, GWLP_USERDATA);
-        if (!oldProc) {
-            oldProc = DefWindowProc;
-        }
 
         // 1. 全局放行复制操作（Ctrl+C / Ctrl+Insert）
         bool isCopy = (msg == WM_KEYDOWN &&
@@ -527,50 +586,7 @@ static LRESULT CALLBACK TerminalEditProc(HWND hWnd, UINT msg, WPARAM wParam, LPA
     s_bProcessingMsg = false;
     return res;
 }
-// 安全地把 std::wstring 转为 std::string 日志专用（避免乱码和异常）
-inline std::string WStringToLogStr(const std::wstring& wstr) {
-    if (wstr.empty()) return "";
-    std::string res;
-    res.reserve(wstr.size());
-    for (wchar_t wc : wstr) {
-        if (wc <= 0x7F) { // 只打印ASCII字符，非ASCII直接替换为?
-            res += static_cast<char>(wc);
-        }
-        else {
-            res += '?';
-        }
-    }
-    return res;
-}
-// 工具函数：指针转十六进制字符串（日志专用）
-inline std::string PtrToHexStr(void* ptr) {
-    char buf[32] = { 0 };
-    sprintf_s(buf, "0x%p", ptr);
-    return std::string(buf);
-}
 
-// 工具函数：数字转字符串（日志专用）
-inline std::string IntToStr(int num) {
-    return std::to_string(num);
-}
-// 编码转换工具（自动识别 UTF8 / GBK，彻底解决Windows弹框乱码）
-inline std::wstring GBKToWstring(const std::string& str) {
-    if (str.empty())
-        return L"";
-
-    wchar_t buf[1024] = { 0 };
-
-    // 1. 优先按 UTF-8 转换（libssh2 错误信息都是 UTF-8）
-    int len = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, nullptr, 0);
-    if (len > 0 && len < 1024) {
-        MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, buf, len);
-        return buf;
-    }
-
-    // 2. 失败则使用 GBK（系统本地编码）
-    MultiByteToWideChar(CP_ACP, 0, str.c_str(), -1, buf, _countof(buf));
-    return buf;
-}
 SSHTerminal::SSHTerminal() {
     // 初始化成员变量（避免野指针）
 
@@ -685,7 +701,7 @@ HWND SSHTerminal::InitTerminalEditBox(HWND hParent) {
     else {
         NppSSH_LogInfoAuto("终端实例已存在于vector，跳过添加");
     }
-
+    _initialized = true;
     //MessageBoxW(s_nppData._nppHandle, L"终端伪终端初始化完成 ✅", L"成功", MB_OK);
     return _hTerminal;
 }
@@ -758,50 +774,60 @@ void SSHTerminal::AppendOutputText(const std::string& text) {
         NppSSH_LogWarnAuto("AppendOutputText: 文本或伪终端为空");
         return;
     }
-    NppSSH_LogInfoAuto("输出文本到输出框" + std::string(text));
-    // 提前缓存焦点状态，避免操作后丢失
-    HWND hFocus = ::GetFocus();
-    bool isEditFocused = (hFocus == _hTerminal);
-
-    // 临时关闭子类化，避免EM_SETSEL/EM_REPLACESEL触发循环
-    WNDPROC tempOldProc = (WNDPROC)GetWindowLongPtr(_hTerminal, GWLP_WNDPROC);
-    SetWindowLongPtr(_hTerminal, GWLP_WNDPROC, (LONG_PTR)_oldEditProc);
-    //追加文本（只读控件临时取消只读）
-    ::SendMessage(_hTerminal, EM_SETREADONLY, FALSE, 0);
-
-    std::wstring wtext = GBKToWstring(text);
-    // 光标移到末尾，追加文本
-    int len = ::GetWindowTextLengthW(_hTerminal);
-    ::SendMessage(_hTerminal, EM_SETSEL, len, len);
-    ::SendMessage(_hTerminal, EM_REPLACESEL, FALSE, (LPARAM)wtext.c_str());
-    //// 恢复只读
-    ::SendMessage(_hTerminal, EM_SETREADONLY, TRUE, 0);
-
-    // 恢复子类化
-    SetWindowLongPtr(_hTerminal, GWLP_WNDPROC, (LONG_PTR)tempOldProc);
-
-
-    // ========== 精准定位光标到新提示符末尾 ==========
-    // 1. 重新获取追加后的总长度（避免wtext拼接导致的长度偏差）
-    DWORD len_total = ::GetWindowTextLengthW(_hTerminal);
-    // 2. 强制选中末尾（确保光标在最后）
-    ::SendMessageW(_hTerminal, EM_SETSEL, len_total, len_total);
-    // 3. 滚动到光标位置（视觉反馈）
-    ::SendMessageW(_hTerminal, EM_SCROLLCARET, 0, 0);
-    // 4. 强制刷新光标渲染（解决系统未重绘光标问题）
-    ::SendMessageW(_hTerminal, WM_PAINT, 0, 0);
-    // 强制刷新
-    ::RedrawWindow(_hTerminal, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
-    //FixEditInputState(_hTerminal);
-    // 若当前伪终端是焦点，不重复抢焦；若非焦点，不主动设置（遵循用户操作）
-    if (isEditFocused) {
-        SetFocus(_hTerminal); // 仅恢复缓存的焦点状态
-        NppSSH_LogInfoAuto("【设置焦点3333333333333333】");
-
+    // ✅ 防止子类化未完成就发消息
+    if (!_initialized) {
+        NppSSH_LogWarnAuto("AppendOutputText: 伪终端尚未初始化完成，丢弃输出");
+        return;
     }
+    NppSSH_LogInfoAuto("输出文本到输出框" + std::string(text));
+    // ✅ 转成 wstring（堆分配）
+    std::wstring* pText = new std::wstring(GBKToWstring(text));
 
-    NppSSH_LogInfoAuto("文本追加完成，当前输出框总长度：" + IntToStr((int)len_total)
-        + "，追加长度：" + IntToStr((int)text.length()));
+    // ✅ 投递到主线程（绝对安全）
+    PostMessage(_hTerminal, WM_APPEND_OUTPUT_TEXT, 0, (LPARAM)pText);
+    // 提前缓存焦点状态，避免操作后丢失
+    //HWND hFocus = ::GetFocus();
+    //bool isEditFocused = (hFocus == _hTerminal);
+
+    //// 临时关闭子类化，避免EM_SETSEL/EM_REPLACESEL触发循环
+    //WNDPROC tempOldProc = (WNDPROC)GetWindowLongPtr(_hTerminal, GWLP_WNDPROC);
+    //SetWindowLongPtr(_hTerminal, GWLP_WNDPROC, (LONG_PTR)_oldEditProc);
+    ////追加文本（只读控件临时取消只读）
+    //::SendMessage(_hTerminal, EM_SETREADONLY, FALSE, 0);
+
+    //std::wstring wtext = GBKToWstring(text);
+    //// 光标移到末尾，追加文本
+    //int len = ::GetWindowTextLengthW(_hTerminal);
+    //::SendMessage(_hTerminal, EM_SETSEL, len, len);
+    //::SendMessage(_hTerminal, EM_REPLACESEL, FALSE, (LPARAM)wtext.c_str());
+    ////// 恢复只读
+    //::SendMessage(_hTerminal, EM_SETREADONLY, TRUE, 0);
+
+    //// 恢复子类化
+    //SetWindowLongPtr(_hTerminal, GWLP_WNDPROC, (LONG_PTR)tempOldProc);
+
+
+    //// ========== 精准定位光标到新提示符末尾 ==========
+    //// 1. 重新获取追加后的总长度（避免wtext拼接导致的长度偏差）
+    //DWORD len_total = ::GetWindowTextLengthW(_hTerminal);
+    //// 2. 强制选中末尾（确保光标在最后）
+    //::SendMessageW(_hTerminal, EM_SETSEL, len_total, len_total);
+    //// 3. 滚动到光标位置（视觉反馈）
+    //::SendMessageW(_hTerminal, EM_SCROLLCARET, 0, 0);
+    //// 4. 强制刷新光标渲染（解决系统未重绘光标问题）
+    //::SendMessageW(_hTerminal, WM_PAINT, 0, 0);
+    //// 强制刷新
+    //::RedrawWindow(_hTerminal, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
+    ////FixEditInputState(_hTerminal);
+    //// 若当前伪终端是焦点，不重复抢焦；若非焦点，不主动设置（遵循用户操作）
+    //if (isEditFocused) {
+    //    SetFocus(_hTerminal); // 仅恢复缓存的焦点状态
+    //    NppSSH_LogInfoAuto("【设置焦点3333333333333333】");
+
+    //}
+
+    //NppSSH_LogInfoAuto("文本追加完成，当前输出框总长度：" + IntToStr((int)len_total)
+    //    + "，追加长度：" + IntToStr((int)text.length()));
 }
 
 
