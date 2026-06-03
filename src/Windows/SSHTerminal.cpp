@@ -8,6 +8,173 @@ static HINSTANCE s_hInst;
 // 新增：防重入标记（避免递归调用）
 static thread_local bool s_bProcessingMsg = false;
 
+inline std::wstring CleanrrW(const std::wstring& allText) {
+    std::wstring fixedText;
+    for (wchar_t c : allText) {
+        if (c == L'\r') continue; // 删掉 RichEdit 自动加的所有 \r
+        fixedText += c;
+    }
+    return fixedText;
+}
+inline std::string Cleanrr(const std::string& input) {
+    std::string out;
+    bool lastWasR = false;   // 标记上一个是不是 \r
+    bool hasR = false;      // 标记这段有没有累积 \r
+
+    for (char c : input) {
+        if (c == '\r') {
+            hasR = true;        // 累积 \r
+            lastWasR = true;
+        }
+        else if (c == '\n') {
+            // 遇到 \n，前面所有 \r 全部删掉，只保留一个 \n
+            out += '\n';
+            hasR = false;
+            lastWasR = false;
+        }
+        else {
+            // 普通字符
+            if (hasR) {
+                // 前面是单独的 \r，要保留
+                out += '\r';
+                hasR = false;
+            }
+            out += c;
+            lastWasR = false;
+        }
+    }
+
+    // 处理字符串末尾剩下的单独 \r
+    if (hasR) {
+        out += '\r';
+    }
+
+    return out;
+}
+// 清理ANSI转义序列（解决乱码核心）
+inline std::wstring CleanAnsiEscapeSequences(const std::wstring& input) {
+    std::wstring out;
+
+    enum class State {
+        Normal,
+        Escape,      // 读到 \x1B
+        CSI,         // 读到 \x1B[
+        OSC          // 读到 \x1B]
+    };
+
+    State state = State::Normal;
+
+    for (wchar_t c : input) {
+        // 过滤非法控制字符（0x80是常见乱码源，0x00-0x1F除\r\n\t外全部过滤）
+        if ((c >= 0x00 && c <= 0x1F && c != L'\r' && c != L'\n' && c != L'\t') || c == 0x80 || c == 0x6F5F) {
+            continue;
+        }
+
+        switch (state) {
+        case State::Normal:
+            if (c == L'\x1B') {
+                state = State::Escape;
+            }
+            else {
+                out += c; // 正常字符保留
+            }
+            break;
+
+        case State::Escape:
+            if (c == L'[') {
+                state = State::CSI;
+            }
+            else if (c == L']') {
+                state = State::OSC;
+            }
+            else {
+                state = State::Normal; // 未知ESC后缀，切回普通状态
+            }
+            break;
+
+        case State::CSI:
+            // 大小写字母/问号(?)结束CSI序列（补充处理0x1B[?1034h这类序列）
+            if ((c >= L'A' && c <= L'Z') || (c >= L'a' && c <= L'z') || c == L'?') {
+                state = State::Normal;
+            }
+            break;
+
+        case State::OSC:
+            // \a / \r / \n / BEL 终止OSC序列（补充BEL字符0x07）
+            if (c == L'\a' || c == L'\r' || c == L'\n' || c == L'\x07') {
+                state = State::Normal;
+            }
+            break;
+        }
+    }
+
+    return out;
+}
+
+inline std::string CleanAnsiEscapeSequences(const std::string& input) {
+    std::string out;
+
+    enum class State {
+        Normal,
+        Escape,      // 读到 \x1B
+        CSI,         // 读到 \x1B[
+        OSC          // 读到 \x1B]
+    };
+
+    State state = State::Normal;
+
+    for (unsigned char c : input) {
+        switch (state) {
+        case State::Normal:
+            if (c == '\x1B') {
+                // 进入转义序列
+                state = State::Escape;
+            }
+            else if (c < 0x20 && c != '\r' && c != '\n' && c != '\t') {
+                // 过滤除 \r\n\t 以外的控制字符
+                continue;
+            }
+            else {
+                // 正常字符保留
+                out += c;
+            }
+            break;
+
+        case State::Escape:
+            if (c == '[') {
+                // CSI 序列：\x1B[...]
+                state = State::CSI;
+            }
+            else if (c == ']') {
+                // OSC 序列：\x1B[...\a
+                state = State::OSC;
+            }
+            else {
+                // 未知转义，退出
+                state = State::Normal;
+            }
+            break;
+
+        case State::CSI:
+            // 遇到字母结束CSI
+            if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
+                state = State::Normal;
+            }
+            // 全程吞掉，不输出
+            break;
+
+        case State::OSC:
+            // 遇到 \a 结束OSC
+            if (c == '\a' || c == '\r' || c == '\n') {
+                state = State::Normal;
+            }
+            // 全程吞掉，不输出
+            break;
+        }
+    }
+
+    return out;
+}
 // 安全地把 std::wstring 转为 std::string 日志专用（避免乱码和异常）
 inline std::string WStringToLogStr(const std::wstring& wstr) {
     if (wstr.empty()) return "";
@@ -27,23 +194,74 @@ inline std::string PtrToHexStr(void* ptr) {
 inline std::string IntToStr(int num) {
     return std::to_string(num);
 }
-// 编码转换工具（自动识别 UTF8 / GBK，彻底解决Windows弹框乱码）
+// 编码转换工具（自动识别UTF8，解决Windows乱码）
+inline std::wstring UTF8ToWstring(const std::string& str) {
+    if (str.empty())
+        return L"";
+
+    // 第一步：先清理非法字符，避免转换失败
+    //std::string cleanStr = CleanAnsiEscapeSequences(str);
+    std::string cleanStr = (str);
+
+    int len = MultiByteToWideChar(
+        CP_UTF8,
+        MB_ERR_INVALID_CHARS, // 严格校验，非法字符返回错误
+        cleanStr.c_str(),
+        (int)cleanStr.size(),
+        nullptr,
+        0
+    );
+
+    // 容错：如果严格转换失败，用替换模式重试
+    if (len == 0) {
+        len = MultiByteToWideChar(
+            CP_UTF8,
+            0, // 忽略无效字符
+            cleanStr.c_str(),
+            (int)cleanStr.size(),
+            nullptr,
+            0
+        );
+        NppSSH_LogInfoAuto("【UTF8转换容错】检测到非法UTF8字符，已忽略");
+    }
+
+    std::wstring res(len, L'\0');
+    MultiByteToWideChar(
+        CP_UTF8,
+        0,
+        cleanStr.c_str(),
+        (int)cleanStr.size(),
+        &res[0],
+        len
+    );
+    NppSSH_LogInfoAuto("自动识别UTF8，解决Windows乱码,转换成功");
+    return res;
+}
+// 编码转换工具（自动识别GBK，解决Windows乱码）
 inline std::wstring GBKToWstring(const std::string& str) {
     if (str.empty())
         return L"";
 
-    wchar_t buf[1024] = { 0 };
+    int len = MultiByteToWideChar(
+        CP_ACP,         // 系统本地GBK
+        0,
+        str.c_str(),
+        (int)str.size(),
+        nullptr,
+        0
+    );
 
-    // 1. 优先按 UTF-8 转换（libssh2 错误信息都是 UTF-8）
-    int len = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, nullptr, 0);
-    if (len > 0 && len < 1024) {
-        MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, buf, len);
-        return buf;
-    }
+    std::wstring res(len, L'\0');
+    MultiByteToWideChar(
+        CP_ACP,
+        0,
+        str.c_str(),
+        (int)str.size(),
+        &res[0],
+        len
+    );
 
-    // 2. 失败则使用 GBK（系统本地编码）
-    MultiByteToWideChar(CP_ACP, 0, str.c_str(), -1, buf, _countof(buf));
-    return buf;
+    return res;
 }
 // 辅助函数：转16进制字符串，方便日志查看
 inline std::string IntToHexStr(DWORD val) {
@@ -61,7 +279,7 @@ inline void imm_chineseType(HWND hEdit)
     }
 
     NppSSH_LogInfoAuto("【IME调用】强制微软拼音→英文，hWnd=" + PtrToHexStr(hEdit));
-
+    
     // 1. 设置焦点（调用imm_chineseType函数前已经设置，暂时废弃）
     HWND hFocus = ::GetFocus();
     bool isEditFocused = (hFocus != hEdit);
@@ -111,7 +329,7 @@ inline void imm_chineseType(HWND hEdit)
     AttachThreadInput(editTid, currTid, FALSE);
 
     // 强制刷新任务栏
-    PostMessage(HWND_BROADCAST, WM_INPUTLANGCHANGE, 0, 0);
+    //PostMessage(HWND_BROADCAST, WM_INPUTLANGCHANGE, 0, 0);
     PostMessage(hEdit, WM_IME_NOTIFY, IMN_SETOPENSTATUS, 0);
 
     NppSSH_LogInfoAuto("【✅ 最终成功】微软拼音已锁定 英文模式");
@@ -181,6 +399,170 @@ static void FixEditInputState_Final(HWND hEdit)
     // 最后再确保一次光标显示（终极保险）
     ShowCaret(hEdit);
 }
+// 解析 ANSI 颜色参数并应用到 RichEdit
+// 解析 ANSI 颜色参数 → 只改字体颜色，背景固定白色永不改变
+void SSHTerminal::ParseAnsiColorSequence(const std::wstring& params)
+{
+    if (!_currentPTYFeatures.supportANSI)
+        return;
+
+    std::vector<int> codes;
+    std::wstringstream ss(params);
+    std::wstring token;
+
+    while (std::getline(ss, token, L';')) {
+        try {
+            if (!token.empty())
+                codes.push_back(std::stoi(token));
+        }
+        catch (...) {}
+    }
+
+    CHARFORMAT2W cf = { 0 };
+    cf.cbSize = sizeof(CHARFORMAT2W);
+    // ✅ 只启用前景色+加粗，完全屏蔽背景色修改
+    cf.dwMask = CFM_COLOR | CFM_BOLD;
+
+    // ==============================
+    // 🔴 核心：背景永远强制白色，绝不改变
+    // ==============================
+    cf.crBackColor = RGB(255, 255, 255);
+    // 默认字体色（黑）
+    cf.crTextColor = RGB(0, 0, 0);
+    cf.dwEffects = 0;
+
+    for (int code : codes)
+    {
+        if (code == 0) {
+            // 重置 → 只重置字体为黑色，背景保持白色
+            cf.crTextColor = RGB(0, 0, 0);
+            cf.dwEffects = 0;
+        }
+        else if (code == 1) {
+            // 加粗生效
+            cf.dwEffects |= CFE_BOLD;
+        }
+        // ==============================
+        // ✅ 只处理前景色（30~37、90~97）
+        // ==============================
+        //else if (code >= 30 && code <= 37) {
+        //    int idx = code - 30;
+        //    if (idx >= 0 && idx < (int)ANSI_COLORS.size())
+        //        cf.crTextColor = ANSI_COLORS[idx].rgb;
+        //}
+        //else if (code >= 90 && code <= 97) {
+        //    int idx = code - 90 + 8;
+        //    if (idx >= 0 && idx < (int)ANSI_COLORS.size())
+        //        cf.crTextColor = ANSI_COLORS[idx].rgb;
+        //}
+        // ==============================
+        // 🚫 所有背景色码（40~47、100~107、48）全部忽略！
+        // ==============================
+    }
+
+    // 应用到 RichEdit
+    int len = GetWindowTextLengthW(_hTerminal);
+    SendMessageW(_hTerminal, EM_SETSEL, len, len);
+    SendMessageW(_hTerminal, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+}
+
+// 解析 ANSI 控制序列（颜色/光标/清屏等）
+void SSHTerminal::ParseAnsiControlSequence(const std::wstring& seq)
+{
+    if (seq.empty() || !_currentPTYFeatures.supportANSI)
+        return;
+
+    wchar_t cmd = seq.back();
+    std::wstring params = seq.substr(1, seq.size() - 2);
+
+    // 颜色序列 m
+    if (cmd == L'm')
+    {
+        ParseAnsiColorSequence(params);
+    }
+    // 其他 ANSI 指令（h/l/J/K 等）暂时忽略
+    else
+    {
+        // 可后续扩展：清屏、光标移动、擦除等
+    }
+}
+/*
+* ANSI 码	颜色
+* \e[30m	黑
+* \e[31m	红
+* \e[32m	绿
+* \e[33m	黄
+* \e[34m	蓝 (当前 ls 目录色)
+* \e[35m	紫
+* \e[36m	青
+* \e[37m	白
+* \e[94m	亮蓝
+* \e[0m	重置黑色默认
+* \e[38;5;27m	自定义深蓝 (你现在 ls 蓝色)
+**/
+// 原有 ParseAnsiColorSequence 函数可以保留但不再在输出循环调用
+void SSHTerminal::ParseAnsiParseOnly(const std::wstring& params, CHARFORMAT2W& outCf)
+{
+    std::wstring seq = params.substr(2);
+    std::vector<int> codes;
+    std::wstringstream ss(seq);
+    std::wstring token;
+
+    while (std::getline(ss, token, L';'))
+    {
+        try {
+            if (!token.empty()) codes.push_back(std::stoi(token));
+        }
+        catch (...) {}
+    }
+
+    int state = 0; // 0空闲 1=38 2=5
+    int colIdx = 0;
+    for (int cd : codes)
+    {
+        if (state == 1)
+        {
+            if (cd == 5) state = 2;
+            else state = 0;
+            continue;
+        }
+        if (state == 2)
+        {
+            colIdx = cd;
+            state = 0;
+            if (colIdx == 27)
+                outCf.crTextColor = RGB(0, 0, 200);
+            continue;
+        }
+        switch (cd)
+        {
+        case 38: state = 1; break;
+        case 0:
+            outCf.crTextColor = RGB(0, 0, 0);
+            outCf.dwEffects &= ~CFE_BOLD;
+            break;
+        case 1:
+            outCf.dwEffects |= CFE_BOLD; break;
+        case 30: outCf.crTextColor = ANSI_COLORS[0]; break;
+        case 31: outCf.crTextColor = ANSI_COLORS[1]; break;
+        case 32: outCf.crTextColor = ANSI_COLORS[2]; break;
+        case 33: outCf.crTextColor = ANSI_COLORS[3]; break;
+        case 34: outCf.crTextColor = ANSI_COLORS[4]; break;
+        case 35: outCf.crTextColor = ANSI_COLORS[5]; break;
+        case 36: outCf.crTextColor = ANSI_COLORS[6]; break;
+        case 37: outCf.crTextColor = ANSI_COLORS[7]; break;
+        case 90: outCf.crTextColor = ANSI_COLORS[8]; break;
+        case 91: outCf.crTextColor = ANSI_COLORS[9]; break;
+        case 92: outCf.crTextColor = ANSI_COLORS[10]; break;
+        case 93: outCf.crTextColor = ANSI_COLORS[11]; break;
+        case 94: outCf.crTextColor = ANSI_COLORS[12]; break;
+        case 95: outCf.crTextColor = ANSI_COLORS[13]; break;
+        case 96: outCf.crTextColor = ANSI_COLORS[14]; break;
+        case 97: outCf.crTextColor = ANSI_COLORS[15]; break;
+        default: break;
+        }
+    }
+}
 // 传统伪终端子类化过程（解决消息拦截失效问题）
 // ============return res = 0;拦截编辑器的操作，自定义具体操作。
 // ============return res = CallWindowProc(oldProc, hWnd, msg, wParam, lParam);放行编辑器原始的操作，
@@ -188,6 +570,7 @@ LRESULT CALLBACK SSHTerminal::TerminalEditProc(HWND hWnd, UINT msg, WPARAM wPara
     bool bNeedProcess = true;
     LRESULT res = 0;
     SSHTerminal* terminal = (SSHTerminal*)GetProp(hWnd, L"SSHTerminalInstance");
+
     if (!terminal) {
         for (auto& t : vectorSSHTerminal) {
             if (t && t->Get_TerminalHandle() == hWnd) {
@@ -210,93 +593,276 @@ LRESULT CALLBACK SSHTerminal::TerminalEditProc(HWND hWnd, UINT msg, WPARAM wPara
     if (!oldProc) {
         oldProc = DefWindowProc;
     }
-    if (msg == WM_GETDLGCODE)// 告诉系统所有键盘我全吃了，不发给父窗口
-    {
-        NppSSH_LogInfoAuto("【完全拦截】处理键盘消息");
-        return DLGC_WANTALLKEYS | DLGC_WANTCHARS | DLGC_WANTMESSAGE;
+
+    // ✅ 关键优化1：精确过滤消息，只对需要处理的消息使用防重入标记
+    bool isKeyboardMsg = (msg == WM_KEYDOWN || msg == WM_KEYUP || msg == WM_CHAR ||
+        msg == WM_PASTE || msg == WM_DEADCHAR ||
+        msg == WM_SYSKEYDOWN || msg == WM_SYSCHAR ||
+        msg == WM_APPEND_OUTPUT_TEXT); // 添加 WM_APPEND_OUTPUT_TEXT
+
+    // ✅ 关键优化2：非键盘消息直接放行，不记录日志
+    if (!isKeyboardMsg) {
+        return CallWindowProc(oldProc, hWnd, msg, wParam, lParam);
     }
+
+    // ✅ 关键优化3：只对键盘消息使用防重入标记
+    //if (s_bProcessingMsg) {
+    //    NppSSH_LogInfoAuto("【防重入】跳过键盘消息 msg=" + IntToStr(msg));
+    //    return CallWindowProc(oldProc, hWnd, msg, wParam, lParam);
+    //}
+
+    if (isKeyboardMsg) {
+        s_bProcessingMsg = true;
+    }
+
     switch (msg) {
     case WM_USER + 1001:
-        //NppSSH_LogInfoAuto("【修复】调用FixEditInputState_Final函数修复失效！");
+        // 修复输入状态
         //FixEditInputState_Final(hWnd);
+        s_bProcessingMsg = false;
         return 0;
+
     case WM_APPEND_OUTPUT_TEXT:
-    {
         NppSSH_LogInfoAuto("【WM_APPEND_OUTPUT_TEXT】分支已进入");
-        if (!terminal) {
-            NppSSH_LogInfoAuto("【WM_APPEND_OUTPUT_TEXT】terminal 为空，直接返回");
-            break;
-        }
+        {
+            std::wstring* pText = (std::wstring*)lParam;
+            if (!pText) {
+                NppSSH_LogInfoAuto("【WM_APPEND_OUTPUT_TEXT】lParam 为空，直接返回");
+                s_bProcessingMsg = false;
+                return 0;
+            }
+            NppSSH_LogInfoAuto("【WM_APPEND_OUTPUT_TEXT】收到文本，长度=" + IntToStr((int)pText->size()));
 
-        HWND TerminalHandle = terminal->Get_TerminalHandle();
-        if (!IsWindow(TerminalHandle)) {
-            NppSSH_LogInfoAuto("【WM_APPEND_OUTPUT_TEXT】TerminalHandle 无效");
-            break;
-        }
+            // 打印每个字符的 Unicode 编码（比如 ✅ 的编码是 0x2705）
+            std::string charCodes;
+            for (wchar_t ch : *pText) {
+                charCodes += "0x" + IntToHexStr((DWORD)ch) + " ";
+            }
+            NppSSH_LogInfoAuto("【宽字符编码】" + charCodes);
 
-        std::wstring* pText = (std::wstring*)lParam;
-        if (!pText) {
-            NppSSH_LogInfoAuto("【WM_APPEND_OUTPUT_TEXT】lParam 为空，直接返回");
-            break;
-        }
-        NppSSH_LogInfoAuto("【WM_APPEND_OUTPUT_TEXT】收到文本，长度=" + IntToStr((int)pText->size()));
+            std::wstring text = *pText;
+            //text = CleanAnsiEscapeSequences(text);
 
-        // ✅ 1. 光标到末尾
-        int len = GetWindowTextLengthW(TerminalHandle);
-        SendMessageW(TerminalHandle, EM_SETSEL, len, len);
-        SendMessageW(TerminalHandle, EM_REPLACESEL, FALSE, (LPARAM)pText->c_str());
-        // ✅ 5. 简单滚动
-        SendMessageW(TerminalHandle, EM_SCROLLCARET, 0, 0);
-        delete pText;
-        NppSSH_LogInfoAuto("【WM_APPEND_OUTPUT_TEXT】追加完成");
+            //解析颜色
+            // 步骤1：先全量清理非法字符和ANSI序列（核心修复）
+            //std::wstring rawText = CleanAnsiEscapeSequences(*pText);
+            std::wstring raw = *pText;
+            delete pText; // 提前释放，避免内存泄漏
+
+            // 步骤2：解析ANSI颜色序列（仅处理合法颜色控制）
+            //===== 临时测试：手动拼接 \e[34mTEST\e[0m 强制蓝色，测试上色是否可用
+    //raw = L"\x1B[34mtest_blue\x1B[0m\n" + raw;
+
+            char tmpLog[512] = { 0 };
+            sprintf(tmpLog, "【原始接收字符串长度:%d】", (int)raw.size());
+            //NppSSH_LogInfoAuto(tmpLog);
+
+            std::wstring ansiBuf;
+            bool inCSI = false;
+            bool inOSC = false;
+            bool pendingNewColor = false;
+
+            CHARFORMAT2W curCf = { 0 };
+            curCf.cbSize = sizeof(curCf);
+            curCf.dwMask = CFM_COLOR | CFM_BOLD;
+            curCf.crTextColor = RGB(0, 0, 0);
+            curCf.crBackColor = RGB(255, 255, 255);
+            curCf.dwEffects = 0;
+
+            // 【优化点：重构DrawChar，先设格式再写入字符，pendingNewColor前置消耗】
+            auto DrawChar = [&](wchar_t ch)
+                {
+                    char logBuf[256] = { 0 };
+                    sprintf(logBuf, "【DrawChar输出字符:%c | pendingNewColor:%d】", (char)ch, pendingNewColor);
+                    //NppSSH_LogInfoAuto(logBuf);
+
+                    wchar_t buf[2] = { ch,0 };
+                    int pos = GetWindowTextLengthW(hWnd);
+
+                    // 优化时序：光标定位→应用颜色→写入字符，保证字符使用最新颜色
+                    SendMessageW(hWnd, EM_SETSEL, pos, pos);
+                    // 存在待生效新颜色，立刻应用到当前选中区域
+                    if (pendingNewColor)
+                    {
+                        SendMessageW(hWnd, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&curCf);
+                        //NppSSH_LogInfoAuto("【本字符是ANSI后首字符，用完新色标记，pendingNewColor=false】");
+                        pendingNewColor = false;
+                    }
+                    // 写入单个字符
+                    SendMessageW(hWnd, EM_REPLACESEL, FALSE, (LPARAM)buf);
+                    // 光标移动到末尾
+                    int newEnd = GetWindowTextLengthW(hWnd);
+                    SendMessageW(hWnd, EM_SETSEL, newEnd, newEnd);
+                };
+
+            // 整段循环前统一关闭只读，避免单次DrawChar反复开关（高频丢色诱因）
+            SendMessageW(hWnd, EM_SETREADONLY, FALSE, 0);
+
+            int idx = 0;
+            for (wchar_t ch : raw)
+            {
+                char logBuf[512] = { 0 };
+                sprintf(logBuf, "【循环下标%d | 当前字符:%c | inCSI:%d pendingNewColor:%d】", idx++, (char)ch, inCSI, pendingNewColor);
+                //NppSSH_LogInfoAuto(logBuf);
+
+                if (!inCSI && !inOSC && ch == L'\x1B')
+                {
+                    //NppSSH_LogInfoAuto("【捕获ESC起始符】");
+                    ansiBuf.clear();
+                    ansiBuf += ch;
+                    continue;
+                }
+                if (ansiBuf.size() == 1 && ansiBuf[0] == L'\x1B')
+                {
+                    if (ch == L'[') {
+                        //NppSSH_LogInfoAuto("【进入CSI序列】");
+                        inCSI = true; ansiBuf += ch; continue;
+                    }
+                    else if (ch == L']') {
+                        //NppSSH_LogInfoAuto("【进入OSC序列】");
+                        inOSC = true; ansiBuf += ch; continue;
+                    }
+                    else
+                    {
+                        //NppSSH_LogInfoAuto("【孤立ESC字符，直接输出】");
+                        DrawChar(ansiBuf[0]);
+                        ansiBuf.clear();
+                        DrawChar(ch);
+                        continue;
+                    }
+                }
+                if (inOSC)
+                {
+                    ansiBuf += ch;
+                    if (ch == L'\x07') {
+                        //NppSSH_LogInfoAuto("【OSC序列结束】");
+                        inOSC = false; ansiBuf.clear();
+                    }
+                    continue;
+                }
+                if (inCSI)
+                {
+                    ansiBuf += ch;
+                    bool letterEnd = ((ch >= L'a' && ch <= L'z') || (ch >= L'A' && ch <= L'Z'));
+                    bool otherEnd = !((ch >= L'0' && ch <= L'9') || ch == L';' || ch == L'?');
+
+                    if (letterEnd || otherEnd)
+                    {
+                        char log1[512] = { 0 };
+                        sprintf(log1, "【CSI序列结束，结束字符:%c】", (char)ch);
+                        //NppSSH_LogInfoAuto(log1);
+
+                        CHARFORMAT2W tmpCf = curCf;
+                        if (terminal) terminal->ParseAnsiParseOnly(ansiBuf, tmpCf);
+                        curCf = tmpCf;
+
+                        char log2[512] = { 0 };
+                        sprintf(log2, "【ANSI解析完成，更新颜色R:%d G:%d B:%d，置pendingNewColor=true】",
+                            GetRValue(curCf.crTextColor), GetGValue(curCf.crTextColor), GetBValue(curCf.crTextColor));
+                        //NppSSH_LogInfoAuto(log2);
+
+                        pendingNewColor = true;
+                        inCSI = false;
+                        ansiBuf.clear();
+
+                        if (!letterEnd)
+                        {
+                            //NppSSH_LogInfoAuto("【非字母结束符，输出当前控制字符】");
+                            DrawChar(ch);
+                        }
+                        else
+                        {
+                            //NppSSH_LogInfoAuto("【字母m结束符，丢弃本字符，不Draw】");
+                        }
+                        continue;
+                    }
+                    continue;
+                }
+
+                // 普通可见字符直接绘制（pendingNewColor在DrawChar内部前置消耗）
+                DrawChar(ch);
+            }
+
+            // 【优化：循环结束兜底，处理残留孤立ESC，避免隐形字符吞首字符】
+            if (!ansiBuf.empty())
+            {
+                NppSSH_LogInfoAuto("【存在未闭合ANSI缓存，输出残留ESC】");
+                for (auto ch : ansiBuf)
+                    DrawChar(ch);
+                ansiBuf.clear();
+            }
+
+            // 循环全部结束后恢复只读+滚动光标
+            SendMessageW(hWnd, EM_SETREADONLY, TRUE, 0);
+
+            // 写完所有字符后自动滚动光标
+            SendMessageW(hWnd, EM_SCROLLCARET, 0, 0);
+            
+
+            //text = CleanAnsiEscapeSequences(text);
+            // 临时关闭只读，追加文本，再恢复只读
+            //SendMessageW(hWnd, EM_SETREADONLY, FALSE, 0);
+
+            //int len = GetWindowTextLengthW(hWnd);
+            //SendMessageW(hWnd, EM_SETSEL, len, len);
+            //SendMessageW(hWnd, EM_REPLACESEL, FALSE, (LPARAM)text.c_str());
+
+            //SendMessageW(hWnd, EM_SETREADONLY, TRUE, 0);
+            //SendMessageW(hWnd, EM_SCROLLCARET, 0, 0);
+
+            //delete pText;
+            NppSSH_LogInfoAuto("【WM_APPEND_OUTPUT_TEXT】追加完成");
+        }
+        s_bProcessingMsg = false;
         return 0;
-    }
-    // 焦点变化时的处理
-    //case WM_SETFOCUS:
-    //    imm_chineseType(hWnd); // 窗口获得焦点时，再次强制英文
-    //    break;
-    //case WM_KILLFOCUS:
-    case WM_KEYDOWN:
-    case WM_KEYUP:
-    case WM_CHAR:
-    case WM_PASTE:
-    case WM_DEADCHAR:
-    case WM_SYSKEYDOWN:
-    case WM_SYSCHAR:
-        bNeedProcess = true;
-        break;
-    default:
-        bNeedProcess = false;
+
+    case WM_GETDLGCODE:
+        NppSSH_LogInfoAuto("【完全拦截】处理键盘消息");
+        // 临时关闭只读，让系统处理输入
+        //SendMessageW(hWnd, EM_SETREADONLY, FALSE, 0);
+        res = CallWindowProc(oldProc, hWnd, msg, wParam, lParam);
+        // 临时关闭只读，让系统处理输入
+        //SendMessageW(hWnd, EM_SETREADONLY, TRUE, 0);
+        s_bProcessingMsg = false;
+        //return res | DLGC_WANTCHARS | DLGC_WANTMESSAGE | DLGC_HASSETSEL;
+        return res | DLGC_WANTCHARS;
+
+    case WM_SETFOCUS:
+        //imm_chineseType(hWnd);
+        s_bProcessingMsg = false;
         break;
     }
 
-    if (!bNeedProcess) {
-        WNDPROC oldProc = (WNDPROC)GetWindowLongPtr(hWnd, GWLP_USERDATA);
-        return oldProc ? CallWindowProc(oldProc, hWnd, msg, wParam, lParam) : DefWindowProc(hWnd, msg, wParam, lParam);
-    }
-
-    if (s_bProcessingMsg) {
-        WNDPROC oldProc = (WNDPROC)GetWindowLongPtr(hWnd, GWLP_USERDATA);
-        return oldProc ? CallWindowProc(oldProc, hWnd, msg, wParam, lParam) : DefWindowProc(hWnd, msg, wParam, lParam);
-    }
-    s_bProcessingMsg = true;
-
-    
     try {
         NppSSH_LogInfoAuto("TerminalEditProc监听！msg=" + IntToStr(msg) + " hWnd=" + PtrToHexStr(hWnd));
 
-        // 1. 全局放行复制操作（Ctrl+C / Ctrl+Insert）
+        if (!bNeedProcess) {
+            // 临时关闭只读，让系统处理输入
+            SendMessageW(hWnd, EM_SETREADONLY, FALSE, 0);
+            res = CallWindowProc(oldProc, hWnd, msg, wParam, lParam);
+            // 临时关闭只读，让系统处理输入
+            SendMessageW(hWnd, EM_SETREADONLY, TRUE, 0);
+            s_bProcessingMsg = false;
+            return res;
+        }
+
+        // 1. 全局放行复制操作
         bool isCopy = (msg == WM_KEYDOWN &&
             ((GetKeyState(VK_CONTROL) < 0 && wParam == 'C') ||
                 (GetKeyState(VK_CONTROL) < 0 && wParam == VK_INSERT)));
         if (isCopy) {
+            SendMessageW(hWnd, EM_SETREADONLY, FALSE, 0);
             res = CallWindowProc(oldProc, hWnd, msg, wParam, lParam);
+            SendMessageW(hWnd, EM_SETREADONLY, TRUE, 0);
             NppSSH_LogInfoAuto("【放行】全局复制操作！msg=" + IntToStr(msg) + " wParam=" + IntToStr(wParam));
             s_bProcessingMsg = false;
             return res;
         }
 
-        // 3. 左右方向键放行（无控制）
+        // 2. 检查是否在可编辑区域
+        bool canEdit = terminal->IsCursorInEditableArea();
+
+        // 3. 左右方向键放行
         if (msg == WM_KEYDOWN && (wParam == VK_LEFT || wParam == VK_RIGHT)) {
             res = CallWindowProc(oldProc, hWnd, msg, wParam, lParam);
             NppSSH_LogInfoAuto("【放行】左右方向键操作！wParam=" + IntToStr(wParam));
@@ -304,23 +870,28 @@ LRESULT CALLBACK SSHTerminal::TerminalEditProc(HWND hWnd, UINT msg, WPARAM wPara
             return res;
         }
 
-        // 4. 检查是否在可编辑区域
-        bool canEdit = terminal->IsCursorInEditableArea();
+        // 4. 上下方向键拦截
         if (msg == WM_KEYDOWN && (wParam == VK_UP || wParam == VK_DOWN) && canEdit) {
-            NppSSH_LogInfoAuto("调用远程服务器的历史记录，待实现去远程服务查询历史命令");
-            NppSSH_LogInfoAuto("【拦截】上下方向键禁止操作！wParam=" + IntToStr(wParam));
-            res = 0;
+            if (terminal->GetPTYFeatures().supportCursorMove) {
+                NppSSH_LogInfoAuto("调用远程服务器的历史记录，待实现去远程服务查询历史命令");
+                NppSSH_LogInfoAuto("【拦截】上下方向键禁止操作！wParam=" + IntToStr(wParam));
+                res = 0;
+            }
+            else {
+                // 不支持光标移动的PTY（如dumb），放行上下键
+                res = CallWindowProc(oldProc, hWnd, msg, wParam, lParam);
+            }
             s_bProcessingMsg = false;
             return res;
         }
 
-        // ==============================================
-        // 【终极修复3】粘贴自动同步到 _cmd（解决粘贴空命令）
-        // ==============================================
-        if (msg == WM_PASTE && canEdit)
-        {
+        // 5. 粘贴处理
+        if (msg == WM_PASTE && canEdit) {
+            // 临时关闭只读，让系统处理输入
+            SendMessageW(hWnd, EM_SETREADONLY, FALSE, 0);
             res = CallWindowProc(oldProc, hWnd, msg, wParam, lParam);
 
+            // 同步命令
             int len = GetWindowTextLengthW(hWnd);
             std::wstring buf;
             buf.resize(len + 100);
@@ -333,25 +904,26 @@ LRESULT CALLBACK SSHTerminal::TerminalEditProc(HWND hWnd, UINT msg, WPARAM wPara
                 if (buf[i] == L'\n' || buf[i] == L'\r') { lineStart = i + 1; break; }
             }
 
-            std::wstring promptW = GBKToWstring(terminal->GetPrompt());
+            std::wstring promptW = UTF8ToWstring(terminal->GetPrompt());
             std::wstring cmdW = buf.substr(lineStart + promptW.size());
             std::string cmd;
             for (auto c : cmdW) { if (c != L'\r' && c != L'\n') cmd += (char)c; }
             terminal->SetCmd(cmd.c_str());
-
+            SendMessageW(hWnd, EM_SETREADONLY, TRUE, 0);
             NppSSH_LogInfoAuto("【粘贴同步cmd】成功：" + cmd);
-            // 修复粘贴输入状态
-            //FixEditInputState(hWnd);
             s_bProcessingMsg = false;
             return res;
         }
 
-        // ========== 回车按键处理逻辑 ==========
-        if (msg == WM_KEYDOWN && (wParam == VK_RETURN || wParam == 13))
-        {
+        // 6. 回车处理
+        if (msg == WM_KEYDOWN && (wParam == VK_RETURN || wParam == 13)) {
             canEdit = terminal->IsCursorInEditableArea();
             if (!canEdit) {
+                // 临时关闭只读，让系统处理输入
+                SendMessageW(hWnd, EM_SETREADONLY, FALSE, 0);
                 res = CallWindowProc(oldProc, hWnd, msg, wParam, lParam);
+                // 临时关闭只读，让系统处理输入
+                SendMessageW(hWnd, EM_SETREADONLY, TRUE, 0);
                 s_bProcessingMsg = false;
                 return res;
             }
@@ -371,7 +943,7 @@ LRESULT CALLBACK SSHTerminal::TerminalEditProc(HWND hWnd, UINT msg, WPARAM wPara
                 }
             }
 
-            std::wstring promptW = GBKToWstring(terminal->GetPrompt());
+            std::wstring promptW = UTF8ToWstring(terminal->GetPrompt());
             std::wstring realCmdW = allText.substr(lineStart + promptW.length());
             std::string realCmd;
             for (auto c : realCmdW) {
@@ -389,7 +961,7 @@ LRESULT CALLBACK SSHTerminal::TerminalEditProc(HWND hWnd, UINT msg, WPARAM wPara
             std::string cmdToExecute = terminal->GetCmd();
             if (cmdToExecute.empty()) {
                 NppSSH_LogInfoAuto("【跳过】无命令可执行，仅换行");
-                SSHTerminal_AppendOutput(terminal->GetPanelId(), "\r\n"+ terminal->GetPrompt());
+                SSHTerminal_AppendOutput(terminal->GetPanelId(), "\r\n" + terminal->GetPrompt());
                 PostMessageW(terminal->Get_TerminalHandle(), WM_USER + 1001, 0, 0);
                 res = 0;
                 s_bProcessingMsg = false;
@@ -408,30 +980,29 @@ LRESULT CALLBACK SSHTerminal::TerminalEditProc(HWND hWnd, UINT msg, WPARAM wPara
             //terminal->SetPrompt(NppSSH_PanelPrompt(terminal->GetPanelId()));
             NppSSH_LogInfoAuto("【调试】TerminalEditProc设置提示符，命令提示符====" + terminal->GetPrompt());
             NppSSH_LogInfoAuto("【命令执行结果】面板ID=" + IntToStr(terminal->GetPanelId())
-                + " 命令=" + cmdToExecute +  " ，命令提示符====" + terminal->GetPrompt());
+                + " 命令=" + cmdToExecute + " ，命令提示符====" + terminal->GetPrompt());
 
             // 清空命令缓存
-            //terminal->SetCmd("");
+            terminal->SetCmd("");
 
             res = 0;
             s_bProcessingMsg = false;
             return res;
         }
 
-        // ==============================
-        // 退格保护（不动）
-        // ==============================
+         //7. 退格保护
         bool isBackspaceAtPromptEnd = false;
         if ((msg == WM_KEYDOWN && wParam == VK_BACK) || (msg == WM_CHAR && wParam == 8)) {
             DWORD selStart = 0;
             ::SendMessageW(hWnd, EM_GETSEL, (WPARAM)&selStart, NULL);
             DWORD cursorPos = selStart;
-            std::wstring promptW = GBKToWstring(terminal->GetPrompt());
+            std::wstring promptW = UTF8ToWstring(terminal->GetPrompt());
             int promptLen = (int)promptW.length();
             int totalLen = ::GetWindowTextLengthW(hWnd);
             std::wstring allText;
             allText.resize(totalLen + 1);
             ::GetWindowTextW(hWnd, &allText[0], totalLen + 1);
+            allText = CleanrrW(allText);
             size_t lineStart = 0;
             for (size_t i = cursorPos; i > 0; --i) {
                 if (allText[i] == L'\n' || allText[i] == L'\r') {
@@ -444,13 +1015,13 @@ LRESULT CALLBACK SSHTerminal::TerminalEditProc(HWND hWnd, UINT msg, WPARAM wPara
             }
         }
         if (isBackspaceAtPromptEnd) {
-            NppSSH_LogInfoAuto("【拦截】命令提示符="+ terminal->GetPrompt() +"，禁止删除prompt末尾字符！光标位置=" + IntToStr((int)::SendMessageW(hWnd, EM_GETSEL, 0, 0)));
+            NppSSH_LogInfoAuto("【拦截】命令提示符=" + terminal->GetPrompt() + "，禁止删除prompt末尾字符！");
             res = 0;
             s_bProcessingMsg = false;
             return res;
         }
 
-        // 5. 删除键逻辑（不动）
+        // 8. 删除键逻辑
         bool isDeleteKey = (msg == WM_KEYDOWN && (wParam == VK_BACK || wParam == VK_DELETE));
         if (isDeleteKey) {
             DWORD selStart = 0, selEnd = 0;
@@ -458,25 +1029,26 @@ LRESULT CALLBACK SSHTerminal::TerminalEditProc(HWND hWnd, UINT msg, WPARAM wPara
             DWORD cursorPos = selStart;
             std::string promptStr = terminal->GetPrompt();
             std::string cmdStr = terminal->GetCmd();
-            std::wstring wPrompt = GBKToWstring(promptStr);
+            std::wstring wPrompt = UTF8ToWstring(promptStr);
             int promptLen = (int)wPrompt.length();
-            int cmdLen = (int)GBKToWstring(cmdStr).length();
+            int cmdLen = (int)UTF8ToWstring(cmdStr).length();
             int totalLen = ::GetWindowTextLengthW(hWnd);
             std::wstring allText;
             allText.resize(totalLen + 1);
             ::GetWindowTextW(hWnd, &allText[0], totalLen + 1);
+            allText = CleanrrW(allText);
             size_t lineStart = 0;
             for (size_t i = cursorPos; i > 0; --i) {
                 if (allText[i] == L'\n' || allText[i] == L'\r') {
                     lineStart = i + 1; break;
                 }
             }
-            size_t lineEnd = allText.find_first_of(L"\r\n", cursorPos);
+            size_t lineEnd = allText.find_first_of(L"\n", cursorPos);
             if (lineEnd == std::wstring::npos) lineEnd = allText.length();
             std::wstring currentLine = allText.substr(lineStart, lineEnd - lineStart);
             size_t promptEndPosInLine = lineStart + promptLen;
             bool willModifyPrompt = false;
-            if (wParam == VK_BACK) { willModifyPrompt = (cursorPos < promptEndPosInLine); }
+            if (wParam == VK_BACK) { willModifyPrompt = (cursorPos <= promptEndPosInLine); }
             else if (wParam == VK_DELETE) { willModifyPrompt = (cursorPos < promptEndPosInLine); }
             if (willModifyPrompt) {
                 NppSSH_LogInfoAuto("【拦截】删除操作将修改prompt区域，禁止删除！光标位置=" + IntToStr((int)cursorPos));
@@ -492,6 +1064,7 @@ LRESULT CALLBACK SSHTerminal::TerminalEditProc(HWND hWnd, UINT msg, WPARAM wPara
                 return res;
             }
             std::string currentCmd = terminal->GetCmd();
+            NppSSH_LogInfoAuto("【提示】当前命令=="+currentCmd);
             int cursorInCmdPos = (int)(cursorPos - (lineStart + promptLen));
             bool isCmdModified = false;
             if (wParam == VK_BACK) {
@@ -510,13 +1083,19 @@ LRESULT CALLBACK SSHTerminal::TerminalEditProc(HWND hWnd, UINT msg, WPARAM wPara
                 terminal->SetCmd(currentCmd.c_str());
                 NppSSH_LogInfoAuto("【同步cmd】删除后：" + currentCmd);
             }
+            // ✅ 关键修复：临时禁用防重入标记，确保编辑框能完整处理删除操作
+            //bool wasProcessing = s_bProcessingMsg;
+            //s_bProcessingMsg = false;  // 临时禁用，让编辑框能处理所有相关消息
+            SendMessageW(hWnd, EM_SETREADONLY, FALSE, 0);// 临时关闭只读，让系统处理删除操作
             res = CallWindowProc(oldProc, hWnd, msg, wParam, lParam);
-            NppSSH_LogInfoAuto("【放行】命令区域删除操作！wParam=" + IntToStr(wParam));
+            SendMessageW(hWnd, EM_SETREADONLY, TRUE, 0);//恢复只读状态
+            //s_bProcessingMsg = wasProcessing;  // 恢复原来的防重入状态
             s_bProcessingMsg = false;
+
             return res;
         }
 
-        // 6. 字符输入（不动）
+        // 9. 字符输入 - 核心修复
         if (msg == WM_CHAR && wParam >= 0x20 && wParam <= 0x7E) {
             canEdit = terminal->IsCursorInEditableArea();
             if (!canEdit) {
@@ -524,16 +1103,20 @@ LRESULT CALLBACK SSHTerminal::TerminalEditProc(HWND hWnd, UINT msg, WPARAM wPara
                 res = 0;
             }
             else {
+                // 临时关闭只读，让系统处理输入
+                SendMessageW(hWnd, EM_SETREADONLY, FALSE, 0);
+
                 DWORD selStart = 0, selEnd = 0;
                 ::SendMessageW(hWnd, EM_GETSEL, (WPARAM)&selStart, (LPARAM)&selEnd);
                 DWORD cursorPos = selStart;
                 std::string promptStr = terminal->GetPrompt();
-                std::wstring wPrompt = GBKToWstring(promptStr);
+                std::wstring wPrompt = UTF8ToWstring(promptStr);
                 int promptLen = (int)wPrompt.length();
                 int totalLen = ::GetWindowTextLengthW(hWnd);
                 std::wstring allText;
                 allText.resize(totalLen + 1);
                 ::GetWindowTextW(hWnd, &allText[0], totalLen + 1);
+                allText = CleanrrW(allText);
                 size_t lineStart = 0;
                 for (size_t i = cursorPos; i > 0; --i) {
                     if (allText[i] == L'\n' || allText[i] == L'\r') {
@@ -548,35 +1131,44 @@ LRESULT CALLBACK SSHTerminal::TerminalEditProc(HWND hWnd, UINT msg, WPARAM wPara
                     terminal->SetCmd(currentCmd.c_str());
                     NppSSH_LogInfoAuto("【同步cmd】插入字符：" + std::string(1, c));
                 }
+
+                // 直接调用原过程，不要额外处理
                 res = CallWindowProc(oldProc, hWnd, msg, wParam, lParam);
-                //FixEditInputState(hWnd);
+
+                // 恢复只读
+                SendMessageW(hWnd, EM_SETREADONLY, TRUE, 0);
                 NppSSH_LogInfoAuto("【放行】可编辑区域字符输入！currentCmd.c_str()====" + currentCmd);
             }
+            s_bProcessingMsg = false;
+            return res;
         }
+
         // 非字符输入的其他消息
         else if (!canEdit) {
-            canEdit = terminal->IsCursorInEditableArea();
-            if (!canEdit) {
-                if (msg == WM_KEYDOWN || msg == WM_CHAR || msg == WM_KEYUP || msg == WM_PASTE ||
-                    msg == WM_DEADCHAR || msg == WM_SYSKEYDOWN || msg == WM_SYSCHAR) {
-                    NppSSH_LogInfoAuto("【拦截】非可编辑区域，禁止操作！msg=" + IntToStr(msg) + " wParam=" + IntToStr(wParam));
-                    res = 0;
-                }
-                else {
-                    res = CallWindowProc(oldProc, hWnd, msg, wParam, lParam);
-                }
+            if (msg == WM_KEYDOWN || msg == WM_CHAR || msg == WM_KEYUP || msg == WM_PASTE ||
+                msg == WM_DEADCHAR || msg == WM_SYSKEYDOWN || msg == WM_SYSCHAR) {
+                NppSSH_LogInfoAuto("【拦截】非可编辑区域，禁止操作！msg=" + IntToStr(msg) + " wParam=" + IntToStr(wParam));
+                res = 0;
             }
             else {
+                // 临时关闭只读，让系统处理输入
+                SendMessageW(hWnd, EM_SETREADONLY, FALSE, 0);
                 res = CallWindowProc(oldProc, hWnd, msg, wParam, lParam);
+                // 临时关闭只读，让系统处理输入
+                SendMessageW(hWnd, EM_SETREADONLY, TRUE, 0);
                 NppSSH_LogInfoAuto("【放行】可编辑区域合法操作！msg=" + IntToStr(msg) + " wParam=" + IntToStr(wParam));
+
             }
         }
         else {
+            // 临时关闭只读，让系统处理输入
+            SendMessageW(hWnd, EM_SETREADONLY, FALSE, 0);
             res = CallWindowProc(oldProc, hWnd, msg, wParam, lParam);
-            NppSSH_LogInfoAuto("【放行】可编辑区域合法操作！msg=" + IntToStr(msg) + " wParam=" + IntToStr(wParam));
+            // 临时关闭只读，让系统处理输入
+            SendMessageW(hWnd, EM_SETREADONLY, TRUE, 0);
+            NppSSH_LogInfoAuto("【非字符输入最终放行】可编辑区域合法操作！msg=" + IntToStr(msg) + " wParam=" + IntToStr(wParam));
         }
 
-        NppSSH_LogInfoAuto("TerminalEditProc调用原过程！msg=" + IntToStr(msg) + " result=" + IntToStr((int)res));
     }
     catch (...) {
         NppSSH_LogInfoAuto("TerminalEditProc异常！msg=" + IntToStr(msg));
@@ -622,12 +1214,24 @@ HWND SSHTerminal::InitTerminalEditBox(HWND hParent) {
         ::MessageBoxW(s_nppData._nppHandle, L"SSH_InitTerminalEditBox: 面板窗口句柄无效！", L"NppSSH调试提示", MB_OK | MB_ICONERROR);
         return nullptr;
     }
+    // 1. 加载库
+    // 放弃 MsftEdit.dll，直接使用系统自带的标准 RichEdit 控件
+    //_hRichEditLib = LoadLibraryW(L"Riched20.dll");
+    _hRichEditLib = LoadLibraryW(L"Msftedit.dll");;
+    if (!_hRichEditLib)
+    {
+        MessageBoxW(s_nppData._nppHandle, L"无法加载系统 RichEdit 库（Riched20.dll）！", L"NppSSH调试提示", MB_OK | MB_ICONERROR);
+        return nullptr;
+    }
+    NppSSH_LogInfoAuto("成功加载系统标准 Riched20.dll");
+
     // 保存父窗口（必须！解决 _hSelf 为空导致的崩溃）
     _hwndParent = hParent;
 
     RECT rc;
-    if (!::GetClientRect(hParent, &rc))
+    if (!::GetClientRect(_hwndParent, &rc)) {
         return nullptr;
+    }
     // 左边距
     const int LEFT = 5;
     // 上边距（避开按钮栏）
@@ -641,35 +1245,68 @@ HWND SSHTerminal::InitTerminalEditBox(HWND hParent) {
     int y = TOP;
     int cx = rc.right - LEFT - RIGHT;
     int cy = rc.bottom - TOP - BOTTOM;
-
-    // WS_EX_TRANSPARENT + 控件默认风格 不支持 IME
-    _hTerminal = ::CreateWindowExW(//ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY | WS_VSCROLL | WS_TABSTOP
+    // 2. 正式创建控件 (使用 s_hInst)
+    _hTerminal = CreateWindowExW(
         WS_EX_CLIENTEDGE | WS_EX_NOPARENTNOTIFY | WS_EX_ACCEPTFILES,
-        L"EDIT",
-        L"初始化成功", // 文字设为空
-        WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY,
-        x, y, cx, cy,// 初始大小
+        MSFTEDIT_CLASS,
+        L"",
+        WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN,
+        x, y, cx, cy,
         _hwndParent,
         (HMENU)IDC_OUTPUT_EDIT,
-        s_hInst, // 用全局插件实例句柄
+        s_hInst,
         this
     );
-
-    //强制将微软拼音的输入模式改为英文模式（开启 IME 支持）,已废弃，由imm_chineseType函数内容直接开启支持实现
-    //ImmAssociateContext(_hTerminal, ImmCreateContext());
-
     if (!_hTerminal) {
-        ::MessageBoxW(s_nppData._nppHandle, L"SSH_InitTerminalEditBox: 伪终端句柄无效！", L"NppSSH调试提示", MB_OK | MB_ICONERROR);
+        DWORD err = GetLastError();
+        wchar_t errMsg[256];
+        if (err == ERROR_CANNOT_FIND_WND_CLASS) {
+            swprintf(errMsg, L"创建终端控件底层失败！错误码: %d (找不到RichEdit20W窗口类，可能是库加载失败或类未注册)", err);
+        }
+        else {
+            swprintf(errMsg, L"创建终端控件底层失败！错误码: %d", err);
+        }
+        MessageBoxW(s_nppData._nppHandle, errMsg, L"NppSSH调试提示", MB_OK | MB_ICONERROR);
         return nullptr;
     }
-    
-    //防闪烁样式设置
-    DWORD exStyle = ::GetWindowLongPtr(_hTerminal, GWL_EXSTYLE);
-    ::SetWindowLongPtr(_hTerminal, GWL_EXSTYLE, exStyle | WS_EX_TRANSPARENT);
+    // WS_EX_TRANSPARENT + 控件默认风格 不支持 IME
+    //_hTerminal = ::CreateWindowExW(//ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY | WS_VSCROLL | WS_TABSTOP
+    //    WS_EX_CLIENTEDGE | WS_EX_NOPARENTNOTIFY | WS_EX_ACCEPTFILES,
+    //    L"RichEdit20W",
+    //    L"初始化成功", // 文字设为空
+    //    WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN,
+    //    x, y, cx, cy,// 初始大小
+    //    _hwndParent,
+    //    (HMENU)IDC_OUTPUT_EDIT,
+    //    s_hInst, // 用全局插件实例句柄
+    //    this
+    //);
+
+
+
+    // 创建控件后，设置字符集
+    CHARFORMAT2W cf = { 0 };
+    cf.cbSize = sizeof(CHARFORMAT2W);
+    cf.dwMask = CFM_CHARSET;
+    //cf.bCharSet = CP_UTF8; // 强制 UTF-8 字符集
+    //cf.bCharSet = DEFAULT_CHARSET;
+    cf.bCharSet = GB2312_CHARSET;
+    SendMessageW(_hTerminal, EM_SETCHARFORMAT, SCF_ALL, (LPARAM)&cf);
     // 设置样式
     DWORD style = ::GetWindowLongPtrW(_hTerminal, GWL_STYLE);
     style |= ES_MULTILINE | ES_AUTOVSCROLL | ES_AUTOHSCROLL | WS_VSCROLL;
     ::SetWindowLongPtrW(_hTerminal, GWL_STYLE, style);
+
+    // 设置默认字体（等宽字体，适配终端）
+    HFONT hFont = CreateFontW(30, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+        GB2312_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+        DEFAULT_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Courier New");// 备选："Courier New"、"Lucida Console"、"Microsoft YaHei"
+    SendMessageW(_hTerminal, WM_SETFONT, (WPARAM)hFont, TRUE);
+
+
+    SetPTYType("xterm-256color");// 初始化默认PTY类型（可从配置/用户选择动态修改）
+    // 仅保留开启富文本，启用颜色渲染【关键】
+    SendMessageW(_hTerminal, EM_SETTEXTMODE, TM_RICHTEXT, 0);
 
     // 调整输出伪终端位置，避开顶部按钮栏
     SizeSSHTerminal(hParent);
@@ -705,6 +1342,27 @@ HWND SSHTerminal::InitTerminalEditBox(HWND hParent) {
     //MessageBoxW(s_nppData._nppHandle, L"终端伪终端初始化完成 ✅", L"成功", MB_OK);
     return _hTerminal;
 }
+
+// 设置当前PTY类型（自动加载对应特性）
+void SSHTerminal::SetPTYType(const std::string& ptyType) {
+    _currentPTYType = ptyType;
+    // 查找特性配置，找不到则用dumb（最基础）
+    auto it = g_ptyFeatureMap.find(ptyType);
+    if (it != g_ptyFeatureMap.end()) {
+        _currentPTYFeatures = it->second;
+    }
+    else {
+        _currentPTYFeatures = g_ptyFeatureMap["dumb"];
+    }
+    NppSSH_LogInfoAuto("【PTY适配】切换到" + ptyType +
+        "，ANSI支持：" + std::to_string(_currentPTYFeatures.supportANSI) +
+        "，256色：" + std::to_string(_currentPTYFeatures.support256Color));
+}
+// 获取当前PTY特性（对外提供只读访问）
+const PTYFeatures& SSHTerminal::GetPTYFeatures() const {
+    return _currentPTYFeatures;
+}
+
 /*
 *断开连接，改变终端内容
 */
@@ -765,6 +1423,72 @@ void SSHTerminal::SizeSSHTerminal(HWND hParent) {//hParent=面板的_hSelf
     ::RedrawWindow(_hTerminal, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);// 刷新伪终端内容（防止文字不显示）
 }
 
+// 宽字符版本调试打印
+void DeBugOutPutText(const std::wstring& text) {
+    std::wstring rawCharLog = L"[宽字符text全字符拆解] 总字节数=" + UTF8ToWstring(IntToStr((int)text.size())) + L" | 字符序列：";
+
+    for (wchar_t ch : text)
+    {
+        switch (ch)
+        {
+        case L'\r': rawCharLog += L"\\r "; break;
+        case L'\n': rawCharLog += L"\\n "; break;
+        case L'\t': rawCharLog += L"\\t "; break;
+        case L' ':  rawCharLog += L"SP "; break;
+        default:
+            if (ch < 0x20 || ch >= 0x7F)
+            {
+                // 不可见控制字符，打印十六进制
+                wchar_t buf[16] = { 0 };
+                swprintf_s(buf, L"0x%04X ", (DWORD)ch);
+                rawCharLog += buf;
+            }
+            else
+            {
+                // 普通可见字符
+                rawCharLog += (wchar_t)ch;
+                rawCharLog += L" ";
+            }
+            break;
+        }
+    }
+
+    // 宽字符转窄字符日志输出
+    NppSSH_LogInfoAuto(WStringToLogStr(rawCharLog));
+    NppSSH_LogInfoAuto("输出文本到输出框(宽字符): " + WStringToLogStr(text));
+}
+void DeBugOutPutText(const std::string& text) {
+    // ======================【新增：完整字符日志打印，解析所有转义符号】======================
+    std::string rawCharLog = "[原始text全字符拆解] 总字节数=" + IntToStr((int)text.size()) + " | 字符序列：";
+    for (unsigned char ch : text)
+    {
+        switch (ch)
+        {
+        case '\r': rawCharLog += "\\r "; break;
+        case '\n': rawCharLog += "\\n "; break;
+        case '\t': rawCharLog += "\\t "; break;
+        case ' ':  rawCharLog += "SP "; break;
+        default:
+            if (ch < 0x20 || ch >= 0x7F)
+            {
+                // 不可见控制字符，打印十六进制
+                char buf[16] = { 0 };
+                sprintf_s(buf, "0x%02X ", ch);
+                rawCharLog += buf;
+            }
+            else
+            {
+                // 普通可见字符
+                rawCharLog += (char)ch;
+                rawCharLog += " ";
+            }
+            break;
+        }
+    }
+    NppSSH_LogInfoAuto(rawCharLog);
+    NppSSH_LogInfoAuto("输出文本到输出框" + std::string(text));
+    // ==================================================================================
+}
 /*
 * 追加伪终端终端模拟内容
 */
@@ -779,55 +1503,28 @@ void SSHTerminal::AppendOutputText(const std::string& text) {
         NppSSH_LogWarnAuto("AppendOutputText: 伪终端尚未初始化完成，丢弃输出");
         return;
     }
+    
+
     NppSSH_LogInfoAuto("输出文本到输出框" + std::string(text));
-    // ✅ 转成 wstring（堆分配）
-    std::wstring* pText = new std::wstring(GBKToWstring(text));
 
+
+    //std::string cleanText = CleanAnsiEscapeSequences(text);
+    std::string cleanText = text;
+
+    cleanText = Cleanrr(cleanText);//清除所有\n前面的\r
+    
+
+    std::wstring* wtext = new std::wstring(UTF8ToWstring(cleanText));
+    NppSSH_LogInfoAuto("【原始宽字符内容】" + WStringToLogStr(*wtext));
+
+    NppSSH_LogInfoAuto("清除输出文本到输出框前");
+    DeBugOutPutText(text);
+    NppSSH_LogInfoAuto("清除输出文本到输出框后");
+    DeBugOutPutText(cleanText);
+    NppSSH_LogInfoAuto("原始宽字符内容");
+    DeBugOutPutText(wtext->c_str());
     // ✅ 投递到主线程（绝对安全）
-    PostMessage(_hTerminal, WM_APPEND_OUTPUT_TEXT, 0, (LPARAM)pText);
-    // 提前缓存焦点状态，避免操作后丢失
-    //HWND hFocus = ::GetFocus();
-    //bool isEditFocused = (hFocus == _hTerminal);
-
-    //// 临时关闭子类化，避免EM_SETSEL/EM_REPLACESEL触发循环
-    //WNDPROC tempOldProc = (WNDPROC)GetWindowLongPtr(_hTerminal, GWLP_WNDPROC);
-    //SetWindowLongPtr(_hTerminal, GWLP_WNDPROC, (LONG_PTR)_oldEditProc);
-    ////追加文本（只读控件临时取消只读）
-    //::SendMessage(_hTerminal, EM_SETREADONLY, FALSE, 0);
-
-    //std::wstring wtext = GBKToWstring(text);
-    //// 光标移到末尾，追加文本
-    //int len = ::GetWindowTextLengthW(_hTerminal);
-    //::SendMessage(_hTerminal, EM_SETSEL, len, len);
-    //::SendMessage(_hTerminal, EM_REPLACESEL, FALSE, (LPARAM)wtext.c_str());
-    ////// 恢复只读
-    //::SendMessage(_hTerminal, EM_SETREADONLY, TRUE, 0);
-
-    //// 恢复子类化
-    //SetWindowLongPtr(_hTerminal, GWLP_WNDPROC, (LONG_PTR)tempOldProc);
-
-
-    //// ========== 精准定位光标到新提示符末尾 ==========
-    //// 1. 重新获取追加后的总长度（避免wtext拼接导致的长度偏差）
-    //DWORD len_total = ::GetWindowTextLengthW(_hTerminal);
-    //// 2. 强制选中末尾（确保光标在最后）
-    //::SendMessageW(_hTerminal, EM_SETSEL, len_total, len_total);
-    //// 3. 滚动到光标位置（视觉反馈）
-    //::SendMessageW(_hTerminal, EM_SCROLLCARET, 0, 0);
-    //// 4. 强制刷新光标渲染（解决系统未重绘光标问题）
-    //::SendMessageW(_hTerminal, WM_PAINT, 0, 0);
-    //// 强制刷新
-    //::RedrawWindow(_hTerminal, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
-    ////FixEditInputState(_hTerminal);
-    //// 若当前伪终端是焦点，不重复抢焦；若非焦点，不主动设置（遵循用户操作）
-    //if (isEditFocused) {
-    //    SetFocus(_hTerminal); // 仅恢复缓存的焦点状态
-    //    NppSSH_LogInfoAuto("【设置焦点3333333333333333】");
-
-    //}
-
-    //NppSSH_LogInfoAuto("文本追加完成，当前输出框总长度：" + IntToStr((int)len_total)
-    //    + "，追加长度：" + IntToStr((int)text.length()));
+    PostMessage(_hTerminal, WM_APPEND_OUTPUT_TEXT, 0, (LPARAM)wtext);
 }
 
 
@@ -848,52 +1545,89 @@ bool SSHTerminal::IsCursorInEditableArea() const {
         return true; // ✅ 兜底
     }
     // 1. 获取光标位置
-    DWORD selStart = 0;
-    ::SendMessageW(_hTerminal, EM_GETSEL, (WPARAM)&selStart, NULL);
-    DWORD cursorPos = selStart;
+    DWORD cpMin = 0, cpMax = 0;
+    ::SendMessageW(_hTerminal, EM_GETSEL, (WPARAM)&cpMin, (LPARAM)&cpMax);
+    DWORD cursorPos = cpMin;
+    //DWORD selStart = 0;
+    //::SendMessageW(_hTerminal, EM_GETSEL, (WPARAM)&selStart, NULL);
+    //DWORD cursorPos = selStart;
 
     // 2. 获取整行文本
     int totalLen = ::GetWindowTextLengthW(_hTerminal);
     std::wstring allText;
     allText.resize(totalLen + 1);
     ::GetWindowTextW(_hTerminal, &allText[0], totalLen + 1);
+    allText.resize(totalLen);
 
+    //NppSSH_LogInfoAuto("清除输出文本到输出框前");
+    DeBugOutPutText(allText);
     // 3. 找光标所在行
-    size_t lineStart = 0;
+    size_t lastLineStart = 0;
+    allText = CleanrrW(allText);// 删掉 RichEdit 自动加的所有 \r
+    // 从后往前找，跳过所有空白、换行、不可见字符
     for (size_t i = cursorPos; i > 0; --i) {
         if (allText[i] == L'\n' || allText[i] == L'\r') {
-            lineStart = i + 1;
-            break;
+            lastLineStart = i + 1; break;
         }
     }
 
-    // 4. 拿到当前行
-    std::wstring currentLine = allText.substr(lineStart);
-
-    // 5. 拿到原始 prompt（包含末尾空格）
-    std::wstring promptW = GBKToWstring(_prompt);
-    int promptLen = (int)promptW.length();
-
-    bool canEdit = false;
-    if (promptLen > 0) { // 场景1：提示符非空（命令执行完成）- 原有逻辑
-        bool lineStartsWithPrompt = (currentLine.substr(0, promptLen) == promptW);
-        bool cursorIsAfterPrompt = (cursorPos >= lineStart + promptLen);
-        canEdit = lineStartsWithPrompt && cursorIsAfterPrompt;
+    // 光标不在最后一行 → 不可编辑
+    if (cursorPos < lastLineStart) {
+        NppSSH_LogInfoAuto("[可编辑判定] 光标不在最后一行，禁止编辑");
+        return false;
     }
-    else {// 场景2：提示符为空（命令执行中）- 不允许编辑（避免修改输出）
-        canEdit = false;
+    // 只取最后一行内容，在本行内计算！
+    std::wstring lastLine = allText.substr(lastLineStart);
+
+    // 6. 处理提示符（清理乱码）
+    //std::wstring promptW = CleanAnsiEscapeSequences(UTF8ToWstring(_prompt));
+    std::wstring promptW = (UTF8ToWstring(_prompt));
+    int promptLen = promptW.size();
+
+    if (promptLen <= 0) {
+        NppSSH_LogInfoAuto("[可编辑判定] 清理后提示符为空，禁止编辑");
+        return false;
     }
 
-    // 日志
-    NppSSH_LogInfoAuto(
-        "【可编辑判定】 "
-        "_prompt="+ _prompt+
-        "光标位置=" + IntToStr((int)cursorPos) +
-        " 行起始=" + IntToStr((int)lineStart) +
-        " 提示符长度=" + IntToStr(promptLen) +
-        " prompt结束位置=" + IntToStr((int)(lineStart + promptLen)) +
-        " 可编辑=" + IntToStr(canEdit ? 1 : 0)
-    );
+
+    // 6. 最后一行必须以提示符开头
+    // 判断最后一行是否以提示符开头
+    bool lineStartsWithPrompt = false;
+    std::wstring prefix;
+    if (lastLine.size() >= promptLen) {
+        prefix = lastLine.substr(0, promptLen);
+        //prefix = CleanAnsiEscapeSequences(prefix);
+        lineStartsWithPrompt = (prefix == promptW);
+    }
+    if (!lineStartsWithPrompt) {
+        NppSSH_LogInfoAuto("prefix = " + WStringToLogStr(prefix) + ",promptW=" + WStringToLogStr(promptW)+ ",提示符长度=[" + IntToStr(promptLen) + "] ");
+
+        NppSSH_LogInfoAuto("[可编辑判定] 最后一行不以提示符开头");
+        return false;
+    }
+    int cursorInLine = cursorPos - lastLineStart;
+    bool cursorIsAfterPrompt = (cursorInLine >= promptLen);
+    // 结合_cmd校验：如果已有命令，光标需在命令范围内（增强校验）
+    bool cmdAreaValid = true;
+    std::wstring cmdW = UTF8ToWstring(_cmd);
+    if (!cmdW.empty()) {
+        int cmdEndInLine = promptLen + cmdW.size();
+        cmdAreaValid = (cursorInLine >= promptLen && cursorInLine <= cmdEndInLine);
+    }
+
+    bool canEdit = cursorIsAfterPrompt && cmdAreaValid;
+    
+    std::string loginfo = "【可编辑判定】 "
+        "_prompt=[" + _prompt + "] "
+        "lastLineStart=[" + IntToStr(lastLineStart) + "] "
+        "全局光标=[" + IntToStr((int)cursorPos) + "] "
+        "本行光标=[" + IntToStr(cursorInLine) + "]本行光标 = 全局光标 - lastLineStart"
+        "提示符长度=[" + IntToStr(promptLen) + "] "
+        "本行开头匹配=[" + IntToStr(lineStartsWithPrompt) + "] "
+        "光标在提示符后=[" + IntToStr(cursorIsAfterPrompt) + "] "
+        "可编辑=[" + IntToStr(canEdit ? 1 : 0) + "]";
+
+    NppSSH_LogInfoAuto(loginfo);
 
     return canEdit;
 }
@@ -913,7 +1647,6 @@ const char* SSHTerminal::GetCmd() const {
 
 void SSHTerminal::SetPrompt(const std::string promptStr) {
     _prompt = promptStr;
-    //FixEditInputState(_hTerminal); // 复用原有修复函数
     NppSSH_LogInfoAuto("【提示符更新】主动修复输入状态，新提示符：" + promptStr);
 }
 
@@ -972,38 +1705,40 @@ void SSHTerminal_AppendOutput(int panelIndex, const std::string& text) {
     if (!panel || !panel->Get_TerminalHandle())
         return;
     // 修复换行处理：只替换孤立的\n，保留\r\n
-    std::string fixedText;
-    for (size_t i = 0; i < text.length(); i++) {
-        if (text[i] == '\n' && (i == 0 || text[i - 1] != '\r')) {
-            fixedText += "\r\n";
-        }
-        else {
-            fixedText += text[i];
-        }
-    }
+    //std::string fixedText;
+    //for (size_t i = 0; i < text.length(); i++) {
+    //    if (text[i] == '\n' && (i == 0 || text[i - 1] != '\r')) {
+    //        fixedText += "\r\n";
+    //    }
+    //    else {
+    //        fixedText += text[i];
+    //    }
+    //}
 
-    // 处理开头的换行
-    // 判断是否以 \r\n 开头，如果不是，则在开头追加
-    bool hasLeadingNewLine = false;
-    if (fixedText.size() >= 2) {
-        if (fixedText[0] == '\r' && fixedText[1] == '\n') {
-            hasLeadingNewLine = true;
-        }
-    }
+    //// 处理开头的换行
+    //// 判断是否以 \r\n 开头，如果不是，则在开头追加
+    //bool hasLeadingNewLine = false;
+    //if (fixedText.size() >= 2) {
+    //    if (fixedText[0] == '\r' && fixedText[1] == '\n') {
+    //        hasLeadingNewLine = true;
+    //    }
+    //}
 
-    // 如果没有开头换行，则追加
-    if (!hasLeadingNewLine && !fixedText.empty()) {
-        fixedText.insert(0, "\r\n");
-        NppSSH_LogInfoAuto("【自动换行】在输出开头追加 \\r\\n");
-    }
+    //// 如果没有开头换行，则追加
+    //if (!hasLeadingNewLine && !fixedText.empty()) {
+    //    fixedText.insert(0, "\r\n");
+    //    NppSSH_LogInfoAuto("【自动换行】在输出开头追加 \\r\\n");
+    //}
 
-    panel->AppendOutputText(fixedText);
+    panel->AppendOutputText(text);
 
 }
 void SSHTerminal_PanelPrompt(int panelIndex, const std::string Prompt) {
     NppSSH_LogInfoAuto("【调试】SSHTerminal_PanelPrompt设置提示符");
     SSHTerminal* panel = getSSHTerminal(panelIndex);
-    panel->SetPrompt(Prompt);
+    std::string prompt = Prompt;
+    prompt = CleanAnsiEscapeSequences(prompt);
+    panel->SetPrompt(prompt);
 }
 void SSHTerminal_SetIsCommandRunning(int panelIndex, bool isCommandRunning) {
     SSHTerminal* panel = getSSHTerminal(panelIndex);
@@ -1034,6 +1769,7 @@ void SSHTerminal_SetEnglishType(int panelIndex) {
     if (panel)
     {
         HWND TerminalHWND = panel->Get_TerminalHandle();
+        panel->SetCmd("");
         imm_chineseType(TerminalHWND);
     }
 }

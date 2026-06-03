@@ -7,7 +7,58 @@
 #include <windows.h>
 #include <consoleapi2.h>
 #include <processenv.h>
+#include <richedit.h>       // RichEdit 核心头文件
+#include <commctrl.h>       // 可选（若需高级功能）
+#include <sstream>
+#include <iterator>
+#include <unordered_map>
+//#pragma comment(lib, "msftedit.lib")
+// PTY 特性配置（适配不同终端类型的核心）
+struct PTYFeatures {
+    bool supportANSI;          // 是否支持ANSI转义序列（dumb不支持，其他支持）
+    bool support256Color;      // 是否支持256色（仅xterm-256color支持）
+    bool supportCursorMove;    // 是否支持光标移动（dumb不支持）
+    bool supportBold;          // 是否支持加粗
+    bool crlfToLf;             // 换行规则：CR+LF → LF（linux/xterm）
+    bool lfToCrlf;             // 换行规则：LF → CR+LF（vt100）
+    int defaultFGColor;        // 默认前景色
+    int defaultBGColor;        // 默认背景色
+};
 
+// 全局PTY特性映射（扩展时只需加新类型的配置）
+//{ "screen", { true, true, true, true, true, false, RGB(192,192,192), RGB(0,0,0) } },新增 PTY 类型：只需在 g_ptyFeatureMap 中添加新类型的特性配置，无需修改其他逻辑。
+static std::unordered_map<std::string, PTYFeatures> g_ptyFeatureMap = {
+    {"xterm-256color", {true, true, true, true, true, false, RGB(192,192,192), RGB(0,0,0)}},
+    {"xterm",          {true, false, true, true, true, false, RGB(192,192,192), RGB(0,0,0)}},
+    {"vt100",          {true, false, true, true, false, true, RGB(255,255,255), RGB(0,0,0)}},
+    {"dumb",           {false, false, false, false, true, false, RGB(255,255,255), RGB(0,0,0)}},
+    {"linux",          {true, false, true, true, true, false, RGB(192,192,192), RGB(0,0,0)}}
+};
+// ANSI 基础 16 色映射（标准终端颜色）
+struct AnsiColor {
+    const char* name;
+    COLORREF rgb;
+};
+// ANSI 30~37 标准色，完全对齐Windows终端
+const COLORREF ANSI_COLORS[16] = {
+    RGB(0,0,0),        //30黑
+    RGB(194,54,33),    //31红
+    RGB(37,188,36),    //32绿
+    RGB(173,173,39),   //33黄
+    RGB(73,46,155),    //34蓝(目录)
+    RGB(173,54,174),   //35紫
+    RGB(54,187,188),   //36青
+    RGB(209,209,209),  //37白
+    //90~97高亮
+    RGB(129,131,131),
+    RGB(249,56,51),
+    RGB(49,231,34),
+    RGB(234,236,35),
+    RGB(88,51,255),
+    RGB(249,53,248),
+    RGB(20,240,240),
+    RGB(233,233,233)
+};
 class SSHTerminal {
 public:
     SSHTerminal();
@@ -44,10 +95,22 @@ public:
     const bool GetIsCommandRunning() const {return _isCommandRunning;}
     HWND Get_hwndParent() const { return _hwndParent; }
 
+
+    // 解析 ANSI 转义序列（核心：提取颜色并设置文本颜色）
+    void SetPTYType(const std::string& ptyType);
+    const PTYFeatures& GetPTYFeatures() const; // 获取当前PTY特性（对外提供只读访问）
+    void ParseAnsiColorSequence(const std::wstring& params);
+    void ParseAnsiControlSequence(const std::wstring& seq);//解析所有 ANSI 控制序列（颜色 + 模式）
+    void ParseAnsiParseOnly(const std::wstring& seq, CHARFORMAT2W& outCf);//只解析参数、不操作控件、不 SetSel
+    
 private:
     HWND _hTerminal;
     HWND _hwndParent = nullptr;
     bool _initialized = false;
+
+    HMODULE _hRichEditLib = nullptr;
+    std::string _currentPTYType;    // 当前使用的PTY类型（如xterm-256color）
+    PTYFeatures _currentPTYFeatures;// 当前PTY的特性配置
 
     int _panelId;
     std::string _cmd;             // 回车需要执行的命令（迁移自cmd）

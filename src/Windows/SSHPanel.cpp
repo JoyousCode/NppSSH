@@ -544,7 +544,7 @@ INT_PTR CALLBACK NppSSHDockPanel::SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM 
             if (hEdit && IsWindow(hEdit))
             {
                 // 关键：必须用 PostMessage，不能用 SendMessage
-                PostMessageW(hEdit, WM_USER + 1001, 0, 0);
+                //PostMessageW(hEdit, WM_USER + 1001, 0, 0);
                 SSH_SetEnglishType(pPanel->GetPanelIndex());//强制将微软拼音的输入模式改为英文模式
                 NppSSH_LogInfoAuto("已发送修复消息 WM_USER+1001 到伪终端");
             }
@@ -624,34 +624,35 @@ INT_PTR CALLBACK NppSSHDockPanel::run_dlgProc(UINT message, WPARAM wParam, LPARA
             
         }
         // 新增：拦截输出编辑框的所有操作
-        if (hCtrl == _hOutputEdit) {
-            NppSSH_LogInfoAuto("【调试拦截输出编辑框的所有操作】");
+        //if (hCtrl == _hOutputEdit) {
+        //    NppSSH_LogInfoAuto("【调试拦截输出编辑框的所有操作】");
 
-            UINT notifyCode = HIWORD(wParam);
-            // 拦截光标移动、文本修改、粘贴等操作
+        //    UINT notifyCode = HIWORD(wParam);
+        //    // 拦截光标移动、文本修改、粘贴等操作
 
-            switch (notifyCode) {
-            case EN_SETFOCUS: // 编辑框获焦时，强制光标到可编辑区域
-            {
-                NppSSH_LogInfoAuto("【调试EN_SETFOCUSEN_SETFOCUSEN_SETFOCUS】");
-                ::SendMessage(_hOutputEdit, EM_SETREADONLY, FALSE, 0);
+        //    switch (notifyCode) {
+        //    case EN_SETFOCUS: // 编辑框获焦时，强制光标到可编辑区域
+        //    {
+        //        NppSSH_LogInfoAuto("【调试EN_SETFOCUSEN_SETFOCUSEN_SETFOCUS】");
+        //        //::SendMessage(_hOutputEdit, EM_SETREADONLY, FALSE, 0);
 
-                
-                break;
-            }
-                
-            case EN_CHANGE: // 文本变化时，检查是否在合法区域
-                NppSSH_LogInfoAuto("【调试EN_CHANGEEN_CHANGEEN_CHANGEEN_CHANGE】");
-                break;
-            }
-            return TRUE;
-        }
-    }
-    // 新增：拦截键盘消息（仅允许在合法区域输入）
-    case WM_KEYDOWN : {
-        NppSSH_LogInfoAuto("【面板过程调试WM_KEYDOWNWM_KEYDOWNWM_KEYDOWNWM_KEYDOWN】");
+        //        
+        //        return FALSE;
+        //    }
+        //        
+        //    case EN_CHANGE: // 文本变化时，检查是否在合法区域
+        //        NppSSH_LogInfoAuto("【调试EN_CHANGEEN_CHANGEEN_CHANGEEN_CHANGE】");
+        //        return FALSE;
+        //    }
+        //}
+
         break;
     }
+    // 新增：拦截键盘消息（仅允许在合法区域输入）
+    //case WM_KEYDOWN : {
+    //    NppSSH_LogInfoAuto("【面板过程调试WM_KEYDOWNWM_KEYDOWNWM_KEYDOWNWM_KEYDOWN】");
+    //    break;
+    //}
     // 响应NPP停靠管理器的浮动/停靠消息，更新面板状态
     case WM_NOTIFY: 
     {

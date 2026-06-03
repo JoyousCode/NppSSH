@@ -22,24 +22,31 @@ static bool ValidatePort(int port) {
 
 // 编码转换（自动识别 UTF8 / GBK）
 inline std::wstring GBKToWstring(const std::string& str) {
-    if (str.empty()) return L"";
+        if (str.empty())
+            return L"";
 
-    // 1. 优先按 UTF-8 转换（libssh2 错误信息都是 UTF-8）
-    int utf8Len = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, nullptr, 0);
-    if (utf8Len > 0) {
-        std::wstring wstr(utf8Len, L'\0');
-        MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, &wstr[0], utf8Len);
-        wstr.pop_back(); // 移除末尾的\0
-        return wstr;
+        // 直接用系统默认编码 GBK
+        int len = MultiByteToWideChar(
+            CP_ACP,         // 系统本地编码 = GBK
+            0,
+            str.c_str(),
+            -1,
+            nullptr,
+            0
+        );
+
+        std::wstring res(len, L'\0');
+        MultiByteToWideChar(
+            CP_ACP,
+            0,
+            str.c_str(),
+            -1,
+            &res[0],
+            len
+        );
+
+        return res;
     }
-
-    // 2. 失败则使用 GBK（系统本地编码）
-    int gbkLen = MultiByteToWideChar(CP_ACP, 0, str.c_str(), -1, nullptr, 0);
-    std::wstring wstr(gbkLen, L'\0');
-    MultiByteToWideChar(CP_ACP, 0, str.c_str(), -1, &wstr[0], gbkLen);
-    wstr.pop_back();
-    return wstr;
-}
 
 // 获取libssh2错误信息
 inline std::string GetLibssh2ErrorMsg(LIBSSH2_SESSION* session) {
@@ -1471,11 +1478,11 @@ void SSHConnection::ReadLoginBanner(LIBSSH2_SESSION* session) {
     }
     int panelId = SSHConnection_GetPanelId(this);
     // 读取Banner
-    std::string loginBanner = "\r\n";
+    std::string loginBanner = "\n";
     const char* banner = libssh2_session_banner_get(session);
     if (banner) {
         loginBanner += banner;
-        loginBanner += "\r\n";
+        loginBanner += "\n";
     }
     
     // 获取登录时间  使用 伪终端 m_shellChannel 
@@ -1503,19 +1510,17 @@ void SSHConnection::ReadLoginBanner(LIBSSH2_SESSION* session) {
         NppSSH_LogInfoAuto("【注意】===========提示词为空");
         m_prompt = "";
     }
-
-    // 备用：本地时间
-    if (loginBanner.find("Last login:") == std::string::npos) {
-        SYSTEMTIME st;
-        GetLocalTime(&st);
-        char localTime[64] = { 0 };
-        sprintf_s(localTime, "Last login: %04d-%02d-%02d %02d:%02d:%02d (本地时间)",
-            st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
-        loginBanner += localTime;
-        loginBanner += "\r\n";
-        loginBanner += m_prompt;
-    }
     
+    //std::string out;
+    //for (unsigned char c : loginBanner) {
+    //    // 只保留可打印字符 + 换行制表
+    //    if (c >= 0x20 || c == '\r' || c == '\n' || c == '\t') {
+    //        out += c;
+    //    }
+    //}
+    //loginBanner = out;
+
+
     if (panelId >= 0) {
         SSH_AppendOutputText(panelId, loginBanner);
         NppSSH_LogInfoAuto("【欢迎语获取退出】调用SSHTerminal_PanelPrompt函数赋值私有成员变量 _prompt = " + m_prompt);
@@ -1616,13 +1621,31 @@ bool SSHConnection::CreatePtyChannel() {
         NppSSH_LogInfoAuto("【CreatePtyChannel】尝试PTY终端类型: " + term_type);
 
         for (int attempt = 1; attempt <= MAX_WAIT_ATTEMPTS; attempt++) {
+            libssh2_channel_setenv(channel, "LC_ALL", "zh_CN.UTF8");
+            libssh2_channel_setenv(channel, "LANG", "zh_CN.UTF8");
+            libssh2_channel_setenv(channel, "LC_CTYPE", "zh_CN.UTF8");
             int ret = libssh2_channel_request_pty(
                 channel,
-                term_type.c_str(),
-                nullptr,     // 终端模式（默认）
-                80, 24,      // 行列数
-                0, 0         // 像素宽高（忽略）
+                term_type.c_str()
             );
+            //int ret = libssh2_channel_request_pty(
+            //    channel,
+            //    term_type.c_str(),
+            //    nullptr,     // 终端模式（默认）
+            //    80, 24,      // 行列数
+            //    0, 0         // 像素宽高（忽略）
+            //);
+            // 官方 API：申请 UTF-8 模式的伪终端（不留历史、不发命令）
+            //int ret = libssh2_channel_request_pty(
+            //    channel,                    // 通道
+            //    term_type.c_str(),          // 终端类型 xterm-256color
+            //    strlen(term_type.c_str()),
+            //    nullptr, 0,                // 模式串
+            //    80, 24,                    // 宽高
+            //    0, 0,                      // 像素
+            //    "UTF-8",                   // 👉 官方指定编码
+            //    strlen("UTF-8")
+            //);
 
             if (ret == 0) {
                 // PTY设置成功
