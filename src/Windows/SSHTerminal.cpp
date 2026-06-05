@@ -6,6 +6,7 @@ static NppData s_nppData;
 static HINSTANCE s_hInst;
 
 
+
 // 根据选中区间，算出不含尾部\r\n的真实结束下标，原文不动
 static DWORD GetValidSelEnd(const std::wstring& fullText, DWORD selStart, DWORD selEnd)
 {
