@@ -1664,7 +1664,7 @@ void SSHTerminal::SizeSSHTerminal(HWND hParent) {//hParent=面板的_hSelf
 }
 
 // 宽字符版本调试打印
-void DeBugOutPutText(const std::wstring& text) {
+inline void DeBugOutPutText(const std::wstring& text) {
     std::wstring rawCharLog = L"[宽字符text全字符拆解] 总字节数=" + UTF8ToWstring(IntToStr((int)text.size())) + L" | 字符序列：";
 
     for (wchar_t ch : text)
@@ -1697,7 +1697,7 @@ void DeBugOutPutText(const std::wstring& text) {
     NppSSH_LogInfoAuto(WStringToLogStr(rawCharLog));
     NppSSH_LogInfoAuto("输出文本到输出框(宽字符): " + WStringToLogStr(text));
 }
-void DeBugOutPutText(const std::string& text) {
+inline void DeBugOutPutText(const std::string& text) {
     // ======================【新增：完整字符日志打印，解析所有转义符号】======================
     std::string rawCharLog = "[原始text全字符拆解] 总字节数=" + IntToStr((int)text.size()) + " | 字符序列：";
     for (unsigned char ch : text)

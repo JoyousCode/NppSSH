@@ -19,7 +19,126 @@ static HINSTANCE s_hInst;
 static bool ValidatePort(int port) {
     return port >= SSHConst::MIN_PORT && port <= SSHConst::MAX_PORT;
 }
+// 编码转换工具（自动识别UTF8，解决Windows乱码）
+inline std::wstring UTF8ToWstring(const std::string& str) {
+    if (str.empty())
+        return L"";
 
+    // 第一步：先清理非法字符，避免转换失败
+    //std::string cleanStr = CleanAnsiEscapeSequences(str);
+    std::string cleanStr = (str);
+
+    int len = MultiByteToWideChar(
+        CP_UTF8,
+        MB_ERR_INVALID_CHARS, // 严格校验，非法字符返回错误
+        cleanStr.c_str(),
+        (int)cleanStr.size(),
+        nullptr,
+        0
+    );
+
+    // 容错：如果严格转换失败，用替换模式重试
+    if (len == 0) {
+        len = MultiByteToWideChar(
+            CP_UTF8,
+            0, // 忽略无效字符
+            cleanStr.c_str(),
+            (int)cleanStr.size(),
+            nullptr,
+            0
+        );
+        NppSSH_LogInfoAuto("【UTF8转换容错】检测到非法UTF8字符，已忽略");
+    }
+
+    std::wstring res(len, L'\0');
+    MultiByteToWideChar(
+        CP_UTF8,
+        0,
+        cleanStr.c_str(),
+        (int)cleanStr.size(),
+        &res[0],
+        len
+    );
+    NppSSH_LogInfoAuto("自动识别UTF8，解决Windows乱码,转换成功");
+    return res;
+}
+inline std::string IntToStr(int num) {
+    return std::to_string(num);
+}
+// 安全地把 std::wstring 转为 std::string 日志专用（避免乱码和异常）
+inline std::string WStringToLogStr(const std::wstring& wstr) {
+    if (wstr.empty()) return "";
+    int len = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    std::string out(len, 0);
+    WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, &out[0], len, nullptr, nullptr);
+    return out;
+}
+// 宽字符版本调试打印
+inline void DeBugOutPutText(const std::wstring& text) {
+    std::wstring rawCharLog = L"[宽字符text全字符拆解] 总字节数=" + UTF8ToWstring(IntToStr((int)text.size())) + L" | 字符序列：";
+
+    for (wchar_t ch : text)
+    {
+        switch (ch)
+        {
+        case L'\r': rawCharLog += L"\\r "; break;
+        case L'\n': rawCharLog += L"\\n "; break;
+        case L'\t': rawCharLog += L"\\t "; break;
+        case L' ':  rawCharLog += L"SP "; break;
+        default:
+            if (ch < 0x20 || ch >= 0x7F)
+            {
+                // 不可见控制字符，打印十六进制
+                wchar_t buf[16] = { 0 };
+                swprintf_s(buf, L"0x%04X ", (DWORD)ch);
+                rawCharLog += buf;
+            }
+            else
+            {
+                // 普通可见字符
+                rawCharLog += (wchar_t)ch;
+                rawCharLog += L" ";
+            }
+            break;
+        }
+    }
+
+    // 宽字符转窄字符日志输出
+    NppSSH_LogInfoAuto(WStringToLogStr(rawCharLog));
+    NppSSH_LogInfoAuto("输出文本到输出框(宽字符): " + WStringToLogStr(text));
+}
+inline void DeBugOutPutText(const std::string& text) {
+    // ======================【新增：完整字符日志打印，解析所有转义符号】======================
+    std::string rawCharLog = "[原始text全字符拆解] 总字节数=" + IntToStr((int)text.size()) + " | 字符序列：";
+    for (unsigned char ch : text)
+    {
+        switch (ch)
+        {
+        case '\r': rawCharLog += "\\r "; break;
+        case '\n': rawCharLog += "\\n "; break;
+        case '\t': rawCharLog += "\\t "; break;
+        case ' ':  rawCharLog += "SP "; break;
+        default:
+            if (ch < 0x20 || ch >= 0x7F)
+            {
+                // 不可见控制字符，打印十六进制
+                char buf[16] = { 0 };
+                sprintf_s(buf, "0x%02X ", ch);
+                rawCharLog += buf;
+            }
+            else
+            {
+                // 普通可见字符
+                rawCharLog += (char)ch;
+                rawCharLog += " ";
+            }
+            break;
+        }
+    }
+    NppSSH_LogInfoAuto(rawCharLog);
+    NppSSH_LogInfoAuto("输出文本到输出框" + std::string(text));
+    // ==================================================================================
+}
 // 编码转换（自动识别 UTF8 / GBK）
 inline std::wstring GBKToWstring(const std::string& str) {
         if (str.empty())
@@ -226,17 +345,64 @@ int SSHConnection_GetPanelId(SSHConnection* self) {
     }
     return -1;
 }
-// 工具函数：提取字符串最后一行
+// 工具函数：提取字符串最后一行，待处理，要适配ANSI清屏指令,目前遍历是否包含L'J'
 std::string SSHConnection::extractLastLine(const std::string& str) {
-    if (str.empty()) {
+    DeBugOutPutText(str);
+    if (str.empty() || str == "\n" || str == "\r" || str == "\r\n")
+    {
+        NppSSH_LogInfoAuto("【检测空】");
+        return "";
+    }
+    // 精准识别ANSI CSI清屏 \x1B[xxxJ 命中直接返回空
+    bool hasClearAnsi = false;
+    size_t findPos = 0;
+    // 精准匹配 \e[数字;?J 清屏序列
+    while ((findPos = str.find("\x1B[", findPos)) != std::string::npos)
+    {
+        size_t idx = findPos + 2;
+        while (idx < str.size())
+        {
+            char c = str[idx];
+            if (c == 'J')
+            {
+                hasClearAnsi = true;
+                break;
+            }
+            if (!((c >= '0' && c <= '9') || c == ';' || c == '?'))
+                break;
+            idx++;
+        }
+        findPos = idx;
+    }
+
+    // 全局从尾部跳过空格\r\n，校验末尾提示符 # $ > %
+    bool endWithPrompt = false;
+    int pos = (int)str.size() - 1;
+    while (pos >= 0 && (str[pos] == ' ' || str[pos] == '\r' || str[pos] == '\n'))
+        pos--;
+    if (pos >= 0)
+    {
+        char ch = str[pos];
+        if (ch == '#' || ch == '$' || ch == '>' || ch == '%')
+            endWithPrompt = true;
+    }
+
+    // 核心规则：
+    // 1.有清 + 末尾无提示符 → 返回空继续等数据
+    // 2.有清 + 末尾有提示符 / 无清任意情况 → 正常截取最后一行
+    if (hasClearAnsi && !endWithPrompt)
+    {
+        NppSSH_LogInfoAuto("【仅ANSI清屏无提示符，返回空等待】");
         return "";
     }
 
     // 找到最后一个换行符
     size_t lastPos = str.find_last_of("\r\n");
     if (lastPos == std::string::npos) {
+        NppSSH_LogInfoAuto("【没有换行，直接返回整个字符串】");
         return str; // 没有换行，直接返回整个字符串
     }
+    NppSSH_LogInfoAuto("【直接返回最后一行】");
 
     // 直接返回最后一行，**不做任何清理、不做任何处理**
     return str.substr(lastPos + 1);
@@ -914,6 +1080,7 @@ void SSHConnection::ShellReaderLoop() {
                 m_prompt = lastLine;
                 if (panelId >= 0)//拿到提示符直接结束命令状态
                 {
+                    NppSSH_LogInfoAuto("【发送执行结束信号】" + chunk);
                     SSH_PanelPrompt(panelId, m_prompt);
                     SSH_SetIsCommandRunning(panelId, false);
                 }

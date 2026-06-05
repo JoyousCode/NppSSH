@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail  # 开启严格模式：报错立即退出、未定义变量报错、管道错误传递
 
-# 配置项（大写+下划线规范）
+# 配置项（大写+下划线规范）docker exec -it mysql mysql -u root -p 123456
 MYSQL_PASSWORD="123456"
 CONTAINER_NAME="mysql"
 ERROR_LOG="/tmp/mysql_error.log"

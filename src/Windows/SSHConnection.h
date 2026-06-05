@@ -296,7 +296,8 @@ inline size_t findArgEnd(const std::string& str, size_t pos);   // 辅助函数�
 inline std::string TrimTrailingNewlines(std::string str);   // 辅助函数：清理字符串末尾所有 \r\n，直到最后一个字符不是换行 / 回车。
 inline std::string TrimTrailingWhitespace(std::string str); // 工具函数：去除字符串末尾所有空白（空格、\t、\n、\r）
 inline bool EndsWithSemicolonAfterTrim(const std::string& cmd); // 工具函数：判断命令【去除末尾空白后】是否以 ; 结尾
-
+inline void DeBugOutPutText(const std::wstring& text);
+inline void DeBugOutPutText(const std::string& text);
 
 // 工具函数：根据 panelId 安全获取 SSHConnection 实例（线程安全）
 SSHConnection* GetSSHConnectionByPanelId(int panelId);

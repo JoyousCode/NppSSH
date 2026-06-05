@@ -11,8 +11,16 @@
       "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\Windows\\SSHTerminal.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
     },
     {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\Admin\\Desktop\\project\\C\u002B\u002B(notepad\u002B\u002B)\\NppSSH\\src\\Windows\\SSHConnection.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\Windows\\SSHConnection.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\Admin\\Desktop\\project\\C\u002B\u002B(notepad\u002B\u002B)\\NppSSH\\src\\Windows\\SSHTerminal.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
       "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\Windows\\SSHTerminal.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\Admin\\Desktop\\project\\C\u002B\u002B(notepad\u002B\u002B)\\NppSSH\\CMakeLists.txt||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:CMakeLists.txt||{8B382828-6202-11D1-8870-0000F87579D2}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\Admin\\Desktop\\project\\C\u002B\u002B(notepad\u002B\u002B)\\NppSSH\\src\\Windows\\SSHWindow.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
@@ -30,20 +38,12 @@
       "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\Windows\\SSHPanel.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\Admin\\Desktop\\project\\C\u002B\u002B(notepad\u002B\u002B)\\NppSSH\\src\\Windows\\SSHConnection.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
-      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\Windows\\SSHConnection.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
-    },
-    {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\Admin\\Desktop\\project\\C\u002B\u002B(notepad\u002B\u002B)\\NppSSH\\src\\Windows\\SSHWindow.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
       "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\Windows\\SSHWindow.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\Admin\\Desktop\\project\\C\u002B\u002B(notepad\u002B\u002B)\\NppSSH\\src\\NppPluginSSH.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
       "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\NppPluginSSH.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\Admin\\Desktop\\project\\C\u002B\u002B(notepad\u002B\u002B)\\NppSSH\\CMakeLists.txt||{8B382828-6202-11D1-8870-0000F87579D2}",
-      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:CMakeLists.txt||{8B382828-6202-11D1-8870-0000F87579D2}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\Admin\\Desktop\\project\\C\u002B\u002B(notepad\u002B\u002B)\\NppSSH\\src\\SSHClient.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
@@ -128,7 +128,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 6,
+              "DocumentIndex": 8,
               "Title": "SSHPanel.h",
               "DocumentMoniker": "C:\\Users\\Admin\\Desktop\\project\\C\u002B\u002B(notepad\u002B\u002B)\\NppSSH\\src\\Windows\\SSHPanel.h",
               "RelativeDocumentMoniker": "src\\Windows\\SSHPanel.h",
@@ -140,7 +140,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 5,
+              "DocumentIndex": 7,
               "Title": "Richedit.h",
               "DocumentMoniker": "C:\\Program Files (x86)\\Windows Kits\\10\\Include\\10.0.26100.0\\um\\Richedit.h",
               "RelativeDocumentMoniker": "..\\..\\..\\..\\..\\..\\Program Files (x86)\\Windows Kits\\10\\Include\\10.0.26100.0\\um\\Richedit.h",
@@ -152,7 +152,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 2,
+              "DocumentIndex": 3,
               "Title": "SSHTerminal.h",
               "DocumentMoniker": "C:\\Users\\Admin\\Desktop\\project\\C\u002B\u002B(notepad\u002B\u002B)\\NppSSH\\src\\Windows\\SSHTerminal.h",
               "RelativeDocumentMoniker": "src\\Windows\\SSHTerminal.h",
@@ -171,7 +171,7 @@
               "RelativeDocumentMoniker": "src\\Windows\\SSHTerminal.cpp",
               "ToolTip": "C:\\Users\\Admin\\Desktop\\project\\C\u002B\u002B(notepad\u002B\u002B)\\NppSSH\\src\\Windows\\SSHTerminal.cpp",
               "RelativeToolTip": "src\\Windows\\SSHTerminal.cpp",
-              "ViewState": "AgIAAKkDAAAAAAAAAAAUwLYDAAAcAAAAAAAAAA==",
+              "ViewState": "AgIAAJ4GAAAAAAAAAAAiwKIGAAABAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
               "WhenOpened": "2026-04-30T01:35:17.587Z",
               "EditorCaption": ""
@@ -238,7 +238,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 8,
+              "DocumentIndex": 9,
               "Title": "SSHWindow.h",
               "DocumentMoniker": "C:\\Users\\Admin\\Desktop\\project\\C\u002B\u002B(notepad\u002B\u002B)\\NppSSH\\src\\Windows\\SSHWindow.h",
               "RelativeDocumentMoniker": "src\\Windows\\SSHWindow.h",
@@ -250,7 +250,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 3,
+              "DocumentIndex": 5,
               "Title": "SSHWindow.cpp",
               "DocumentMoniker": "C:\\Users\\Admin\\Desktop\\project\\C\u002B\u002B(notepad\u002B\u002B)\\NppSSH\\src\\Windows\\SSHWindow.cpp",
               "RelativeDocumentMoniker": "src\\Windows\\SSHWindow.cpp",
@@ -258,8 +258,7 @@
               "RelativeToolTip": "src\\Windows\\SSHWindow.cpp",
               "ViewState": "AgIAAIAAAAAAAAAAAAAowIoAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
-              "WhenOpened": "2026-03-27T03:52:32.334Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-03-27T03:52:32.334Z"
             },
             {
               "$type": "Document",
@@ -323,7 +322,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 4,
+              "DocumentIndex": 6,
               "Title": "SSHPanel.cpp",
               "DocumentMoniker": "C:\\Users\\Admin\\Desktop\\project\\C\u002B\u002B(notepad\u002B\u002B)\\NppSSH\\src\\Windows\\SSHPanel.cpp",
               "RelativeDocumentMoniker": "src\\Windows\\SSHPanel.cpp",
@@ -331,20 +330,20 @@
               "RelativeToolTip": "src\\Windows\\SSHPanel.cpp",
               "ViewState": "AgIAAHQCAAAAAAAAAAAUwIkCAAAFAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
-              "WhenOpened": "2026-04-17T08:40:29.416Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-04-17T08:40:29.416Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 7,
+              "DocumentIndex": 2,
               "Title": "SSHConnection.h",
               "DocumentMoniker": "C:\\Users\\Admin\\Desktop\\project\\C\u002B\u002B(notepad\u002B\u002B)\\NppSSH\\src\\Windows\\SSHConnection.h",
               "RelativeDocumentMoniker": "src\\Windows\\SSHConnection.h",
               "ToolTip": "C:\\Users\\Admin\\Desktop\\project\\C\u002B\u002B(notepad\u002B\u002B)\\NppSSH\\src\\Windows\\SSHConnection.h",
               "RelativeToolTip": "src\\Windows\\SSHConnection.h",
-              "ViewState": "AgIAAOwAAAAAAAAAAAAIwPMAAAA8AAAAAAAAAA==",
+              "ViewState": "AgIAAAYAAAAAAAAAAAAAACoBAAA2AAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000680|",
-              "WhenOpened": "2026-03-27T03:12:40.359Z"
+              "WhenOpened": "2026-03-27T03:12:40.359Z",
+              "EditorCaption": ""
             },
             {
               "$type": "Document",
@@ -354,14 +353,14 @@
               "RelativeDocumentMoniker": "src\\Windows\\SSHConnection.cpp",
               "ToolTip": "C:\\Users\\Admin\\Desktop\\project\\C\u002B\u002B(notepad\u002B\u002B)\\NppSSH\\src\\Windows\\SSHConnection.cpp",
               "RelativeToolTip": "src\\Windows\\SSHConnection.cpp",
-              "ViewState": "AgIAAI0DAAAAAAAAAAAlwJIDAAAQAAAAAAAAAA==",
+              "ViewState": "AgIAAIgBAAAAAAAAAAAAwGMBAAAHAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
               "WhenOpened": "2026-03-27T03:12:07.92Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 9,
+              "DocumentIndex": 10,
               "Title": "NppPluginSSH.cpp",
               "DocumentMoniker": "C:\\Users\\Admin\\Desktop\\project\\C\u002B\u002B(notepad\u002B\u002B)\\NppSSH\\src\\NppPluginSSH.cpp",
               "RelativeDocumentMoniker": "src\\NppPluginSSH.cpp",
@@ -385,15 +384,16 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 10,
+              "DocumentIndex": 4,
               "Title": "CMakeLists.txt",
               "DocumentMoniker": "C:\\Users\\Admin\\Desktop\\project\\C\u002B\u002B(notepad\u002B\u002B)\\NppSSH\\CMakeLists.txt",
               "RelativeDocumentMoniker": "CMakeLists.txt",
               "ToolTip": "C:\\Users\\Admin\\Desktop\\project\\C\u002B\u002B(notepad\u002B\u002B)\\NppSSH\\CMakeLists.txt",
               "RelativeToolTip": "CMakeLists.txt",
-              "ViewState": "AgIAAFMAAAAAAAAAAAAgwFcAAAANAAAAAAAAAA==",
+              "ViewState": "AgIAAFMAAAAAAAAAAAAgwF0AAAAYAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003109|",
-              "WhenOpened": "2026-03-24T08:39:54.292Z"
+              "WhenOpened": "2026-03-24T08:39:54.292Z",
+              "EditorCaption": ""
             },
             {
               "$type": "Document",
