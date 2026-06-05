@@ -138,6 +138,9 @@ void SSH_SetEnglishType(int panelIndex) {
     SSHTerminal_SetEnglishType(panelIndex);
 
 }
+void SSH_ClearOutputText(int panelIndex) {
+    SSHTerminal_ClearOutputText(panelIndex);
+}
 // 获取终端命令提示符
 std::string SSH_getPanelPrompt(int panelIndex) {
     return SSHTerminal_getPanelPrompt(panelIndex);

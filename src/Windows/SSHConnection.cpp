@@ -760,6 +760,9 @@ void SSHConnection::StartHeartbeat() {
 
 // 断开连接
 void SSHConnection::Disconnect() {
+    int panelId = SSHConnection_GetPanelId(this);
+    SSH_ClearOutputText(panelId);
+    SSH_AppendOutputText(panelId, "✅ SSH已断开\n等待新的连接...");
     StopShellReader();
     ReleaseResources();
     m_connected.store(false, std::memory_order_release);
@@ -903,14 +906,21 @@ void SSHConnection::ShellReaderLoop() {
                 SSH_SetIsCommandRunning(panelId, true);
             }
 
+            retry = 0; // 有输出就重置重试
+            NppSSH_LogInfoAuto("【输出】" + chunk);
             std::string lastLine = extractLastLine(chunk);
             if (!lastLine.empty()) {
                 std::lock_guard<std::mutex> lock(m_mutex);
                 m_prompt = lastLine;
+                if (panelId >= 0)//拿到提示符直接结束命令状态
+                {
+                    SSH_PanelPrompt(panelId, m_prompt);
+                    SSH_SetIsCommandRunning(panelId, false);
+                }
+                exitReason = ShellExitReason::PromptReceived;
+                goto exit_read_loop;
             }
 
-            retry = 0; // 有输出就重置重试
-            NppSSH_LogInfoAuto("【输出】" + chunk);
         }
         else if (n == 0) {
             std::this_thread::sleep_for(std::chrono::milliseconds(MAX_IDLE_MS));
@@ -951,12 +961,14 @@ void SSHConnection::ShellReaderLoop() {
             }
         }
     }
+    //命中正常提示符直接跳到此处，退出while循环
+    exit_read_loop:
+    ;
     if (m_stopReader.load(std::memory_order_acquire)) {
         exitReason = ShellExitReason::StoppedByUser;
     }
 
     if (panelId >= 0) {
-        std::string finalPrompt = m_prompt;
         std::string panelPrompt = SSH_getPanelPrompt(panelId);
         switch (exitReason) {
         case ShellExitReason::PromptReceived:
@@ -984,9 +996,11 @@ void SSHConnection::ShellReaderLoop() {
                 "\r\n[!] 命令执行异常（未知原因）\r\n" + panelPrompt);
             break;
         }
-        if (exitReason != ShellExitReason::PromptReceived) { finalPrompt = panelPrompt; }
-        SSH_PanelPrompt(panelId, finalPrompt);
-        SSH_SetIsCommandRunning(panelId, false);
+        if (exitReason != ShellExitReason::PromptReceived) {
+            SSH_PanelPrompt(panelId, panelPrompt);
+            SSH_SetIsCommandRunning(panelId, false);
+        }
+        
     }
 
     if (m_shellReaderThread.joinable()) {

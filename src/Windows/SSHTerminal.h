@@ -99,14 +99,17 @@ public:
     // 解析 ANSI 转义序列（核心：提取颜色并设置文本颜色）
     void SetPTYType(const std::string& ptyType);
     const PTYFeatures& GetPTYFeatures() const; // 获取当前PTY特性（对外提供只读访问）
-    void ParseAnsiColorSequence(const std::wstring& params);
-    void ParseAnsiControlSequence(const std::wstring& seq);//解析所有 ANSI 控制序列（颜色 + 模式）
     void ParseAnsiParseOnly(const std::wstring& seq, CHARFORMAT2W& outCf);//只解析参数、不操作控件、不 SetSel
+    void StoreTerminalContent(wchar_t ch);//单字符入库函数
+    void StoreTerminalContent(const std::string& str);//string字符入库函数
+    std::wstring GetStoreContent()const { return _oldStoreContent; }//获取存储内容
+    void SetStoreContent(const std::wstring wstr) { _oldStoreContent = std::move(wstr); }
     
 private:
     HWND _hTerminal;
     HWND _hwndParent = nullptr;
     bool _initialized = false;
+    std::wstring _oldStoreContent; // 只追加、永不删除
 
     HMODULE _hRichEditLib = nullptr;
     std::string _currentPTYType;    // 当前使用的PTY类型（如xterm-256color）
@@ -129,6 +132,7 @@ void SSHTerminal_AppendOutput(int panelIndex, const std::string& text);
 void SSHTerminal_PanelPrompt(int panelIndex, std::string prompt);
 void SSHTerminal_SetIsCommandRunning(int panelIndex, bool isCommandRunning);
 void SSHTerminal_SetEnglishType(int panelIndex);
+void SSHTerminal_ClearOutputText(int panelIndex);
 std::string SSHTerminal_getPanelPrompt(int panelIndex);
 
 SSHTerminal* getSSHTerminal(int panelIndex);

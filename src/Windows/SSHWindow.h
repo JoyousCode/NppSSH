@@ -38,6 +38,7 @@
 #define SSH_FIX_STATE      (WM_USER + 1009)
 #define SSH_SET_READONLY   (WM_USER + 1010)
 #define WM_APPEND_OUTPUT_TEXT (WM_USER + 2001)
+#define MSG_FIX_SELECT_TRAIL_NEWLINE (WM_USER + 2002)
 
 /////////////////////////////////////////////////////////////初始值在SSHPanel
 // 全局变量声明（供SSHClient调用）
@@ -103,6 +104,7 @@ void SSH_AppendOutputText(int panelIndex, const std::string& text);
 void SSH_PanelPrompt(int panelIndex, const std::string prompt);
 void SSH_SetIsCommandRunning(int panelIndex, bool isCommandRunning);
 void SSH_SetEnglishType(int panelIndex);
+void SSH_ClearOutputText(int panelIndex);//清空伪终端内容
 // 获取终端命令提示符
 std::string SSH_getPanelPrompt(int panelIndex);
 void SSH_resetSSHTerminal(int panelIndex);

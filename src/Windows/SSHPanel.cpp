@@ -127,7 +127,7 @@ void NppSSHDockPanel::setSSHConnected(bool state) {
         else {
             NppSSH_LogInfoAuto("NppSSH_Disconnect====" + std::to_string(this->_panelId));
             NppSSH_Disconnect(this->_panelId);        //调用转发断开连接释放当前面板连接资源
-            ::SetWindowTextW(_hOutputEdit, L"🔌 SSH已断开\n等待新的连接...");
+            
         }
         NppSSH_LogInfoAuto("setSSHConnected==========PanelID======" + std::to_string(this->_panelId));
         //MessageBoxW(s_nppData._nppHandle, (L"当前面板ID==" + std::to_wstring(this->_panelId)).c_str(), L"NppSSH", MB_OK | MB_TASKMODAL);
@@ -617,7 +617,7 @@ INT_PTR CALLBACK NppSSHDockPanel::run_dlgProc(UINT message, WPARAM wParam, LPARA
 
                     //MessageBoxW(s_nppData._nppHandle, std::to_wstring(this->_panelId).c_str(), L"NppSSH", MB_OK | MB_TASKMODAL);
                     //DisconnectPanel(this -> _panelId);// 面板断开SSH函数
-                    ::SetWindowTextW(_hOutputEdit, L"✅ SSH已断开\n等待新的连接...");
+                    //::SetWindowTextW(_hOutputEdit, L"✅ SSH已断开\n等待新的连接...");
                 }
                 //::MessageBoxW(s_nppData._nppHandle, L"SSH连接已断开", L"NppSSH提示", MB_OK | MB_ICONINFORMATION);
             }
@@ -657,13 +657,26 @@ INT_PTR CALLBACK NppSSHDockPanel::run_dlgProc(UINT message, WPARAM wParam, LPARA
     case WM_NOTIFY: 
     {
         LPNMHDR pnmh = reinterpret_cast<LPNMHDR>(lParam);
+
         if (pnmh->hwndFrom == s_nppData._nppHandle) {
             switch (LOWORD(pnmh->code)) {
             case DMN_FLOAT: _isFloating = true; break;
             case DMN_DOCK: _isFloating = false; _iDockedPos = HIWORD(pnmh->code); break;
             case DMN_CLOSE: ::PostMessage(_hSelf, WM_CLOSE, 0, 0); break;
             }
+            // 停靠消息消费，截断消息，不再向下传递
+            return TRUE;
         }
+
+
+        // 2.消息来源是Terminal富文本：全部放行，交给编辑框子类处理
+        if (pnmh->hwndFrom == this->_hOutputEdit)
+        {
+            //NppSSH_LogInfoAuto("父转发Terminal通知 code:" + std::to_string(pnmh->code));
+            SendMessageW(_hOutputEdit, WM_NOTIFY, wParam, lParam);
+            return TRUE;
+        }
+
         return TRUE;
     }
 
