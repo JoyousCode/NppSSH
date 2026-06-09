@@ -393,7 +393,7 @@ void NppSSHDockPanel::initPanel() {
     if (!_hOutputEdit) {
         ::MessageBoxW(s_nppData._nppHandle, L"NPP插件环境_hOutputEdit初始化失败！", L"NppSSH调试提示", MB_OK);
     }
-    SSH_AppendOutputText(_panelId, "✅ NppSSH面板已创建\r\n等待SSH连接...");
+    SSH_AppendOutputText(_panelId, "✅NppSSH面板已创建wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww\r\n等待SSH连接...");
     
     //if (_hSelf && ::IsWindow(_hSelf)) {         // 强制设置面板窗口样式，解决遮挡/闪烁问题
     //    DWORD dwStyle = ::GetWindowLongPtrW(_hSelf, GWL_STYLE);
@@ -519,6 +519,7 @@ INT_PTR CALLBACK NppSSHDockPanel::SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM 
                     }
                     else {
                         EndDialog(hWnd, IDOK); // 官方标准关闭
+
                     }
                     if (pPanel && LOWORD(wParam) == IDC_BTN_CONNECT) {
                         pPanel->setSSHConnected(true);//更新面板显示效果，绑定面板ID和session
@@ -546,7 +547,25 @@ INT_PTR CALLBACK NppSSHDockPanel::SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM 
                 // 关键：必须用 PostMessage，不能用 SendMessage
                 //PostMessageW(hEdit, WM_USER + 1001, 0, 0);
                 SSH_SetEnglishType(pPanel->GetPanelIndex());//强制将微软拼音的输入模式改为英文模式
-                NppSSH_LogInfoAuto("已发送修复消息 WM_USER+1001 到伪终端");
+
+
+                HWND panelHwnd = pPanel->get_panelHwnd();
+                RECT rc;
+                GetClientRect(panelHwnd, &rc);
+                int w = rc.right - rc.left;
+                int h = rc.bottom - rc.top;
+                NppSSH_LogInfoAuto("WM_SIZE 面板新尺寸 -> 宽度:" + std::to_string(w)
+                    + "  高度:" + std::to_string(h));
+                if (w > 0 && h > 0)
+                {
+                    // 伪造一次 WM_SIZE（SIZE_RESTORED 表示“正常尺寸变化”）
+                    SendMessageW(
+                        panelHwnd,
+                        WM_SIZE,
+                        SIZE_RESTORED,
+                        MAKELPARAM(w, h)
+                    );
+                }
             }
         }
 
@@ -578,6 +597,20 @@ INT_PTR CALLBACK NppSSHDockPanel::run_dlgProc(UINT message, WPARAM wParam, LPARA
     // 面板大小变化时，自动适配输出文本框（防止遮挡/空白）（最小化关闭/打开notepad++会自动触发）
     case WM_SIZE: 
     {
+        UINT sizeType = (UINT)wParam;
+        int nClientW = LOWORD(lParam);
+        int nClientH = HIWORD(lParam);
+
+        if (sizeType == SIZE_MINIMIZED || nClientW <= 0 || nClientH <= 0)
+            break;
+        SetProp(_hOutputEdit, L"NppSSH_PanelW", (HANDLE)(LONG_PTR)nClientW);
+        SetProp(_hOutputEdit, L"NppSSH_PanelH", (HANDLE)(LONG_PTR)nClientH);
+
+        // 只负责重置定时器
+        SetTimer(_hSelf, TIMER_ID_RESIZE_PTY, 200, nullptr);
+        //NppSSH_LogInfoAuto("WM_SIZE 面板新尺寸 -> 宽度:" + std::to_string(nClientW)
+            //+ "  高度:" + std::to_string(nClientH));
+
         if (initPanle && _hSelf && ::IsWindow(_hSelf) && _hOutputEdit && ::IsWindow(_hOutputEdit))
         {
             //::MessageBoxW(s_nppData._nppHandle, L"SSH面板变化", L"NppSSH提示", MB_OK | MB_ICONINFORMATION);
@@ -587,6 +620,15 @@ INT_PTR CALLBACK NppSSHDockPanel::run_dlgProc(UINT message, WPARAM wParam, LPARA
             ::RedrawWindow(_hSelf, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);// 刷新整个面板 + 所有子控件（解决最大化/还原/遮挡BUG）
         }
         return TRUE;
+    }
+    case WM_TIMER:
+    {
+        if (wParam == TIMER_ID_RESIZE_PTY)
+        {
+            KillTimer(_hSelf, TIMER_ID_RESIZE_PTY);
+            SendMessageW(_hOutputEdit,WM_USER_RESIZE_PTY,0,0);
+        }
+        break;
     }
     // 子类化配套父窗口消息,要在父类做默认处理
     //case WM_KEYUP:

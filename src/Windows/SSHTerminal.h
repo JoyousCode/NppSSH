@@ -5,7 +5,11 @@
 #include <shlwapi.h>
 #include <algorithm>
 #include <windows.h>
-#include <consoleapi2.h>
+#include <consoleapi.h>      // ConPTY API
+#include <consoleapi2.h>    // 控制台API扩展
+#include <wincon.h>          // 控制台常量
+#include <processthreadsapi.h> // 进程/线程API
+
 #include <processenv.h>
 #include <richedit.h>       // RichEdit 核心头文件
 #include <commctrl.h>       // 可选（若需高级功能）
@@ -73,7 +77,7 @@ public:
 
     HWND Get_TerminalHandle() const;
 
-    // 输出文本到输出框（迁移自AppendOutputText）
+    // 输出文本到输出框
     void AppendOutputText(const std::string& text);
 
     // 检查光标位置是否合法（迁移自IsCursorInEditableArea）

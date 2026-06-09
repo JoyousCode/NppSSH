@@ -61,7 +61,9 @@ bool NppSSH_ExecuteCommand(int panelIndex, const std::string& cmd) {
 std::string NppSSH_PanelPrompt(int panelIndex) {
     return SSHConnection_Prompt(panelIndex);
 }
-
+void NppSSH_libssh2_channel_request_pty_size(int panelId, int cols, int rows) {
+    SSHConnection_libssh2_channel_request_pty_size(panelId, cols, rows);
+}
 /**************（实际定义在SSHLog中）***************/
 // 日志转发实现：调试级
 void NppSSH_LogDebug(const std::string& event, const std::string& content) {

@@ -1809,6 +1809,7 @@ bool SSHConnection::CreatePtyChannel() {
                 channel,
                 term_type.c_str()
             );
+            
             //int ret = libssh2_channel_request_pty(
             //    channel,
             //    term_type.c_str(),
@@ -2294,4 +2295,36 @@ std::string SSHConnection_Prompt(int panelIndex) {
 
     // 5. 已连接 → 返回真实提示符
     return conn->GetPrompt();
+}
+
+void SSHConnection_libssh2_channel_request_pty_size(int panelIndex, int cols, int rows) {
+    // 1. 工具函数判断面板是否存在
+    if (!IsPanelIdExists(panelIndex)) {
+        NppSSH_LogInfoAuto("当前未连接，不能设置大小");
+        return;
+    }
+
+    // 2. 工具函数获取实例
+    SSHConnection* conn = GetSSHConnectionByPanelId(panelIndex);
+
+    // 3. 实例不存在 → 返回默认提示符
+    if (!conn) {
+        NppSSH_LogInfoAuto("当前实例不存在，不能设置大小");
+        return;
+    }
+
+    // 4. 未连接 → 返回默认提示符
+    if (!conn->IsConnected()) {
+        NppSSH_LogInfoAuto("当前实例未连接，不能设置大小");
+        return;
+    }
+    // 5. 已连接 → 设置大小
+    conn->SetPTYSize(cols, rows);
+}
+void SSHConnection::SetPTYSize(int cols,int rows) {
+    NppSSH_LogInfoAuto("【最终】设置大小，列=" + IntToStr(cols)+"，行=" + IntToStr(rows));
+    LIBSSH2_CHANNEL* channel = m_shellChannel.load(std::memory_order_acquire);
+    if (!channel)
+        return;
+    libssh2_channel_request_pty_size(channel, cols, rows);
 }

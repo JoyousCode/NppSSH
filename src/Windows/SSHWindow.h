@@ -39,6 +39,8 @@
 #define SSH_SET_READONLY   (WM_USER + 1010)
 #define WM_APPEND_OUTPUT_TEXT (WM_USER + 2001)
 #define MSG_FIX_SELECT_TRAIL_NEWLINE (WM_USER + 2002)
+#define TIMER_ID_RESIZE_PTY (WM_USER + 2003)
+#define WM_USER_RESIZE_PTY (WM_USER + 2004)
 
 /////////////////////////////////////////////////////////////初始值在SSHPanel
 // 全局变量声明（供SSHClient调用）
@@ -77,7 +79,7 @@ void NppSSH_ResetConnectionState(int panelId);		// 重置连接状态（暂未�
 // 新增：命令执行中转接口声明
 bool NppSSH_ExecuteCommand(int panelIndex, const std::string& cmd); // 执行SSH命令
 std::string NppSSH_PanelPrompt(int panelIndex);
-
+void NppSSH_libssh2_channel_request_pty_size(int panelId, int cols, int rows);
 
 
 //////////////////////////////////////////////////////////////////////////别的文件调用SSHLog的函数内容

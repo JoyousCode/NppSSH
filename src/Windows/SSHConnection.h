@@ -164,6 +164,8 @@ public:
     //后台持续读（官方poll）
     void StartShellReader();
     void StopShellReader();
+
+    void SetPTYSize(int cols, int rows);
     
 private:
     // 私有工具函数
@@ -283,6 +285,7 @@ bool SSHConnection_IsConnected(int panelId);
 void SSHConnection_ResetState(int panelId);
 bool SSHConnection_ExecuteCommand(int panelIndex, const std::string& cmd);
 std::string SSHConnection_Prompt(int panelIndex);
+void SSHConnection_libssh2_channel_request_pty_size(int panelId, int cols, int rows);
 
 // 工具函数声明
 inline std::wstring GBKToWstring(const std::string& str);

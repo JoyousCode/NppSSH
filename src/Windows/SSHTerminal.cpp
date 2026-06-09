@@ -49,10 +49,10 @@ static DWORD GetValidSelEnd(const std::wstring& fullText, DWORD selStart, DWORD 
 }
 inline std::wstring CleanrrW(const std::wstring& allText) {
     std::wstring fixedText = allText;
-    //for (wchar_t c : allText) {
-    //    if (c == L'\r') continue; // 删掉 RichEdit 自动加的所有 \r
-    //    fixedText += c;
-    //}
+    for (wchar_t c : allText) {
+        if (c == L'\r') continue; // 删掉 RichEdit 自动加的所有 \r
+        fixedText += c;
+    }
     return fixedText;
 }
 inline std::wstring NormalizeTerminalLineFeed(std::wstring src)
@@ -595,12 +595,12 @@ LRESULT CALLBACK SSHTerminal::TerminalEditProc(HWND hWnd, UINT msg, WPARAM wPara
         msg == WM_PASTE || msg == WM_COPY || msg == WM_CUT || msg == WM_CLEAR ||
         // 3.鼠标相关（右键+左键拖动，选区变更依赖）
         //msg == WM_LBUTTONDOWN || msg == WM_LBUTTONUP || msg == WM_LBUTTONDBLCLK ||
-        //msg == WM_RBUTTONDOWN || msg == WM_RBUTTONUP || msg == WM_RBUTTONDBLCLK || msg == WM_CONTEXTMENU ||
+        msg == WM_RBUTTONDOWN || msg == WM_RBUTTONUP || msg == WM_RBUTTONDBLCLK || msg == WM_CONTEXTMENU ||
         // msg == WM_MOUSEWHEEL || //msg == WM_MOUSEMOVE ||
         // 4.核心必须加：WM_NOTIFY（EN_SELCHANGE选区通知依赖这条，不加收不到选中回调）
         msg == WM_NOTIFY || wParam == EN_SELCHANGE ||
         // 5.自定义业务消息
-        msg == WM_APPEND_OUTPUT_TEXT ||
+        msg == WM_APPEND_OUTPUT_TEXT || msg == WM_USER_RESIZE_PTY ||
         isIMEMsg
         );
     // 非键盘消息直接放行，不记录日志
@@ -643,6 +643,35 @@ LRESULT CALLBACK SSHTerminal::TerminalEditProc(HWND hWnd, UINT msg, WPARAM wPara
     // 
     // 
     // 
+    case WM_USER_RESIZE_PTY:
+    {
+        int w = (int)(LONG_PTR)GetProp(hWnd, L"NppSSH_PanelW");
+        int h = (int)(LONG_PTR)GetProp(hWnd, L"NppSSH_PanelH");
+
+        if (w <= 0 || h <= 0)
+            break;
+
+        // ✅ 字体计算
+        HFONT hFont = (HFONT)SendMessage(hWnd, WM_GETFONT, 0, 0);
+        HDC hdc = GetDC(hWnd);
+        SelectObject(hdc, hFont);
+
+        TEXTMETRIC tm;
+        GetTextMetrics(hdc, &tm);
+        //NppSSH_LogInfoAuto("【WM_USER_RESIZE_PTY】宽度="+IntToStr(tm.tmAveCharWidth)+",高度=" + IntToStr(tm.tmHeight));
+        int cols = w / tm.tmAveCharWidth;
+        int rows = h / (tm.tmHeight + tm.tmExternalLeading);
+
+        ReleaseDC(hWnd, hdc);
+        int panelId = terminal->GetPanelId();
+        if (cols > 0 && rows > 0)
+        {
+            NppSSH_libssh2_channel_request_pty_size(panelId, cols, rows);
+        }
+        res = CallWindowProc(oldProc, hWnd, msg, wParam, lParam);
+        s_bProcessingMsg = false;
+        return res;
+    }
     case WM_IME_STARTCOMPOSITION:
         NppSSH_LogInfoAuto("【输入法】WM_IME_STARTCOMPOSITION分支已进入");
         res = CallWindowProc(oldProc, hWnd, msg, wParam, lParam);
@@ -1169,7 +1198,7 @@ LRESULT CALLBACK SSHTerminal::TerminalEditProc(HWND hWnd, UINT msg, WPARAM wPara
             std::string cmdToExecute = terminal->GetCmd();
             if (cmdToExecute.empty()) {
                 NppSSH_LogInfoAuto("【跳过】无命令可执行，仅换行");
-                SSHTerminal_AppendOutput(terminal->GetPanelId(), "\r\n" + terminal->GetPrompt());
+                SSHTerminal_AppendOutput(terminal->GetPanelId(), "\n" + terminal->GetPrompt());
                 res = 0;
                 s_bProcessingMsg = false;
                 return res;
@@ -1375,7 +1404,47 @@ LRESULT CALLBACK SSHTerminal::TerminalEditProc(HWND hWnd, UINT msg, WPARAM wPara
     s_bProcessingMsg = false;
     return res;
 }
+// 扩展断行回调（Msftedit 高版本 RichEdit 专用，优先级更高）
+LRESULT CALLBACK ForceBreakWordBreakProcEx(
+    LPTSTR lpch,
+    int ichCurrent,
+    int cch,
+    int code,
+    DWORD dwFlags,
+    UINT codepage
+)
+{
+    // WB_ISDELIMITER：所有字符均视为分隔符 → 任意位置可换行
+    if (code == WB_ISDELIMITER)
+    {
+        return TRUE;
+    }
+    // WB_CLASSIFY：当前字符后允许换行
+    if (code == WB_CLASSIFY)
+    {
+        return WBF_BREAKAFTER;
+    }
+    return 0;
+}
 
+// 原有传统断行回调（保留，兼容低版本）
+LRESULT CALLBACK ForceBreakWordBreakProc(
+    LPARAM /*lParam*/,
+    int code,
+    WPARAM wParam,
+    LPARAM /*lParam2*/
+)
+{
+    if (code == WB_ISDELIMITER)
+    {
+        return TRUE;
+    }
+    if (code == WB_CLASSIFY)
+    {
+        return WBF_BREAKAFTER;
+    }
+    return 0;
+}
 SSHTerminal::SSHTerminal() {
     // 初始化成员变量（避免野指针）
 
@@ -1447,7 +1516,7 @@ HWND SSHTerminal::InitTerminalEditBox(HWND hParent) {
         WS_EX_CLIENTEDGE | WS_EX_NOPARENTNOTIFY | WS_EX_ACCEPTFILES,
         MSFTEDIT_CLASS,
         L"",
-        WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_AUTOHSCROLL | ES_WANTRETURN | ES_NOHIDESEL,
+        WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_WANTRETURN | ES_NOHIDESEL,
         x, y, cx, cy,
         _hwndParent,
         (HMENU)IDC_OUTPUT_EDIT,
@@ -1481,50 +1550,54 @@ HWND SSHTerminal::InitTerminalEditBox(HWND hParent) {
     //开启RichEdit内置右键菜单 
     //SendMessage(_hTerminal, EM_SETEVENTMASK, 0, ENM_MOUSEEVENTS);
 
+    // 隐藏水平滚动条（双重保险）
+    ShowScrollBar(_hTerminal, SB_HORZ, FALSE);
+    // 强制隐藏水平滚动条，禁止横向延伸
+    SetWindowLongPtrW(_hTerminal, GWL_STYLE,
+        GetWindowLongPtrW(_hTerminal, GWL_STYLE) & ~WS_HSCROLL);
+    // 2. 绑定【扩展断行回调 EM_SETWORDBREAKPROCEX】(Msftedit 首选接口)
+    // 高版本 RichEdit 优先使用该接口，传统 EM_SETWORDBREAKPROC 作为兼容兜底
+    //SendMessageW(_hTerminal, EM_SETWORDBREAKPROCEX, 0, (LPARAM)ForceBreakWordBreakProcEx);
+    // 传统断行回调 兼容旧逻辑
+    //SendMessageW(_hTerminal, EM_SETWORDBREAKPROC, 0, (LPARAM)ForceBreakWordBreakProc);
     
+    // 3. 绑定换行宽度为控件自身宽度（永久生效，布局刷新也保留）
+    HDC hdc = GetDC(_hTerminal);
+    SendMessageW(_hTerminal, EM_SETTARGETDEVICE, (WPARAM)hdc, (LPARAM)0);
+    ReleaseDC(_hTerminal, hdc);
     
-
     // 创建控件后，设置字符集
     CHARFORMAT2W cf = { 0 };
     cf.cbSize = sizeof(CHARFORMAT2W);
     cf.dwMask = CFM_CHARSET;
     //cf.bCharSet = CP_UTF8; // 强制 UTF-8 字符集
-    //cf.bCharSet = DEFAULT_CHARSET;
-    cf.bCharSet = GB2312_CHARSET;
+    cf.bCharSet = DEFAULT_CHARSET;
+    //cf.bCharSet = GB2312_CHARSET;
     SendMessageW(_hTerminal, EM_SETCHARFORMAT, SCF_ALL, (LPARAM)&cf);
-    // 设置样式
-    //DWORD style = ::GetWindowLongPtrW(_hTerminal, GWL_STYLE);
-    //style |= ES_MULTILINE | ES_AUTOHSCROLL | WS_VSCROLL;
-    //::SetWindowLongPtrW(_hTerminal, GWL_STYLE, style);
+
     int fontSize = 28;
     // 设置默认字体（等宽字体，适配终端）
     HFONT hFont = CreateFontW(fontSize, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-        GB2312_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
         DEFAULT_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Courier New");// 备选："Courier New"、"Lucida Console"、"Microsoft YaHei"
     SendMessageW(_hTerminal, WM_SETFONT, (WPARAM)hFont, TRUE);
     // 关闭横向自动滚动：超出宽度下沉换行，禁用水平滚动条
-    SendMessageW(_hTerminal, EM_SETTARGETDEVICE, 0, 0);
+    //SendMessageW(_hTerminal, EM_SETTARGETDEVICE, 0, 0);
 
-    PARAFORMAT2 pf = { 0 };
+    PARAFORMAT2 pf{};
     pf.cbSize = sizeof(PARAFORMAT2);
     // 启用：对齐+行间距，其余全部关闭
-    pf.dwMask = PFM_ALIGNMENT | PFM_LINESPACING | PFM_SPACEBEFORE | PFM_SPACEAFTER;
+    pf.dwMask = PFM_ALIGNMENT | PFM_LINESPACING | PFM_SPACEBEFORE | PFM_SPACEAFTER | PFM_OFFSET;
     pf.wAlignment = PFA_LEFT;
-    // 段前段后0空白，杜绝自动空行
-    pf.dySpaceBefore = 0;
+    pf.dySpaceBefore = 0; // 段前段后0空白，杜绝自动空行
     pf.dySpaceAfter = 0;
-    // 固定紧凑行高，适配Courier New等宽终端字体
-    pf.bLineSpacingRule = 3;
-    // 换算字体高度（字体30pt，行高匹配）
-    pf.dyLineSpacing = MulDiv(fontSize, 1440, 96);
-    // 缩进全部关闭
-    pf.dxStartIndent = 0;
+    pf.bLineSpacingRule = 0;// 固定紧凑行高，适配Courier New等宽终端字体
+    pf.dyLineSpacing = MulDiv(fontSize, 1440, 96);// 换算字体高度（字体30pt，行高匹配）
+    pf.dxStartIndent = 0;// 缩进全部关闭
     pf.dxRightIndent = 0;
     pf.dxOffset = 0;
 
     SendMessageW(_hTerminal, EM_SETPARAFORMAT, 0, (LPARAM)&pf);
-    // 仅保留开启富文本，启用颜色渲染【关键】
-    SendMessageW(_hTerminal, EM_SETTEXTMODE, TM_RICHTEXT, 0);
 
     // 按位或 追加需要的事件（不覆盖原有）
     // 1、事件掩码 EVENTMASK：只加ENM_系列，管控WM_NOTIFY通知
@@ -1533,25 +1606,37 @@ HWND SSHTerminal::InitTerminalEditBox(HWND hParent) {
     dwMask |= ENM_SELCHANGE;     // 选区变化通知（用来自动修正末尾换行）
     dwMask |= ENM_SCROLL;
     dwMask |= ENM_PROTECTED;
-    //dwMask &= ~(SES_UPPERCASE | SES_LOWERCASE | SES_BIDI);
-    //dwMask &= ~SES_USECRLF;         // 禁用旧CRLF模式（废弃标记，配套关闭）
-    //dwMask &= ~(SES_UPPERCASE | SES_LOWERCASE | SES_BIDI);//关闭自动大小写、无用输入限制
     // 3.写回掩码
     SendMessage(_hTerminal, EM_SETEVENTMASK, 0, dwMask);
 
     //2、 编辑样式 EDITSTYLE：只加SES_系列，管控输入/IME/换行 
     DWORD dwEditStyle = SendMessage(_hTerminal, EM_GETEDITSTYLE, 0, 0);
     dwEditStyle |= SES_USECTF;        //启用TSF微软拼音(可切换中英文)
-    //dwEditStyle |= SES_NOIME; 
+    dwEditStyle |= SES_NOIME; 
     dwEditStyle |= SES_XLTCRCRLFTOCR; //用户回车\r\n自动转\n
+    dwEditStyle |= SES_NOEALINEHEIGHTADJUST; //防止 Courier New + 中文 行高抖动
+    //dwEditStyle |= SES_DRAFTMODE; ; //草稿模式 简化格式
+    dwEditStyle &= ~SES_USECRLF;  // 禁用旧CRLF模式（废弃标记，配套关闭）
     dwEditStyle &= ~(SES_UPPERCASE | SES_LOWERCASE | SES_BIDI);//关闭自动大小写、双向文字
+    //dwEditStyle &= ~SES_WORDWRAP;  // 禁用原生整词换行，配合自定义断行回调
     SendMessage(_hTerminal, EM_SETEDITSTYLE, dwEditStyle, 0);
 
+    // 🔑 关键：设置排版选项（强制简单换行）
+    //BOOL r = SendMessageW(_hTerminal, EM_SETTYPOGRAPHYOPTIONS, TO_DISABLECUSTOMTEXTOUT, TO_DISABLECUSTOMTEXTOUT);
+    //NppSSH_LogInfoAuto("【EM_SETTYPOGRAPHYOPTIONS 】result=" + IntToStr(r ? 1 : 0));
+    // 确保文本模式
+    SendMessageW(_hTerminal, EM_SETTEXTMODE, TM_RICHTEXT, 0);
+
+    // 设置文本边距为 0
+    RECT zeroMargin = { 0, 0, 0, 0 };
+    SendMessageW(_hTerminal, EM_SETRECTNP, 0, (LPARAM)&zeroMargin);
+
+    
+   
 
     SetPTYType("xterm-256color");// 初始化默认PTY类型（可从配置/用户选择动态修改）
     // 调整输出伪终端位置，避开顶部按钮栏
     SizeSSHTerminal(hParent);
-
     // ==== 挂载子类化 ====
     if (!_oldEditProc) {
         // 1. 获取原窗口过程
@@ -1618,7 +1703,7 @@ void SSHTerminal::disConnection() {
 */
 void SSHTerminal::resetSSHTerminal() {
     if (_hTerminal && ::IsWindow(_hTerminal)) {
-        ::SetWindowTextW(_hTerminal, L"🔌 SSH已断开\r\n等待新的连接...resetPanelToInit");
+        ::SetWindowTextW(_hTerminal, L"🔌 SSH已断开\n等待新的连接...resetPanelToInit");
     }
 }
 /*
@@ -1659,8 +1744,17 @@ void SSHTerminal::SizeSSHTerminal(HWND hParent) {//hParent=面板的_hSelf
         x, y, cx, cy,
         SWP_NOZORDER | SWP_NOACTIVATE
     );
+    SendMessageW(_hTerminal, EM_REQUESTRESIZE, 0, 0);
+
+    // 窗口缩放后，强制刷新换行宽度
+    //HDC hdc = GetDC(_hTerminal);
+    //SendMessageW(_hTerminal, EM_SETTARGETDEVICE, (WPARAM)hdc, (LPARAM)0);
+    //ReleaseDC(_hTerminal, hdc);
+    //// 重绑定断行回调（防止布局重置）
+    //SendMessageW(_hTerminal, EM_SETWORDBREAKPROCEX, 0, (LPARAM)ForceBreakWordBreakProcEx);
+
     //只重绘【伪终端】自己让伪终端立刻刷新、重新绘制自己的内容、文字、背景、边框。
-    ::RedrawWindow(_hTerminal, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);// 刷新伪终端内容（防止文字不显示）
+    //::RedrawWindow(_hTerminal, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);// 刷新伪终端内容（防止文字不显示）
 }
 
 // 宽字符版本调试打印
@@ -1750,24 +1844,27 @@ void SSHTerminal::AppendOutputText(const std::string& text) {
 
     //std::string cleanText = CleanAnsiEscapeSequences(text);
     std::string cleanText = text;
-
+    NppSSH_LogInfoAuto("【原始字符内容=======================================】");
+    DeBugOutPutText(cleanText);
     //cleanText = Cleanrr(cleanText);//清除所有\n前面的\r
     
     // 1、转宽字符
     std::wstring rawW = UTF8ToWstring(cleanText);
     // 2、统一换行预处理（删除全部\r、合并连续\n）
     std::wstring normW = NormalizeTerminalLineFeed(rawW);
-    std::wstring* wtext = new std::wstring(normW);
-    NppSSH_LogInfoAuto("【原始宽字符内容】" + WStringToLogStr(*wtext));
 
-    //NppSSH_LogInfoAuto("清除输出文本到输出框前");
-    //DeBugOutPutText(text);
-    //NppSSH_LogInfoAuto("清除输出文本到输出框后");
-    //DeBugOutPutText(cleanText);
-    NppSSH_LogInfoAuto("原始宽字符内容");
+    // 3、调用自动换行函数（封装后的核心逻辑）
+    //std::wstring wrapText = AutoWrapText(normW);
+    ////////////////////////////wrapText
+
+
+    std::wstring* wtext = new std::wstring(normW);
+    //NppSSH_LogInfoAuto("【原始宽字符内容】" + WStringToLogStr(*wtext));
+    NppSSH_LogInfoAuto("【原始宽字符内容=======================================】");
+    //DeBugOutPutText(wtext->c_str());
+    NppSSH_LogInfoAuto("【原始宽字符内容,删除全部\r、合并连续\n处理后=======================================】");
     DeBugOutPutText(wtext->c_str());
-    NppSSH_LogInfoAuto("【原始宽字符内容清除后】");
-    DeBugOutPutText(normW);
+    
     // ✅ 投递到主线程（绝对安全）
 
     PostMessage(_hTerminal, WM_APPEND_OUTPUT_TEXT, 0, (LPARAM)wtext);
@@ -1794,17 +1891,42 @@ bool SSHTerminal::IsCursorInEditableArea() const {
     DWORD cpMin = 0, cpMax = 0;
     ::SendMessageW(_hTerminal, EM_GETSEL, (WPARAM)&cpMin, (LPARAM)&cpMax);
     DWORD cursorPos = cpMin;
+
+    // 2. 获取 store 内容（无 \r）
     std::wstring allText = GetStoreContent();
-    allText = CleanrrW(allText);// 删掉 RichEdit 自动加的所有 \r
+    allText = CleanrrW(allText);// 双重保险，\n前面紧挨的所有 \r
+    DWORD storedCursorPos = cursorPos;
+
+    if (cursorPos > 0) {
+        // 获取 RichEdit 中 [0, cursorPos) 的文本
+        std::wstring prefix(cursorPos + 1, 0);
+        TEXTRANGE tr{ {0, (LONG)cursorPos}, &prefix[0] };
+        SendMessageW(_hTerminal, EM_GETTEXTRANGE, 0, (LPARAM)&tr);
+
+        // 计算 \r 的数量（RichEdit 独有）
+        int crCount = std::count(prefix.begin(), prefix.end(), L'\r');
+        storedCursorPos = cursorPos - crCount;
+
+        // 防御性修正
+        if (storedCursorPos > allText.size())
+            storedCursorPos = static_cast<DWORD>(allText.size());
+    }
+    NppSSH_LogInfoAuto("【调试11111111111111111】");
     DeBugOutPutText(allText);
     // 3. 找光标所在行
     size_t lastLineStart = 0;
     // 从后往前找，跳过所有空白、换行、不可见字符
     for (size_t i = cursorPos; i > 0; --i) {
-        if (allText[i] == L'\n' || allText[i] == L'\r') {
-            lastLineStart = i + 1; break;
+        if (allText[i-1] == L'\n' || allText[i-1] == L'\r') {
+            lastLineStart = i; break;
         }
     }
+    NppSSH_LogInfoAuto("【调试2222222222222222】");
+    NppSSH_LogInfoAuto("【调试】RichEdit光标=" + IntToStr(cursorPos)
+        + " 映射后store光标=" + IntToStr(storedCursorPos)
+        + " store大小=" + IntToStr(allText.size())
+        + " lastLineStart=" + IntToStr(lastLineStart));
+
     DeBugOutPutText(allText);
     std::string loginfoDebug = "【可编辑判定调试】 "
         "_prompt=[" + _prompt + "] "
@@ -1813,7 +1935,7 @@ bool SSHTerminal::IsCursorInEditableArea() const {
 
     NppSSH_LogInfoAuto(loginfoDebug);
     // 光标不在最后一行 → 不可编辑
-    if (cursorPos < lastLineStart) {
+    if (storedCursorPos < lastLineStart) {
         NppSSH_LogInfoAuto("[可编辑判定] 光标不在最后一行，禁止编辑");
         return false;
     }
@@ -1823,7 +1945,7 @@ bool SSHTerminal::IsCursorInEditableArea() const {
     // 6. 处理提示符（清理乱码）
     //std::wstring promptW = CleanAnsiEscapeSequences(UTF8ToWstring(_prompt));
     std::wstring promptW = (UTF8ToWstring(_prompt));
-    int promptLen = promptW.size();
+    int promptLen = static_cast<int>(promptW.size());
 
     if (promptLen <= 0) {
         NppSSH_LogInfoAuto("[可编辑判定] 清理后提示符为空，禁止编辑");
@@ -1832,28 +1954,21 @@ bool SSHTerminal::IsCursorInEditableArea() const {
 
 
     // 6. 最后一行必须以提示符开头
-    // 判断最后一行是否以提示符开头
-    bool lineStartsWithPrompt = false;
-    std::wstring prefix;
-    if (lastLine.size() >= promptLen) {
-        prefix = lastLine.substr(0, promptLen);
-        //prefix = CleanAnsiEscapeSequences(prefix);
-        lineStartsWithPrompt = (prefix == promptW);
-    }
-    if (!lineStartsWithPrompt) {
-        NppSSH_LogInfoAuto("prefix = " + WStringToLogStr(prefix) + ",promptW=" + WStringToLogStr(promptW)+ ",提示符长度=[" + IntToStr(promptLen) + "] ");
+    if (lastLine.size() < promptLen ||
+        lastLine.substr(0, promptLen) != promptW) {
+        NppSSH_LogInfoAuto("promptW=" + WStringToLogStr(promptW)+ ",提示符长度=[" + IntToStr(promptLen) + "] ");
 
         NppSSH_LogInfoAuto("[可编辑判定] 最后一行不以提示符开头");
         return false;
     }
-    int cursorInLine = cursorPos - lastLineStart;
-    bool cursorIsAfterPrompt = (cursorInLine >= promptLen);
+    int lastLineSize = static_cast<int>(cursorPos- lastLineStart);
+    bool cursorIsAfterPrompt = (lastLineSize >= promptLen);
     // 结合_cmd校验：如果已有命令，光标需在命令范围内（增强校验）
     bool cmdAreaValid = true;
     std::wstring cmdW = UTF8ToWstring(_cmd);
     if (!cmdW.empty()) {
-        int cmdEndInLine = promptLen + cmdW.size();
-        cmdAreaValid = (cursorInLine >= promptLen && cursorInLine <= cmdEndInLine);
+        int cmdEndInLine = promptLen + static_cast<int>(cmdW.size());
+        cmdAreaValid = (lastLineSize >= promptLen && promptLen <= cmdEndInLine);
     }
 
     bool canEdit = cursorIsAfterPrompt && cmdAreaValid;
@@ -1862,9 +1977,9 @@ bool SSHTerminal::IsCursorInEditableArea() const {
         "_prompt=[" + _prompt + "] "
         "lastLineStart=[" + IntToStr(lastLineStart) + "] "
         "全局光标=[" + IntToStr((int)cursorPos) + "] "
-        "本行光标=[" + IntToStr(cursorInLine) + "]本行光标 = 全局光标 - lastLineStart"
+        "store中最后一行光标以前所有大小=[" + IntToStr(lastLineSize) + "] "
         "提示符长度=[" + IntToStr(promptLen) + "] "
-        "本行开头匹配=[" + IntToStr(lineStartsWithPrompt) + "] "
+        "命令长度=[" + IntToStr(cmdW.size()) + "] "
         "光标在提示符后=[" + IntToStr(cursorIsAfterPrompt) + "] "
         "可编辑=[" + IntToStr(canEdit ? 1 : 0) + "]";
 
