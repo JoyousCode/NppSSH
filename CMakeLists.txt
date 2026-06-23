@@ -19,9 +19,9 @@ if(MSVC)
 endif()
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(LIBSSH2_INC "C:/Users/Admin/Desktop/project/C++(notepad++)/notepadSdk/libssh2/install_x64/include")
-set(LIBSSH2_LIB "C:/Users/Admin/Desktop/project/C++(notepad++)/notepadSdk/libssh2/install_x64/lib/libssh2.lib")
-set(NOTEPADSDK_DIR "C:/Users/Admin/Desktop/project/C++(notepad++)/notepadSdk/plugintemplate/src")
+set(LIBSSH2_INC "D:/Users/20955/Desktop/project/C++(notepad++)/notepadSdk/libssh2/install_x64/include")
+set(LIBSSH2_LIB "D:/Users/20955/Desktop/project/C++(notepad++)/notepadSdk/libssh2/install_x64/lib/libssh2.lib")
+set(NOTEPADSDK_DIR "D:/Users/20955/Desktop/project/C++(notepad++)/notepadSdk/plugintemplate/src")
 
 add_library(NppSSH SHARED
     src/PluginDefinition.cpp
