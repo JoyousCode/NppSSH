@@ -133,14 +133,12 @@ private:
 
 };
 
-// 全局变量封装（供SSHWindow调用）
-//std::vector<SSHPanel*>& SSHPanel_GetGlobalPanels();
+// 全局变量封装
 NppData& SSHPanel_GetGlobalNppData();
 HINSTANCE& SSHPanel_GetGlobalHInst();
 
 // NPP启动重建面板具体实现
 void SSHPanel_InitRecreatePanel(SSHPanel* pNewPanel);
-
 
 // 获取面板索引进行转发
 HWND SSHPanel_GetLoginPanelHwnd();

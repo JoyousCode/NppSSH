@@ -9,13 +9,14 @@
 #include <consoleapi2.h>    // 控制台API扩展
 #include <wincon.h>          // 控制台常量
 #include <processthreadsapi.h> // 进程/线程API
-
+#include <thread>
 #include <processenv.h>
 #include <richedit.h>       // RichEdit 核心头文件
 #include <commctrl.h>       // 可选（若需高级功能）
 #include <sstream>
 #include <iterator>
 #include <unordered_map>
+
 //#pragma comment(lib, "msftedit.lib")
 // PTY 特性配置（适配不同终端类型的核心）
 struct PTYFeatures {
@@ -148,6 +149,4 @@ SSHTerminal* getSSHTerminal(int panelIndex);
 void SSHTerminal_ClearAllSSHTerminal();
 
 // 工具函数声明（日志专用）
-inline std::wstring GBKToWstring(const std::string& gbkStr);
-inline std::string PtrToHexStr(void* ptr);
-inline std::string IntToStr(int num);
+//inline std::wstring GBKToWstring(const std::string& gbkStr);

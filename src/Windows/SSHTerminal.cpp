@@ -1,14 +1,7 @@
 // SSHTerminal.cpp模拟终端，具体实现
 #include "SSHTerminal.h"
-#include <thread>
-//static std::vector<SSHTerminal*> vectorSSHTerminal;
 static std::vector<SSHTerminal*> g_SSHTerminalVec;
 static std::mutex g_SSHTerminalMutex;
-//static std::unordered_map<int, SSHTerminal*> g_SSHTerminalSeqIdMap;
-static NppData s_nppData;
-static HINSTANCE s_hInst;
-
-
 
 // 根据选中区间，算出不含尾部\r\n的真实结束下标，原文不动
 static DWORD GetValidSelEnd(const std::wstring& fullText, DWORD selStart, DWORD selEnd)
@@ -247,100 +240,6 @@ inline std::string CleanAnsiEscapeSequences(const std::string& input) {
     }
 
     return out;
-}
-// 安全地把 std::wstring 转为 std::string 日志专用（避免乱码和异常）
-inline std::string WStringToLogStr(const std::wstring& wstr) {
-    if (wstr.empty()) return "";
-    int len = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, nullptr, 0, nullptr, nullptr);
-    std::string out(len, 0);
-    WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, &out[0], len, nullptr, nullptr);
-    return out;
-}
-// 工具函数：指针转十六进制字符串（日志专用）
-inline std::string PtrToHexStr(void* ptr) {
-    char buf[32] = { 0 };
-    sprintf_s(buf, "0x%p", ptr);
-    return std::string(buf);
-}
-
-// 工具函数：数字转字符串（日志专用）
-inline std::string IntToStr(int num) {
-    return std::to_string(num);
-}
-// 编码转换工具（自动识别UTF8，解决Windows乱码）
-inline std::wstring UTF8ToWstring(const std::string& str) {
-    if (str.empty())
-        return L"";
-
-    // 第一步：先清理非法字符，避免转换失败
-    //std::string cleanStr = CleanAnsiEscapeSequences(str);
-    std::string cleanStr = (str);
-
-    int len = MultiByteToWideChar(
-        CP_UTF8,
-        MB_ERR_INVALID_CHARS, // 严格校验，非法字符返回错误
-        cleanStr.c_str(),
-        (int)cleanStr.size(),
-        nullptr,
-        0
-    );
-
-    // 容错：如果严格转换失败，用替换模式重试
-    if (len == 0) {
-        len = MultiByteToWideChar(
-            CP_UTF8,
-            0, // 忽略无效字符
-            cleanStr.c_str(),
-            (int)cleanStr.size(),
-            nullptr,
-            0
-        );
-        NppSSH_LogInfoAuto("【UTF8转换容错】检测到非法UTF8字符，已忽略");
-    }
-
-    std::wstring res(len, L'\0');
-    MultiByteToWideChar(
-        CP_UTF8,
-        0,
-        cleanStr.c_str(),
-        (int)cleanStr.size(),
-        &res[0],
-        len
-    );
-    NppSSH_LogInfoAuto("自动识别UTF8，解决Windows乱码,转换成功");
-    return res;
-}
-// 编码转换工具（自动识别GBK，解决Windows乱码）
-inline std::wstring GBKToWstring(const std::string& str) {
-    if (str.empty())
-        return L"";
-
-    int len = MultiByteToWideChar(
-        CP_ACP,         // 系统本地GBK
-        0,
-        str.c_str(),
-        (int)str.size(),
-        nullptr,
-        0
-    );
-
-    std::wstring res(len, L'\0');
-    MultiByteToWideChar(
-        CP_ACP,
-        0,
-        str.c_str(),
-        (int)str.size(),
-        &res[0],
-        len
-    );
-
-    return res;
-}
-// 辅助函数：转16进制字符串，方便日志查看
-inline std::string IntToHexStr(DWORD val) {
-    char buf[32];
-    sprintf_s(buf, "%08X", val);
-    return std::string(buf);
 }
 // 输入法中英文切换（真正安全、无循环）
 // bForceEnglish: true=强制英文(修复时用) | false=手动切换(Shift用)
@@ -1489,12 +1388,6 @@ SSHTerminal::~SSHTerminal() {
         SetWindowLongPtr(_hTerminal, GWLP_WNDPROC, (LONG_PTR)_oldEditProc);
         _oldEditProc = nullptr;
     }
-    // 从vector移除自身（保留）
-    //auto it = g_SSHTerminalSeqIdMap.find(_panelId);
-    //if (it != g_SSHTerminalSeqIdMap.end()) {
-    //    delete it->second;
-    //    g_SSHTerminalSeqIdMap.erase(it);
-    //}
 }
 
 HWND SSHTerminal::Get_TerminalHandle() const {
@@ -1503,7 +1396,7 @@ HWND SSHTerminal::Get_TerminalHandle() const {
 HWND SSHTerminal::InitTerminalEditBox(HWND hParent) {
         
     if (!::IsWindow(hParent)) {
-        ::MessageBoxW(s_nppData._nppHandle, L"SSH_InitTerminalEditBox: 面板窗口句柄无效！", L"NppSSH调试提示", MB_OK | MB_ICONERROR);
+        ::MessageBoxW(g_nppData._nppHandle, L"SSH_InitTerminalEditBox: 面板窗口句柄无效！", L"NppSSH调试提示", MB_OK | MB_ICONERROR);
         return nullptr;
     }
     // 1. 加载库
@@ -1512,7 +1405,7 @@ HWND SSHTerminal::InitTerminalEditBox(HWND hParent) {
     _hRichEditLib = LoadLibraryW(L"Msftedit.dll");;
     if (!_hRichEditLib)
     {
-        MessageBoxW(s_nppData._nppHandle, L"无法加载系统 RichEdit 库（Riched20.dll）！", L"NppSSH调试提示", MB_OK | MB_ICONERROR);
+        MessageBoxW(g_nppData._nppHandle, L"无法加载系统 RichEdit 库（Riched20.dll）！", L"NppSSH调试提示", MB_OK | MB_ICONERROR);
         return nullptr;
     }
     NppSSH_LogInfoAuto("成功加载系统标准 Riched20.dll");
@@ -1546,7 +1439,7 @@ HWND SSHTerminal::InitTerminalEditBox(HWND hParent) {
         x, y, cx, cy,
         _hwndParent,
         (HMENU)IDC_OUTPUT_EDIT,
-        s_hInst,
+        g_hInst,
         this
     );
     if (!_hTerminal) {
@@ -1558,7 +1451,7 @@ HWND SSHTerminal::InitTerminalEditBox(HWND hParent) {
         else {
             swprintf(errMsg, L"创建终端控件底层失败！错误码: %d", err);
         }
-        MessageBoxW(s_nppData._nppHandle, errMsg, L"NppSSH调试提示", MB_OK | MB_ICONERROR);
+        MessageBoxW(g_nppData._nppHandle, errMsg, L"NppSSH调试提示", MB_OK | MB_ICONERROR);
         return nullptr;
     }
     // WS_EX_TRANSPARENT + 控件默认风格 不支持 IME
@@ -1787,73 +1680,6 @@ void SSHTerminal::SizeSSHTerminal(HWND hParent) {//hParent=面板的_hSelf
     //只重绘【伪终端】自己让伪终端立刻刷新、重新绘制自己的内容、文字、背景、边框。
     ::RedrawWindow(_hTerminal, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);// 刷新伪终端内容（防止文字不显示）
 }
-
-// 宽字符版本调试打印
-inline void DeBugOutPutText(const std::wstring& text) {
-    std::wstring rawCharLog = L"[宽字符text全字符拆解] 总字节数=" + UTF8ToWstring(IntToStr((int)text.size())) + L" | 字符序列：";
-
-    for (wchar_t ch : text)
-    {
-        switch (ch)
-        {
-        case L'\r': rawCharLog += L"\\r "; break;
-        case L'\n': rawCharLog += L"\\n "; break;
-        case L'\t': rawCharLog += L"\\t "; break;
-        case L' ':  rawCharLog += L"SP "; break;
-        default:
-            if (ch < 0x20 || ch >= 0x7F)
-            {
-                // 不可见控制字符，打印十六进制
-                wchar_t buf[16] = { 0 };
-                swprintf_s(buf, L"0x%04X ", (DWORD)ch);
-                rawCharLog += buf;
-            }
-            else
-            {
-                // 普通可见字符
-                rawCharLog += (wchar_t)ch;
-                rawCharLog += L" ";
-            }
-            break;
-        }
-    }
-
-    // 宽字符转窄字符日志输出
-    NppSSH_LogInfoAuto(WStringToLogStr(rawCharLog));
-    NppSSH_LogInfoAuto("输出文本到输出框(宽字符): " + WStringToLogStr(text));
-}
-inline void DeBugOutPutText(const std::string& text) {
-    // ======================【新增：完整字符日志打印，解析所有转义符号】======================
-    std::string rawCharLog = "[原始text全字符拆解] 总字节数=" + IntToStr((int)text.size()) + " | 字符序列：";
-    for (unsigned char ch : text)
-    {
-        switch (ch)
-        {
-        case '\r': rawCharLog += "\\r "; break;
-        case '\n': rawCharLog += "\\n "; break;
-        case '\t': rawCharLog += "\\t "; break;
-        case ' ':  rawCharLog += "SP "; break;
-        default:
-            if (ch < 0x20 || ch >= 0x7F)
-            {
-                // 不可见控制字符，打印十六进制
-                char buf[16] = { 0 };
-                sprintf_s(buf, "0x%02X ", ch);
-                rawCharLog += buf;
-            }
-            else
-            {
-                // 普通可见字符
-                rawCharLog += (char)ch;
-                rawCharLog += " ";
-            }
-            break;
-        }
-    }
-    NppSSH_LogInfoAuto(rawCharLog);
-    NppSSH_LogInfoAuto("输出文本到输出框" + std::string(text));
-    // ==================================================================================
-}
 /*
 * 追加伪终端终端模拟内容
 */
@@ -2063,11 +1889,11 @@ void SSHTerminal_Resize(HWND hParent,int panelIndex) {
     SSHTerminal* panel = getSSHTerminal(panelIndex);
 
     if (panel == nullptr) {
-        ::MessageBoxW(s_nppData._nppHandle, L"SSHTerminal_SizeSSHTerminal: 面板指针为空！", L"NppSSH提示", MB_OK | MB_ICONINFORMATION);
+        ::MessageBoxW(g_nppData._nppHandle, L"SSHTerminal_SizeSSHTerminal: 面板指针为空！", L"NppSSH提示", MB_OK | MB_ICONINFORMATION);
         return;
     }
     if (!::IsWindow(panel ->Get_TerminalHandle())) {
-        ::MessageBoxW(s_nppData._nppHandle, L"SSHTerminal_SizeSSHTerminal: 伪终端句柄无效，跳过调整！", L"NppSSH提示", MB_OK | MB_ICONINFORMATION);
+        ::MessageBoxW(g_nppData._nppHandle, L"SSHTerminal_SizeSSHTerminal: 伪终端句柄无效，跳过调整！", L"NppSSH提示", MB_OK | MB_ICONINFORMATION);
         return;
     }
     panel->SizeSSHTerminal(hParent);

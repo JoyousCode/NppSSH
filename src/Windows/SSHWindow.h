@@ -28,6 +28,7 @@
 #include "SSHConnection.h"
 #include "SSHLog.h"
 #include "SSHTerminal.h"
+#include "SSHUtil.h"
 
 #include <unordered_map>
 

@@ -63,6 +63,8 @@ add_library(NppSSH SHARED
     src/Windows/SSHLog.cpp
     src/Windows/SSHTerminal.h
     src/Windows/SSHTerminal.cpp
+    src/Windows/SSHUtil.h
+    src/Windows/SSHUtil.cpp
 )
 # 新增：指定 RC 文件为资源编译（Windows 特有）
 if(WIN32)

@@ -2,8 +2,6 @@
 #include "SSHPanel.h"
 #include "SSHSettings.h" // 引入INI工具
 
-// 面板相关全局变量实际定义
-//static std::vector<SSHPanel*> s_sshPanels;
 static NppData s_nppData;
 static HINSTANCE s_hInst;
 static int s_iconSize;
@@ -17,11 +15,6 @@ HWND SSHPanel_GetLoginPanelHwnd() {
     return pPanel->getLoginPanel();
 }
 
-// 全局变量获取接口
-//std::vector<SSHPanel*>& SSHPanel_GetGlobalPanels() {
-//    return s_sshPanels;
-//}
-
 NppData& SSHPanel_GetGlobalNppData() {
     return s_nppData;
 }
@@ -30,25 +23,6 @@ HINSTANCE& SSHPanel_GetGlobalHInst() {
     return s_hInst;
 }
 int& SSHPanel_iconSize() { return s_iconSize; }//获取点击连接图标面板索引
-
-// 编码转换工具（自动识别 UTF8 / GBK，彻底解决Windows弹框乱码）
-inline std::wstring GBKToWstring(const std::string& str) {
-    if (str.empty())
-        return L"";
-
-    wchar_t buf[1024] = { 0 };
-
-    // 1. 优先按 UTF-8 转换（libssh2 错误信息都是 UTF-8）
-    int len = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, nullptr, 0);
-    if (len > 0 && len < 1024) {
-        MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, buf, len);
-        return buf;
-    }
-
-    // 2. 失败则使用 GBK（系统本地编码）
-    MultiByteToWideChar(CP_ACP, 0, str.c_str(), -1, buf, _countof(buf));
-    return buf;
-}
 
 // 面板类构造函数
 SSHPanel::SSHPanel(int panelSeqId, int panelrealId)
@@ -299,12 +273,6 @@ void SSHPanel::createTopButtonBar() {
     else {
         ::MessageBoxW(s_nppData._nppHandle, L"断开按钮创建失败", L"NppSSH错误", MB_OK | MB_ICONWARNING);
     }
-
-    // 复用NPP字体（保持样式统一）
-    //HFONT hNppFont = (HFONT)::SendMessage(s_nppData._nppHandle, NPPM_SETSMOOTHFONT, 0, 0);
-    //if (hNppFont == NULL) hNppFont = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
-    //if (_hBtnConnectSSH) ::SendMessage(_hBtnConnectSSH, WM_SETFONT, (WPARAM)hNppFont, TRUE);
-    //if (_hBtnDisconnectSSH) ::SendMessage(_hBtnDisconnectSSH, WM_SETFONT, (WPARAM)hNppFont, TRUE);
 }
 
 // 面板初始化：纯原生接口
@@ -421,10 +389,6 @@ void SSHPanel::initPanel() {
             + " 原过程：" + PtrToHexStr(_oldPanelWndProc)
             + " 新过程：" + PtrToHexStr(PanelSubclassWndProc));
     }
-    
-
-    // 加入全局管理，支持标签切换和内存清理
-    //s_sshPanels.push_back(this);
     // 13. 日志记录（调试/排查）
     NppSSH_LogInfoAuto("面板初始化完成 [序列ID: " + std::to_string(_panelSeqId) + "]");
     NppSSH_LogInfoAuto("面板初始化完成 [标题ID: " + std::to_string(_panelrealId) + "]");
