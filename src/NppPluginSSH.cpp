@@ -26,7 +26,6 @@ extern NppData nppData;
 extern NppData& g_nppData;
 extern HINSTANCE& g_hInst;
 
-
 BOOL APIENTRY DllMain(HANDLE hModule, DWORD  reasonForCall, LPVOID /*lpReserved*/)
 {
 	try {
@@ -41,11 +40,14 @@ BOOL APIENTRY DllMain(HANDLE hModule, DWORD  reasonForCall, LPVOID /*lpReserved*
 			case DLL_PROCESS_DETACH:
 				// 仅插件卸载时执行清理（NPP关闭时不执行，避免销毁面板）
 				// 插件卸载由NPP主动触发，PROCESS_DETACH区分：卸载时g_sshPanels已空，关闭时非空
-				if (g_sshPanels.empty()) {
-					DeletePanelCountFromIni(); // 卸载时删除INI配置
-					pluginCleanUp();
-				}
-				//pluginCleanUp();
+				//if (g_SSHPanelSeqIdMap.empty()) {
+				//	NppSSH_LogInfoAuto("卸载时删除INI配置");
+				//	SSH_SettingsDeleteFile(); // 卸载时删除INI配置
+				//	pluginCleanUp();
+				//}
+				
+			
+				pluginCleanUp();
 				break;
 
 			case DLL_THREAD_ATTACH:
@@ -72,7 +74,7 @@ extern "C" __declspec(dllexport) void setInfo(NppData notpadPlusData)
 	nppData = notpadPlusData;
 	commandMenuInit();
 	SSHLog_Init();
-	RecreatePanelsOnNppStart();// NPP插件环境初始化完成后，自动重建配置中记录的面板
+	SSH_SettingsInitRecreatePanels();// NPP插件环境初始化完成后，自动重建配置中记录的面板
 }
 
 extern "C" __declspec(dllexport) const TCHAR * getName()
@@ -95,65 +97,15 @@ extern "C" __declspec(dllexport) void beNotified(SCNotification *notifyCode)
 	{
 		case NPPN_SHUTDOWN:
 		{
-			// 检查活跃连接并提示
-			bool hasActiveConnection = false;
-			for (auto* panel : g_sshPanels) {
-				if (panel && panel->isSSHConnected()) {
-					hasActiveConnection = true;
-					break;
-				}
-			}
-			if (hasActiveConnection) {
-				::MessageBoxW(
-					NULL,
-					L"您有已登录的SSH连接，关闭notepad++则直接退出关于SSH的所有登录",
-					L"NppSSH 连接提示",
-					MB_OK | MB_ICONWARNING
-				);
-			}
-			// 统一断开所有SSH连接
-			for (auto* panel : g_sshPanels) {
-				if (panel) {
-					panel->resetPanelToInit(); // 断开连接+恢复初始文本
-				}
-			}
+			pluginCleanUp();
 			break;
 		}
 
-		// 新增：监听工具栏图标大小变化（自动适配）
-		//case NPPN_TOOLBARICONSETCHANGED:
-		//{
-		//	// 遍历所有面板，更新按钮图标大小
-		//	std::vector<NppSSHDockPanel*>& panels = SSHPanel_GetGlobalPanels();
-		//	for (auto* panel : panels) {
-		//		if (panel && panel->getHSelf() && IsWindow(panel->getHSelf())) {
-		//			panel->UpdateToolbarIconSize();
-		//		}
-		//	}
-		//	break;
-		//}
-		// 
-		//case NPPN_TOOLBARICONSETCHANGED:
-		//{
-		//	// 声明全局面板容器（如果已存在可省略）
-		//	extern std::vector<NppSSHDockPanel*>& SSHPanel_GetGlobalPanels();
-		//	auto& panels = SSHPanel_GetGlobalPanels();
-		//	for (auto* pPanel : panels)
-		//	{
-		//		if (pPanel != nullptr && pPanel->getHSelf() != nullptr && ::IsWindow(pPanel->getHSelf()))
-		//		{
-		//			pPanel->UpdateToolbarIconSize();
-		//		}
-		//	}
-		//	break;
-		//}
-
-		// 关键：监听工具栏图标大小变化通知
+		// 监听工具栏图标大小变化通知
 		case NPPN_TOOLBARICONSETCHANGED:
 		{
 			// 遍历所有面板，更新按钮尺寸
-			std::vector<NppSSHDockPanel*>& panels = SSHPanel_GetGlobalPanels();
-			for (auto* panel : panels) {
+			for (auto* panel : g_SSHPanelVec) {
 				if (panel != nullptr && panel->getHSelf() != nullptr && ::IsWindow(panel->getHSelf())) {
 					panel->UpdateToolbarIconSize();
 				}
@@ -173,10 +125,17 @@ extern "C" __declspec(dllexport) void beNotified(SCNotification *notifyCode)
 //
 extern "C" __declspec(dllexport) LRESULT messageProc(UINT /*Message*/, WPARAM /*wParam*/, LPARAM /*lParam*/)
 {/*
+	//bool isOk = WM_SETFONT || WM_INITDIALOG || WM_GETDLGCODE || WM_KILLFOCUS || WM_IME_SETCONTEXT || WM_SETFOCUS;
+	char mbuf[64] = { 0 };
+	sprintf(mbuf, "0x%04X", Message);
+	std::string msgStr(mbuf);
+	NppSSH_LogInfoAuto("【拦截PanelSubclassWndProc】消息message===" + msgStr);
 	if (Message == WM_MOVE)
 	{
-		::MessageBox(NULL, "move", "", MB_OK);
+		::MessageBox(NULL, L"WM_CLOSE", L"消息", MB_OK);
 	}
+
+	return TRUE;
 */
 	return TRUE;
 }

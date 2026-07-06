@@ -92,8 +92,9 @@ public:
     const std::string& GetPrompt() const;
 
     // 获取编辑框句柄
-    int GetPanelId() const { return _panelId; }
-    void SetPanelId(int panelId) { _panelId = panelId; }
+    int Get_panelSeqId() const { return _panelSeqId; }
+    void Set_panelSeqId(int panelSeqId) { _panelSeqId = panelSeqId; }
+
     WNDPROC GetOldEditProc() const { return _oldEditProc; }
     void SetIsCommandRunning(bool isCommandRunning) {_isCommandRunning = isCommandRunning;}
     const bool GetIsCommandRunning() const {return _isCommandRunning;}
@@ -119,27 +120,32 @@ private:
     std::string _currentPTYType;    // 当前使用的PTY类型（如xterm-256color）
     PTYFeatures _currentPTYFeatures;// 当前PTY的特性配置
 
-    int _panelId;
+    //int _panelId;
+    int _panelSeqId;
+    wchar_t _titleBuf[128];  // 面板标题缓冲区（成员变量，非静态！）
     std::string _cmd;             // 回车需要执行的命令（迁移自cmd）
     std::string _prompt;               // 命令提示符（迁移自Prompt）
     WNDPROC _oldEditProc = nullptr; // 传统子类化保存旧过程
     bool _isCommandRunning = false; // 标记后台命令是否正在执行
+
 };
 
-HWND SSHTerminal_InitTerminalEditBox(HWND hParent,int panelId);
-void SSHTerminal_disconnectTerminalEditBox(int panelIndex);
-void SSHTerminal_resetSSHTerminal(int panelIndex);
-void SSHTerminal_SizeSSHTerminal(HWND hParent,int panelIndex);
+HWND SSHTerminal_InitControlPanel(HWND hParent,int panelSeqId);
+void SSHTerminal_DisconnectHandle(int panelIndex);
+void SSHTerminal_BySeqIdReset(int panelIndex);
+void SSHTerminal_Resize(HWND hParent,int panelIndex);
 
 
-void SSHTerminal_AppendOutput(int panelIndex, const std::string& text);
-void SSHTerminal_PanelPrompt(int panelIndex, std::string prompt);
-void SSHTerminal_SetIsCommandRunning(int panelIndex, bool isCommandRunning);
+void SSHTerminal_AppendTextHandle(int panelIndex, const std::string& text);
+void SSHTerminal_SetPanelPrompt(int panelIndex, std::string prompt);
+void SSHTerminal_SetCommandRunning(int panelIndex, bool isCommandRunning);
 void SSHTerminal_SetEnglishType(int panelIndex);
-void SSHTerminal_ClearOutputText(int panelIndex);
-std::string SSHTerminal_getPanelPrompt(int panelIndex);
+void SSHTerminal_ExecuteClear(int panelIndex);
+std::string SSHTerminal_PanelPrompt(int panelIndex);
+void SSHTerminal_BySeqIdRemove(int panelSeqId);
 
 SSHTerminal* getSSHTerminal(int panelIndex);
+void SSHTerminal_ClearAllSSHTerminal();
 
 // 工具函数声明（日志专用）
 inline std::wstring GBKToWstring(const std::string& gbkStr);

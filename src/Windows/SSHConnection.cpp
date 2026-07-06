@@ -927,8 +927,8 @@ void SSHConnection::StartHeartbeat() {
 // 断开连接
 void SSHConnection::Disconnect() {
     int panelId = SSHConnection_GetPanelId(this);
-    SSH_ClearOutputText(panelId);
-    SSH_AppendOutputText(panelId, "✅ SSH已断开\n等待新的连接...");
+    SSH_TerminalExecuteClear(panelId);
+    SSH_TerminalAppendTextHandle(panelId, "✅ SSH已断开\n等待新的连接...");
     StopShellReader();
     ReleaseResources();
     m_connected.store(false, std::memory_order_release);
@@ -1068,8 +1068,8 @@ void SSHConnection::ShellReaderLoop() {
             }
 
             if (panelId >= 0) {
-                SSH_AppendOutputText(panelId, chunk);
-                SSH_SetIsCommandRunning(panelId, true);
+                SSH_TerminalAppendTextHandle(panelId, chunk);
+                SSH_TerminalSetCommandRunning(panelId, true);
             }
 
             retry = 0; // 有输出就重置重试
@@ -1081,8 +1081,8 @@ void SSHConnection::ShellReaderLoop() {
                 if (panelId >= 0)//拿到提示符直接结束命令状态
                 {
                     NppSSH_LogInfoAuto("【发送执行结束信号】" + chunk);
-                    SSH_PanelPrompt(panelId, m_prompt);
-                    SSH_SetIsCommandRunning(panelId, false);
+                    SSH_TerminalSetPanelPrompt(panelId, m_prompt);
+                    SSH_TerminalSetCommandRunning(panelId, false);
                 }
                 exitReason = ShellExitReason::PromptReceived;
                 goto exit_read_loop;
@@ -1136,36 +1136,36 @@ void SSHConnection::ShellReaderLoop() {
     }
 
     if (panelId >= 0) {
-        std::string panelPrompt = SSH_getPanelPrompt(panelId);
+        std::string panelPrompt = SSH_TerminalPanelPrompt(panelId);
         switch (exitReason) {
         case ShellExitReason::PromptReceived:
             // 正常结束，不追加干扰信息
             break;
 
         case ShellExitReason::StoppedByUser:
-            SSH_AppendOutputText(panelId,
+            SSH_TerminalAppendTextHandle(panelId,
                 "\r\n[!] 输出已被中断（Ctrl+C / 服务器停止）\r\n"+ panelPrompt);
             break;
 
         case ShellExitReason::SocketDead:
-            SSH_AppendOutputText(panelId,
+            SSH_TerminalAppendTextHandle(panelId,
                 "\r\n[!] 连接已断开（服务器关机或网络异常）\r\n" + panelPrompt);
             break;
 
         case ShellExitReason::RetryExhausted:
-            SSH_AppendOutputText(panelId,
+            SSH_TerminalAppendTextHandle(panelId,
                 "\r\n[!] 命令执行超时，未检测到命令提示符\r\n" + panelPrompt);
             break;
 
         case ShellExitReason::Unknown:
         default:
-            SSH_AppendOutputText(panelId,
+            SSH_TerminalAppendTextHandle(panelId,
                 "\r\n[!] 命令执行异常（未知原因）\r\n" + panelPrompt);
             break;
         }
         if (exitReason != ShellExitReason::PromptReceived) {
-            SSH_PanelPrompt(panelId, panelPrompt);
-            SSH_SetIsCommandRunning(panelId, false);
+            SSH_TerminalSetPanelPrompt(panelId, panelPrompt);
+            SSH_TerminalSetCommandRunning(panelId, false);
         }
         
     }
@@ -1703,10 +1703,10 @@ void SSHConnection::ReadLoginBanner(LIBSSH2_SESSION* session) {
 
 
     if (panelId >= 0) {
-        SSH_AppendOutputText(panelId, loginBanner);
+        SSH_TerminalAppendTextHandle(panelId, loginBanner);
         NppSSH_LogInfoAuto("【欢迎语获取退出】调用SSHTerminal_PanelPrompt函数赋值私有成员变量 _prompt = " + m_prompt);
-        SSH_PanelPrompt(panelId, m_prompt);
-        SSH_SetIsCommandRunning(panelId, false);
+        SSH_TerminalSetPanelPrompt(panelId, m_prompt);
+        SSH_TerminalSetCommandRunning(panelId, false);
     }
 }
 
@@ -2127,7 +2127,7 @@ void SSHConnection::ConnectAsync(const char* host, int port, const char* user, c
     m_connecting.store(false, std::memory_order_release);
 }
 
-bool SSHConnection_Connect(int panelId, const char* host, int port, const char* user, const char* pass) {
+bool SSHConnection_Handle(int panelId, const char* host, int port, const char* user, const char* pass) {
     NppSSH_LogInfoAuto("面板="+std::to_string(panelId) +",绑定连接信息");
     // 创建/覆盖面板ID对应的连接实例 
     SSHConnection* conn = nullptr;
@@ -2176,12 +2176,12 @@ bool SSHConnection_Connect(int panelId, const char* host, int port, const char* 
         }
     }
     else {
-        conn ->SetPanelHwnd(NppSSH__getPanelHwnd(panelId));
+        conn ->SetPanelHwnd(SSH_PanelGetPanelHwnd(panelId));
     }
     return connectResult;
 }
 // 断开连接 + 彻底删除面板数据
-void SSHConnection_Disconnect(int panelId) {
+void SSHConnection_OnDisconn(int panelId) {
     // 第一步：使用工具函数判断面板ID是否存在
     if (!IsPanelIdExists(panelId)) {
         NppSSH_LogInfoAuto("面板" + std::to_string(panelId) + "不存在，无需断开");
@@ -2206,7 +2206,7 @@ void SSHConnection_Disconnect(int panelId) {
     }
 }
 // 判断是否连接（外部接口）
-bool SSHConnection_IsConnected(int panelId) {
+bool SSHConnection_IsConn(int panelId) {
     // 第一步：使用工具函数判断面板ID是否存在
     if (!IsPanelIdExists(panelId)) {
         return false;
@@ -2224,7 +2224,7 @@ bool SSHConnection_IsConnected(int panelId) {
     return false;
 }
 
-void SSHConnection_ResetState(int panelId) {
+void SSHConnection_ResetConn(int panelId) {
     // 第一步：使用工具函数判断 panelId 是否存在，不存在直接返回
     if (!IsPanelIdExists(panelId)) {
         return;
@@ -2241,7 +2241,7 @@ void SSHConnection_ResetState(int panelId) {
 }
 
 bool SSHConnection_ExecuteCommand(int panelIndex, const std::string& cmd) {
-    if (GetCurrentThreadId() == GetWindowThreadProcessId(NppSSH__getPanelHwnd(panelIndex), nullptr)) {
+    if (GetCurrentThreadId() == GetWindowThreadProcessId(SSH_PanelGetPanelHwnd(panelIndex), nullptr)) {
         NppSSH_LogErrorAuto("【FATAL】UI 线程禁止执行 SSH 命令！");
         return false;
     }
@@ -2270,7 +2270,7 @@ bool SSHConnection_ExecuteCommand(int panelIndex, const std::string& cmd) {
     return conn->ExecuteCommand(cmd);
 }
 
-std::string SSHConnection_Prompt(int panelIndex) {
+std::string SSHConnection_PanelPrompt(int panelIndex) {
     // 1. 工具函数判断面板是否存在
     if (!IsPanelIdExists(panelIndex)) {
         NppSSH_LogInfoAuto("当前未连接，不能获取提示符");
@@ -2297,7 +2297,7 @@ std::string SSHConnection_Prompt(int panelIndex) {
     return conn->GetPrompt();
 }
 
-void SSHConnection_libssh2_channel_request_pty_size(int panelIndex, int cols, int rows) {
+void SSHConnection_PtySize(int panelIndex, int cols, int rows) {
     // 1. 工具函数判断面板是否存在
     if (!IsPanelIdExists(panelIndex)) {
         NppSSH_LogInfoAuto("当前未连接，不能设置大小");
@@ -2327,4 +2327,10 @@ void SSHConnection::SetPTYSize(int cols,int rows) {
     if (!channel)
         return;
     libssh2_channel_request_pty_size(channel, cols, rows);
+}
+// 仅清空容器，连接已提前全部断开
+void SSHConnection_ClearAllSSHConnections()
+{
+    std::lock_guard<std::mutex> lock(g_panelConnMutex);
+    g_panelConnections.clear();
 }

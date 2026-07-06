@@ -17,7 +17,8 @@
 
 
 #include "SSHClient.h" 
-
+#include <gdiplus.h>
+using namespace Gdiplus;
 
 //
 // The plugin data that Notepad++ needs
@@ -29,11 +30,30 @@ FuncItem funcItem[nbFunc];
 //
 NppData nppData;
 
+ULONG_PTR g_gdiToken = 0;
+
+void InitGDIPlus()
+{
+    if (g_gdiToken != 0) return;
+    GdiplusStartupInput input;
+    input.GdiplusVersion = 1;
+    input.SuppressBackgroundThread = FALSE;
+    GdiplusStartup(&g_gdiToken, &input, nullptr);
+}
+void UninitGDIPlus()
+{
+    if (g_gdiToken)
+    {
+        GdiplusShutdown(g_gdiToken);
+        g_gdiToken = 0;
+    }
+}
 //
 // Initialize your plugin data here
 // It will be called while plugin loading   
-void pluginInit(HANDLE /*hModule*/)
+void pluginInit(HANDLE hModule)
 {
+    InitGDIPlus(); // NPP加载插件时，启动GDI+
 }
 
 //
@@ -41,8 +61,21 @@ void pluginInit(HANDLE /*hModule*/)
 //
 void pluginCleanUp()
 {
+    SSH_HandAllFree();
+    UninitGDIPlus(); // NPP关闭/卸载插件，释放GDI+
 }
-
+ShortcutKey SSHLIB2_OpenPanelShortcut = {
+        true,   // _isCtrl
+        false,   // _isAlt
+        true,  // _isShift
+        'G'     // _key
+};
+ShortcutKey ConEmu_OpenPanelShortcut = {
+        true,   // _isCtrl
+        false,   // _isAlt
+        true,  // _isShift
+        'H'     // _key
+};
 //
 // Initialization of your plugin commands
 // You should fill your plugins commands here
@@ -62,7 +95,8 @@ void commandMenuInit()
     setCommand(0, TEXT("Hello Notepad++"), hello, NULL, false);
     setCommand(1, TEXT("Hello (with dialog)"), helloDlg, NULL, false);
     setCommand(2, TEXT("测试连接状态"), onNppSSH, NULL, false);
-    setCommand(3, TEXT("创建SSH远程面板"), onNppSSHWindow, NULL, false);
+    setCommand(3, TEXT("创建SSH远程面板(Alt+Q集成sshlib2)"), onNppSSHWindow, &SSHLIB2_OpenPanelShortcut, false);
+    setCommand(4, TEXT("创建ConEmu面板(Alt+W集成Putty)"), onNppSSHConEmu, &ConEmu_OpenPanelShortcut, false);
 }
 
 //
@@ -120,7 +154,7 @@ void helloDlg()
 
 void onNppSSH()
 {
-    bool ok = NppSSH_IsConnected(1);
+    bool ok = SSH_ConnectionIsConn(1);
     if (ok)
         ::MessageBoxW(NULL, L"SSH 连接成功 ✅", L"NppSSH提示", MB_OK);
     else
@@ -129,6 +163,10 @@ void onNppSSH()
 
 void onNppSSHWindow()
 {
-    CreateNppSSHTerminal();  // 调用 SSHClient.cpp 里的实现
+    CreateNppSSHTerminalPanel();  // 调用 SSHClient.cpp 里的实现
+}
+void onNppSSHConEmu()
+{
+    CreateNppSSHConEmuPanel();
 }
 

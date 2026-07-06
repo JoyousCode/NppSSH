@@ -1,7 +1,10 @@
 // SSHTerminal.cpp模拟终端，具体实现
 #include "SSHTerminal.h"
 #include <thread>
-static std::vector<SSHTerminal*> vectorSSHTerminal;
+//static std::vector<SSHTerminal*> vectorSSHTerminal;
+static std::vector<SSHTerminal*> g_SSHTerminalVec;
+static std::mutex g_SSHTerminalMutex;
+//static std::unordered_map<int, SSHTerminal*> g_SSHTerminalSeqIdMap;
 static NppData s_nppData;
 static HINSTANCE s_hInst;
 
@@ -46,6 +49,24 @@ static DWORD GetValidSelEnd(const std::wstring& fullText, DWORD selStart, DWORD 
     }
 
     return finalSelEnd;
+}
+inline void g_SSHTerminalVecAll() {
+    std::string szDebugMsg = "【g_SSHTerminalVec 内容】 \r\n总数：" + IntToStr((int)g_SSHTerminalVec.size()) + "\r\n\r\n";
+    int i = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_SSHTerminalMutex);
+        for (auto* p : g_SSHTerminalVec) {
+            if (p == nullptr) {
+                szDebugMsg += "[" + IntToStr(i) + "] 指针：空指针\r\n";
+            }
+            else {
+                szDebugMsg += "[" + IntToStr(i) + "] 指针：" + PtrToHexStr(p) + "\r\n";
+            }
+            i++;
+        }
+    }
+    
+    NppSSH_LogInfoAuto(szDebugMsg);
 }
 inline std::wstring CleanrrW(const std::wstring& allText) {
     std::wstring fixedText = allText;
@@ -551,13 +572,17 @@ static thread_local bool s_bProcessingMsg = false;
 // ============return res = CallWindowProc(oldProc, hWnd, msg, wParam, lParam);放行编辑器原始的操作，
 LRESULT CALLBACK SSHTerminal::TerminalEditProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     LRESULT res = 0;
-    SSHTerminal* terminal = (SSHTerminal*)GetProp(hWnd, L"SSHTerminalInstance");
+    wchar_t buf[128]{};
+    swprintf_s(buf, _countof(buf), L"SSHTerminal-%p", hWnd);
+    SSHTerminal* terminal = (SSHTerminal*)GetProp(hWnd, buf);
 
     if (!terminal) {
-        for (auto& t : vectorSSHTerminal) {
-            if (t && t->Get_TerminalHandle() == hWnd) {
-                terminal = t;
-                SetProp(hWnd, L"SSHTerminalInstance", (HANDLE)terminal);
+        for (auto* pPanel : g_SSHTerminalVec) {
+            if (pPanel && pPanel->Get_TerminalHandle() == hWnd) {
+                terminal = pPanel;
+                wchar_t terminal_buf[128]{};
+                swprintf_s(terminal_buf, _countof(terminal_buf), L"SSHTerminal-%p", hWnd);
+                SetProp(hWnd, terminal_buf, (HANDLE)terminal);
                 break;
             }
         }
@@ -663,10 +688,10 @@ LRESULT CALLBACK SSHTerminal::TerminalEditProc(HWND hWnd, UINT msg, WPARAM wPara
         int rows = h / (tm.tmHeight + tm.tmExternalLeading);
 
         ReleaseDC(hWnd, hdc);
-        int panelId = terminal->GetPanelId();
+        int panelId = terminal->Get_panelSeqId();
         if (cols > 0 && rows > 0)
         {
-            NppSSH_libssh2_channel_request_pty_size(panelId, cols, rows);
+            SSH_ConnectionPtySize(panelId, cols, rows);
         }
         res = CallWindowProc(oldProc, hWnd, msg, wParam, lParam);
         s_bProcessingMsg = false;
@@ -830,7 +855,7 @@ LRESULT CALLBACK SSHTerminal::TerminalEditProc(HWND hWnd, UINT msg, WPARAM wPara
                         {
                             NppSSH_LogInfoAuto("【检测到ANSI清屏指令，执行清空】");
                             // 调用外部清屏接口
-                            SSHTerminal_ClearOutputText(terminal->GetPanelId());
+                            SSHTerminal_ExecuteClear(terminal->Get_panelSeqId());
                         }
 
                         char log1[512] = { 0 };
@@ -1198,7 +1223,7 @@ LRESULT CALLBACK SSHTerminal::TerminalEditProc(HWND hWnd, UINT msg, WPARAM wPara
             std::string cmdToExecute = terminal->GetCmd();
             if (cmdToExecute.empty()) {
                 NppSSH_LogInfoAuto("【跳过】无命令可执行，仅换行");
-                SSHTerminal_AppendOutput(terminal->GetPanelId(), "\n" + terminal->GetPrompt());
+                SSHTerminal_AppendTextHandle(terminal->Get_panelSeqId(), "\n" + terminal->GetPrompt());
                 res = 0;
                 s_bProcessingMsg = false;
                 return res;
@@ -1208,15 +1233,15 @@ LRESULT CALLBACK SSHTerminal::TerminalEditProc(HWND hWnd, UINT msg, WPARAM wPara
             terminal->SetIsCommandRunning(true); // 标记后台命令开始执行
             // 立即放行，不等待
             std::string cmdCopy = cmdToExecute;
-            int panelId = terminal->GetPanelId();
+            int panelId = terminal->Get_panelSeqId();
             terminal->StoreTerminalContent(cmdCopy);
             
             std::thread([panelId, cmdCopy]() {
-                bool result = NppSSH_ExecuteCommand(panelId, cmdCopy);
+                bool result = SSH_ConnectionExecuteCommand(panelId, cmdCopy);
                 }).detach();
             //terminal->SetPrompt(NppSSH_PanelPrompt(terminal->GetPanelId()));
             NppSSH_LogInfoAuto("【调试】TerminalEditProc设置提示符，命令提示符====" + terminal->GetPrompt());
-            NppSSH_LogInfoAuto("【命令执行结果】面板ID=" + IntToStr(terminal->GetPanelId())
+            NppSSH_LogInfoAuto("【命令执行结果】面板ID=" + IntToStr(terminal->Get_panelSeqId())
                 + " 命令=" + cmdToExecute + " ，命令提示符====" + terminal->GetPrompt());
 
             // 清空命令缓存
@@ -1459,16 +1484,17 @@ SSHTerminal::SSHTerminal() {
 SSHTerminal::~SSHTerminal() {
     if (_hTerminal && _oldEditProc) {
         // 清理窗口属性（新增）
-        RemoveProp(_hTerminal, L"SSHTerminalInstance");
+        RemoveProp(_hTerminal, _titleBuf);
         // 恢复原窗口过程（保留）
         SetWindowLongPtr(_hTerminal, GWLP_WNDPROC, (LONG_PTR)_oldEditProc);
         _oldEditProc = nullptr;
     }
     // 从vector移除自身（保留）
-    auto it = std::find(vectorSSHTerminal.begin(), vectorSSHTerminal.end(), this);
-    if (it != vectorSSHTerminal.end()) {
-        vectorSSHTerminal.erase(it);
-    }
+    //auto it = g_SSHTerminalSeqIdMap.find(_panelId);
+    //if (it != g_SSHTerminalSeqIdMap.end()) {
+    //    delete it->second;
+    //    g_SSHTerminalSeqIdMap.erase(it);
+    //}
 }
 
 HWND SSHTerminal::Get_TerminalHandle() const {
@@ -1647,7 +1673,8 @@ HWND SSHTerminal::InitTerminalEditBox(HWND hParent) {
         // 2. 保存原过程到GWLP_USERDATA（仅存原过程，避免偏移冲突）
         SetWindowLongPtr(_hTerminal, GWLP_USERDATA, (LONG_PTR)_oldEditProc);
         // 3. 用窗口属性存储终端实例（替代GWLP_USERDATA+偏移，避免越界）
-        SetProp(_hTerminal, L"SSHTerminalInstance", (HANDLE)this);
+        swprintf_s(_titleBuf, _countof(_titleBuf), L"SSHTerminal-%p", _hTerminal);
+        SetProp(_hTerminal, _titleBuf, (HANDLE)this);
         // 4. 设置新的窗口过程
         SetWindowLongPtr(_hTerminal, GWLP_WNDPROC, (LONG_PTR)TerminalEditProc);
         NppSSH_LogInfoAuto("伪终端子类化完成！hWnd=" + PtrToHexStr(_hTerminal)
@@ -1655,15 +1682,19 @@ HWND SSHTerminal::InitTerminalEditBox(HWND hParent) {
             + " 新过程：" + PtrToHexStr(TerminalEditProc));
     }
 
-    // 严格检查，避免重复添加终端实例到vector
-    auto it = std::find(vectorSSHTerminal.begin(), vectorSSHTerminal.end(), this);
-    if (it == vectorSSHTerminal.end()) {
-        vectorSSHTerminal.push_back(this);
-        NppSSH_LogInfoAuto("终端实例添加到vector，当前数量：" + std::to_string(vectorSSHTerminal.size()));
+    {
+        //std::lock_guard<std::mutex> lock(g_SSHTerminalMutex);
+        // 严格检查，避免重复添加终端实例到vector
+        auto it = std::find(g_SSHTerminalVec.begin(), g_SSHTerminalVec.end(), this);
+        if (it == g_SSHTerminalVec.end()) {
+            g_SSHTerminalVec.push_back(this);
+            NppSSH_LogInfoAuto("终端实例添加到map，当前数量：" + std::to_string(g_SSHTerminalVec.size()));
+        }
+        else {
+            NppSSH_LogInfoAuto("终端实例已存在于map，跳过添加");
+        }
     }
-    else {
-        NppSSH_LogInfoAuto("终端实例已存在于vector，跳过添加");
-    }
+    
     _initialized = true;
     //MessageBoxW(s_nppData._nppHandle, L"终端伪终端初始化完成 ✅", L"成功", MB_OK);
     return _hTerminal;
@@ -1754,7 +1785,7 @@ void SSHTerminal::SizeSSHTerminal(HWND hParent) {//hParent=面板的_hSelf
     //SendMessageW(_hTerminal, EM_SETWORDBREAKPROCEX, 0, (LPARAM)ForceBreakWordBreakProcEx);
 
     //只重绘【伪终端】自己让伪终端立刻刷新、重新绘制自己的内容、文字、背景、边框。
-    //::RedrawWindow(_hTerminal, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);// 刷新伪终端内容（防止文字不显示）
+    ::RedrawWindow(_hTerminal, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);// 刷新伪终端内容（防止文字不显示）
 }
 
 // 宽字符版本调试打印
@@ -2010,21 +2041,21 @@ const std::string& SSHTerminal::GetPrompt() const {
     return _prompt;
 }
 
-HWND SSHTerminal_InitTerminalEditBox(HWND hParent, int panelId) {
+HWND SSHTerminal_InitControlPanel(HWND hParent, int panelSeqId) {
     SSHTerminal* _SSHTerminal = new SSHTerminal();
-    NppSSH_LogInfoAuto("终端绑定的面板ID==" + std::to_string(panelId));
-    _SSHTerminal->SetPanelId(panelId);
+    NppSSH_LogInfoAuto("终端绑定的面板ID==" + std::to_string(panelSeqId));
+    _SSHTerminal->Set_panelSeqId(panelSeqId);
     return _SSHTerminal->InitTerminalEditBox(hParent);
 }
-void SSHTerminal_disconnectTerminalEditBox(int panelIndex) {
+void SSHTerminal_DisconnectHandle(int panelIndex) {
     SSHTerminal* panel = getSSHTerminal(panelIndex);
     panel->disConnection();
 }
-void SSHTerminal_resetSSHTerminal(int panelIndex) {
+void SSHTerminal_BySeqIdReset(int panelIndex) {
     SSHTerminal* panel = getSSHTerminal(panelIndex);
     panel->resetSSHTerminal();
 }
-void SSHTerminal_SizeSSHTerminal(HWND hParent,int panelIndex) {
+void SSHTerminal_Resize(HWND hParent,int panelIndex) {
     wchar_t szMsg[256] = { 0 };
     wsprintfW(szMsg, L"SSHTerminal_SizeSSHTerminal -> 面板序号：%d", panelIndex);
     //::MessageBoxW(s_nppData._nppHandle, szMsg, L"NppSSH提示", MB_OK | MB_ICONINFORMATION);
@@ -2043,7 +2074,7 @@ void SSHTerminal_SizeSSHTerminal(HWND hParent,int panelIndex) {
 
 }
 
-void SSHTerminal_AppendOutput(int panelIndex, const std::string& text) {
+void SSHTerminal_AppendTextHandle(int panelIndex, const std::string& text) {
     NppSSH_LogInfoAuto("输出指定面板" + std::to_string(panelIndex)+"输出具体内容======"+ std::string(text));
 
     if (panelIndex < 0) return;
@@ -2089,14 +2120,14 @@ void SSHTerminal_AppendOutput(int panelIndex, const std::string& text) {
     panel->AppendOutputText(text);
 
 }
-void SSHTerminal_PanelPrompt(int panelIndex, const std::string Prompt) {
+void SSHTerminal_SetPanelPrompt(int panelIndex, const std::string Prompt) {
     NppSSH_LogInfoAuto("【调试】SSHTerminal_PanelPrompt设置提示符");
     SSHTerminal* panel = getSSHTerminal(panelIndex);
     std::string prompt = Prompt;
     prompt = CleanAnsiEscapeSequences(prompt);
     panel->SetPrompt(prompt);
 }
-void SSHTerminal_SetIsCommandRunning(int panelIndex, bool isCommandRunning) {
+void SSHTerminal_SetCommandRunning(int panelIndex, bool isCommandRunning) {
     SSHTerminal* panel = getSSHTerminal(panelIndex);
     if (panel)
     {
@@ -2131,7 +2162,7 @@ void SSHTerminal_SetEnglishType(int panelIndex) {
         imm_chineseType(TerminalHWND);
     }
 }
-void SSHTerminal_ClearOutputText(int panelIndex) {
+void SSHTerminal_ExecuteClear(int panelIndex) {
 
     SSHTerminal* panel = getSSHTerminal(panelIndex);
     if (panel)
@@ -2141,30 +2172,62 @@ void SSHTerminal_ClearOutputText(int panelIndex) {
         panel->SetStoreContent(L"");
     }
 }
-std::string SSHTerminal_getPanelPrompt(int panelIndex) {
+std::string SSHTerminal_PanelPrompt(int panelIndex) {
     SSHTerminal* panel = getSSHTerminal(panelIndex);
     return panel->GetPrompt();
 }
+void SSHTerminal_BySeqIdRemove(int panelSeqId) {
+    if (panelSeqId < 0 || panelSeqId >= (int)g_SSHTerminalVec.size())
+    {
+        NppSSH_LogInfoAuto("SSHTerminal_RemoveBySeq 无效序号:" + std::to_string(panelSeqId));
+        return;
+    }
+    {
+        std::lock_guard<std::mutex> lock(g_SSHTerminalMutex);
+        // 释放内存
+        SSHTerminal* pDel = g_SSHTerminalVec[panelSeqId];
+        delete pDel;
+        g_SSHTerminalVec.erase(g_SSHTerminalVec.begin() + panelSeqId);
 
+    }
+    //g_SSHTerminalVecAll();
+}
 /*
 * 获取当前面板
 */
 SSHTerminal* getSSHTerminal(int panelIndex) {
-    std::string szDebugMsg = "面板大小改变 === vectorSSHTerminal 内容 ===\r\n总数：" + IntToStr((int)vectorSSHTerminal.size()) + "\r\n\r\n";
-
-    for (int i = 0; i < vectorSSHTerminal.size(); i++)
-    {
-        SSHTerminal* p = vectorSSHTerminal[i];
+    std::string szDebugMsg = "获取当前面板 "+ IntToStr(panelIndex) + " 【vectorSSHTerminal】 内容 ===\r\n总数：" + IntToStr((int)g_SSHTerminalVec.size()) + "\r\n\r\n";
+    int i;
+    for (auto* p : g_SSHTerminalVec) {
         if (p == nullptr) {
             szDebugMsg += "[" + IntToStr(i) + "] 指针：空指针\r\n";
         }
         else {
             szDebugMsg += "[" + IntToStr(i) + "] 指针：" + PtrToHexStr(p) + "\r\n";
         }
+        i++;
     }
     //NppSSH_LogInfoAuto(szDebugMsg);
 
-    if (panelIndex < 1) return nullptr;
-    panelIndex = panelIndex - 1;
-    return vectorSSHTerminal[panelIndex];
+    //if (panelIndex < 1) return nullptr;
+    //panelIndex = panelIndex - 1;
+    return g_SSHTerminalVec[panelIndex];
+}
+// 释放容器内所有SSHTerminal对象并清空容器
+void SSHTerminal_ClearAllSSHTerminal()
+{
+    std::lock_guard<std::mutex> lock(g_SSHTerminalMutex);
+
+    // 逐个销毁实例
+    for (SSHTerminal* pTerm : g_SSHTerminalVec)
+    {
+        if (pTerm != nullptr)
+        {
+            delete pTerm;
+            pTerm = nullptr;
+        }
+    }
+
+    // 清空容器数组
+    g_SSHTerminalVec.clear();
 }

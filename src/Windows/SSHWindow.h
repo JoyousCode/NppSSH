@@ -22,6 +22,14 @@
 #include <ws2tcpip.h>
 #include <vector>
 #include <atomic>
+#include <SSHSettings.h>
+
+#include "SSHPanel.h"
+#include "SSHConnection.h"
+#include "SSHLog.h"
+#include "SSHTerminal.h"
+
+#include <unordered_map>
 
 //#define WM_SSH_CONNECT_RESULT (WM_USER + 100)
 // 自定义SSH消息体系（完全替代WM_）
@@ -42,72 +50,83 @@
 #define TIMER_ID_RESIZE_PTY (WM_USER + 2003)
 #define WM_USER_RESIZE_PTY (WM_USER + 2004)
 
-/////////////////////////////////////////////////////////////初始值在SSHPanel
-// 全局变量声明（供SSHClient调用）
-extern std::vector<class NppSSHDockPanel*>& g_sshPanels;
-extern std::atomic<int>& g_panelCounter;
+
+class SSHPanel;
+class SSHTerminal;
+//extern std::unordered_map<int, SSHPanel*> g_SSHPanelSeqIdMap;//key：序列，每创建一个面板唯一的序列
+extern std::vector<SSHPanel*> g_SSHPanelVec;
+extern std::vector<SSHTerminal*> g_SSHTerminalVec;
+
+
+// 全局变量转发
 extern NppData& g_nppData;
 extern HINSTANCE& g_hInst;
-
-/////////////////////////////////////////////////////////////初始值在SSHConnection
-// SSH连接全局状态（声明，具体定义在SSHConnection中）
 extern int& iconSize;
 
-//////////////////////////////////////////////////////////////////////////别的文件调用SSHPanel的函数内容
-// 核心：可停靠面板类（声明，具体实现在SSHPanel中）
-class NppSSHDockPanel;
 
-// ini操作函数（声明，具体实现在SSHPanel中）
-void SavePanelCountToIni(int count);
-int LoadPanelCountFromIni();
-void DeletePanelCountFromIni();
-
-// NPP启动时自动重建面板（分发到SSHPanel）
-void RecreatePanelsOnNppStart();
-
-HWND NppSSH_getLoginPanel();	//获得每次登录面板创建的句柄
-HWND NppSSH__getPanelHwnd(int panelId);	//根据面板ID获得面板句柄
+// 工具函数
+void SSH_PanelVecBySeqIdUpdate(int startIndex);			// 根据删除的序列，后面的序列ID实例内容统一都向前移动
+void SSH_PanelVecClearAll();							// 释放g_SSHPanelVec集合中所有面板
 
 
-//////////////////////////////////////////////////////////////////////////别的文件调用SSHConnection的函数内容
-// SSH连接操作函数（声明，具体实现在SSHConnection中）
-bool NppSSH_Connect(int panelId,const char* host, int port, const char* user, const char* pass);
-void NppSSH_Disconnect(int panelId);				// 断开SSH连接
-bool NppSSH_IsConnected(int panelId);				// 判断是否连接
-void NppSSH_ResetConnectionState(int panelId);		// 重置连接状态（暂未使用）
-
-// 新增：命令执行中转接口声明
-bool NppSSH_ExecuteCommand(int panelIndex, const std::string& cmd); // 执行SSH命令
-std::string NppSSH_PanelPrompt(int panelIndex);
-void NppSSH_libssh2_channel_request_pty_size(int panelId, int cols, int rows);
+// 全局处理
+void SSH_PanelVecBySeqIdRemove(int panelSeqId);			// 根据序列ID移除集合中的内容
+SSHPanel* SSH_PanelVecBySeqIdGetSSHPanel(int panelSeqId);// 根据序列ID获得集合中的面板实例
+int SSH_PanelVecSize();									// 所有面板数量
+int SSH_PanelVecGetInvalidSeqId();						// 查找缺失的第一个 序列ID 或者返回下一个最大 序列ID
+bool SSH_PanelVecIsHasConnection();						// 检查所有面板中是否有连接
+void SSH_HandAllFree();									// 关闭软件正确释放所有内容
 
 
-//////////////////////////////////////////////////////////////////////////别的文件调用SSHLog的函数内容
+// 其他文件调用SSHSettings中的函数
+void SSH_SettingsSavePanelCount(int count);				// Ini文件保存面板数量
+int SSH_SettingsLoadPanelCount();						// Ini文件读取面板数量
+void SSH_SettingsDeleteFile();							// Ini文件直接删除
+bool SSH_SettingsSavePanelType(int panelRealId, PanelType type);// Ini文件根据面板标题ID保存面板类型
+//PanelType SSH_LoadPanelTypeFromIni(int panelId);		// 读取INI：加载指定面板的类型
+void SSH_SettingsInitRecreatePanels();					// 重建面板,根据不同的type创建不同的面板
+void SSH_SettingsByRealIdRemove(int panelRealId);		// 删除指定面板ID对应的类型配置项，不存在直接返回不报错
+//std::vector<PanelIdTypeItem> SSH_GetAllPanelIdTypeList(); // 获取全部面板ID与类型有序集合
+
+
+// 其他文件调用SSHPanel中的函数
+void SSH_PanelInitRecreatePanel(int panelSeqId, int panelRealId);	// 自动重建面板
+HWND SSH_PanelGetLoginPanelHwnd();									//获得每次登录面板创建的句柄
+HWND SSH_PanelGetPanelHwnd(int panelSeqId);							//根据面板ID获得面板句柄
+
+
+// 其他文件调用SSHConnection中的函数
+bool SSH_ConnectionHandle(int panelSeqId,const char* host, int port, const char* user, const char* pass);	// 连接操作
+void SSH_ConnectionOnDisconn(int panelSeqId);				// 断开SSH连接
+bool SSH_ConnectionIsConn(int panelSeqId);					// 判断是否连接
+void SSH_ConnectionResetConn(int panelSeqId);				// 重置连接状态（暂未使用）
+bool SSH_ConnectionExecuteCommand(int panelSeqId, const std::string& cmd); // 执行SSH命令
+std::string SSH_ConnectionPanelPrompt(int panelSeqId);		// 获取命令提示词
+void SSH_ConnectionPtySize(int panelSeqId, int cols, int rows);// 设置申请的Pty大小
+
+
+// 其他文件调用SSHLog中的函数
 // 日志转发接口（核心：只转发，不处理逻辑）
-void NppSSH_LogDebug(const std::string& event, const std::string& content);  // 调试级
-void NppSSH_LogInfo(const std::string& event, const std::string& content);	
-void NppSSH_LogWarn(const std::string& event, const std::string& content);   // 警告级
-void NppSSH_LogError(const std::string& event, const std::string& content);
-
+void NppSSH_LogDebug(const std::string& event, const std::string& content);  // 日志转发实现：调试级
+void NppSSH_LogInfo(const std::string& event, const std::string& content);	 // 日志转发实现：Info级别
+void NppSSH_LogWarn(const std::string& event, const std::string& content);   // 日志转发实现：警告级
+void NppSSH_LogError(const std::string& event, const std::string& content);  // 日志转发实现：Error级别
 // 简化封装：自动传入当前调用函数名作为事件（无需手动传event）
 #define NppSSH_LogDebugAuto(content) NppSSH_LogDebug(__FUNCTION__, content)
 #define NppSSH_LogInfoAuto(content) NppSSH_LogInfo(__FUNCTION__, content)
 #define NppSSH_LogWarnAuto(content) NppSSH_LogWarn(__FUNCTION__, content)
 #define NppSSH_LogErrorAuto(content) NppSSH_LogError(__FUNCTION__, content)
 
-// 转发SSHTerminal的函数声明（SSH_前缀 + 原函数名）
-// 初始化终端编辑框
-HWND SSH_InitTerminalEditBox(HWND hParent, int panelId);
-// 断开终端编辑框
-void SSH_disconnectTerminalEditBox(int panelIndex);
-// 输出文本到终端，isPrompt设置追加后是否追加提示词
-void SSH_AppendOutputText(int panelIndex, const std::string& text);
-// 设置提示词
-void SSH_PanelPrompt(int panelIndex, const std::string prompt);
-void SSH_SetIsCommandRunning(int panelIndex, bool isCommandRunning);
-void SSH_SetEnglishType(int panelIndex);
-void SSH_ClearOutputText(int panelIndex);//清空伪终端内容
-// 获取终端命令提示符
-std::string SSH_getPanelPrompt(int panelIndex);
-void SSH_resetSSHTerminal(int panelIndex);
-void SSH_SizeSSHTerminal(HWND hParent, int panelIndex);
+
+// 其他文件调用SSHTerminal中的函数
+HWND SSH_TerminalInitControlPanel(HWND hParent, int panelSeqId);		// 初始化伪终端面板
+void SSH_TerminalDisconnectHandle(int panelSeqId);						// 断开伪终端面板
+void SSH_TerminalAppendTextHandle(int panelSeqId, const std::string& text);// 输出文本到伪终端，isPrompt设置追加后是否追加提示词
+void SSH_TerminalSetPanelPrompt(int panelSeqId, const std::string prompt);// 设置伪终端面板命令提示词
+void SSH_TerminalSetCommandRunning(int panelSeqId, bool isCommandRunning);// 设置伪终端命令执行中
+void SSH_TerminalSetEnglishType(int panelSeqId);						// 第一次连接成功后默认是中文模式，修改为英文模式
+void SSH_TerminalExecuteClear(int panelSeqId);							// 清空伪终端面板内容
+std::string SSH_TerminalPanelPrompt(int panelSeqId);					// 获取终端命令提示符
+void SSH_TerminalBySeqIdRemove(int panelSeqId);							// 根据序列ID移除面板
+void SSH_TerminalBySeqIdReset(int panelSeqId);							// 重置面板（暂未使用）
+void SSH_TerminalResize(HWND hParent, int panelSeqId);					// 调整伪终端面板大小

@@ -1,90 +1,192 @@
 //SSHWindow.cpp（仅分发调用，无具体逻辑）
 #include "SSHWindow.h"
-#include "SSHPanel.h"
-#include "SSHConnection.h"
-#include "SSHLog.h"
-#include "SSHTerminal.h"
+
+std::vector<SSHPanel*> g_SSHPanelVec;
+static std::mutex g_SSHPanelMutex;
+
 
 // 全局变量转发（实际定义在SSHPanel中）
-std::vector<NppSSHDockPanel*>& g_sshPanels = SSHPanel_GetGlobalPanels();
-std::atomic<int>& g_panelCounter = SSHPanel_GetGlobalPanelCounter();
 NppData& g_nppData = SSHPanel_GetGlobalNppData();
 HINSTANCE& g_hInst = SSHPanel_GetGlobalHInst();
 int& iconSize = SSHPanel_iconSize();
 
 
+/**************（工具函数）***************/
+void SSH_PanelVecBySeqIdUpdate(int startIndex) {
+    for (size_t i = startIndex; i < g_SSHPanelVec.size(); ++i) {
+        g_SSHPanelVec[i]->Set_panelSeqId(i);
+    }
+}
+void SSH_PanelVecClearAll()
+{
+    for (auto* p : g_SSHPanelVec)
+    {
+        delete p;
+    }
+    g_SSHPanelVec.clear();
+}
+
+
+/**************（全局处理）***************/
+void SSH_PanelVecBySeqIdRemove(int panelSeqId) {
+    if (panelSeqId < 0 || panelSeqId >= (int)g_SSHPanelVec.size())
+    {
+        NppSSH_LogInfoAuto("【全局处理】无效序号:" + std::to_string(panelSeqId));
+        return;
+    }
+    {
+        std::lock_guard<std::mutex> lock(g_SSHPanelMutex);
+        // delete this释放内存已由窗口过程手动处理，这里不再处理
+        g_SSHPanelVec.erase(g_SSHPanelVec.begin() + panelSeqId);
+        // 更新后续元素的 panelSeqId
+        SSH_PanelVecBySeqIdUpdate(panelSeqId);
+    }
+}
+SSHPanel* SSH_PanelVecBySeqIdGetSSHPanel(int panelSeqId)
+{
+    if (panelSeqId < 0 || panelSeqId >= (int)g_SSHPanelVec.size())
+        return nullptr;
+    return g_SSHPanelVec[panelSeqId];
+    //方便直接修改实例上的属性，使用示例：SSHPanel* p = SSH_PanelVecBySeqIdGetSSHPanel(panelSeqId);if (!p) return;p->UpdateToolbarIconSize();
+}
+int SSH_PanelVecSize() {
+    return g_SSHPanelVec.size();
+}
+int SSH_PanelVecGetInvalidSeqId() {
+    if (g_SSHPanelVec.empty()) {
+        return 1; // 如果向量为空，第一个可用 ID 是 1
+    }
+
+    // 创建一个临时向量来存储所有的 ID
+    std::vector<int> ids;
+    for (const auto& panel : g_SSHPanelVec) {
+        ids.push_back(panel->Get_panelrealId());
+    }
+
+    // 排序 ID 列表
+    std::sort(ids.begin(), ids.end());
+
+    // 检查是否存在缺失的 ID
+    for (size_t i = 0; i < ids.size(); ++i) {
+        if (ids[i] != static_cast<int>(i + 1)) {
+            return static_cast<int>(i + 1); // 返回缺失的 ID
+        }
+    }
+
+    // 如果没有缺失的 ID，返回下一个最大 ID
+    return ids.back() + 1;
+}
+bool SSH_PanelVecIsHasConnection() { // 检查活跃连接
+    bool hasActiveConnection = false;
+    for (auto* panel : g_SSHPanelVec) {
+        if (panel && panel->isSSHConnected()) {
+            hasActiveConnection = true;
+            break;
+        }
+    }
+    return hasActiveConnection;
+}
+void SSH_HandAllFree() {
+    // 检查活跃连接并直接断开
+    bool hasActiveConnection = SSH_PanelVecIsHasConnection();
+    if (hasActiveConnection) {
+        for (auto* panel : g_SSHPanelVec) {
+            if (panel) {
+                panel->disconnectSSH(); // 断开连接+恢复初始文本
+            }
+        }
+    }
+    SSHConnection_ClearAllSSHConnections();
+    SSHTerminal_ClearAllSSHTerminal();
+    SSH_PanelVecClearAll();
+}
+
+
+/**************（实际定义在SSHSettings中）***************/
+void SSH_SettingsSavePanelCount(int count) {
+    SSHSettings_SavePanelCount(count); // INI操作转发
+}
+int SSH_SettingsLoadPanelCount() {
+    return SSHSettings_LoadPanelCount();
+}
+void SSH_SettingsDeleteFile() {
+    SSHSettings_DeleteFile();
+}
+bool SSH_SettingsSavePanelType(int newPanelrealId, PanelType type) {
+    return SSHSettings_SavePanelType(newPanelrealId, type);
+}
+// 读取INI：加载指定面板的类型
+//PanelType SSH_LoadPanelTypeFromIni(int panelId) {
+//    return SSHSettings_LoadPanelTypeFromIni(panelId);
+//}
+void SSH_SettingsInitRecreatePanels() {
+    SSHSettings_InitRecreatePanels();
+}
+void SSH_SettingsByRealIdRemove(int panelRealId) {
+    SSHSettings_ByRealIdRemove(panelRealId);
+}
+// 获取全部面板ID与类型有序集合
+//std::vector<PanelIdTypeItem> SSH_GetAllPanelIdTypeList() {
+//    return SSHSettings_GetAllPanelIdTypeList();
+//}
+
+
 /**************（实际定义在SSHPanel中）***************/
-void SavePanelCountToIni(int count) {  
-    SSHPanel_SavePanelCountToIni(count); // INI操作转发
+void SSH_PanelInitRecreatePanel(int panelSeqId, int panelrealId) {//panelSeqId索引从0开始，panelrealId面板默认标题从1开始
+    //int panelSeqId = g_SSHPanelSeqIdMap.size();panelSeqId++;
+    NppSSH_LogInfoAuto("面板索引="+ std::to_string(panelSeqId) +"面板标题id="+ std::to_string(panelrealId));
+    std::lock_guard<std::mutex> lock(g_SSHPanelMutex);
+    if (panelSeqId < 0) { panelSeqId = 0;panelrealId = 1; }
+    SSHPanel* pPanel = new SSHPanel(panelSeqId, panelrealId);
+    SSHPanel_InitRecreatePanel(pPanel);
+    g_SSHPanelVec.push_back(pPanel);
+}
+HWND SSH_PanelGetLoginPanelHwnd() {
+    return SSHPanel_GetLoginPanelHwnd();        //获得登录面板句柄
+}
+HWND SSH_PanelGetPanelHwnd(int panelSeqId) {
+    return SSHPanel_GetPanelHwnd(panelSeqId);
 }
 
-int LoadPanelCountFromIni() {
-    return SSHPanel_LoadPanelCountFromIni();
-}
-
-void DeletePanelCountFromIni() {
-    SSHPanel_DeletePanelCountFromIni();
-}
-
-void RecreatePanelsOnNppStart() {
-    SSHPanel_RecreatePanelsOnNppStart();    // NPP启动重建面板转发
-}
-
-
-HWND NppSSH_getLoginPanel() {
-    return SSHPanel_getLoginPanel();        //获得登录面板句柄
-}
-HWND NppSSH__getPanelHwnd(int panelId) {
-    return SSHPanel_getPanelHwnd(panelId);
-}
 
 /**************（实际定义在SSHConnection中）***************/
-bool NppSSH_Connect(int panelId,const char* host, int port, const char* user, const char* pass) {
-    return SSHConnection_Connect(panelId,host, port, user, pass);   // SSH连接操作转发
+bool SSH_ConnectionHandle(int panelSeqId,const char* host, int port, const char* user, const char* pass) {
+    return SSHConnection_Handle(panelSeqId,host, port, user, pass);   // SSH连接操作转发
+}
+void SSH_ConnectionOnDisconn(int panelSeqId) {
+    SSHConnection_OnDisconn(panelSeqId);
+}
+bool SSH_ConnectionIsConn(int panelSeqId) {
+    return SSHConnection_IsConn(panelSeqId);
+}
+void SSH_ConnectionResetConn(int panelSeqId) {
+    SSHConnection_ResetConn(panelSeqId);
+}
+bool SSH_ConnectionExecuteCommand(int panelSeqId, const std::string& cmd) {
+    return SSHConnection_ExecuteCommand(panelSeqId, cmd);   // 命令执行转发
+}
+std::string SSH_ConnectionPanelPrompt(int panelSeqId) {
+    return SSHConnection_PanelPrompt(panelSeqId);
+}
+void SSH_ConnectionPtySize(int panelSeqId, int cols, int rows) {
+    SSHConnection_PtySize(panelSeqId, cols, rows);
 }
 
-void NppSSH_Disconnect(int panelId) {
-    SSHConnection_Disconnect(panelId);
-}
 
-bool NppSSH_IsConnected(int panelId) {
-    return SSHConnection_IsConnected(panelId);
-}
-
-void NppSSH_ResetConnectionState(int panelId) {
-    SSHConnection_ResetState(panelId);
-}
-
-bool NppSSH_ExecuteCommand(int panelIndex, const std::string& cmd) {
-    return SSHConnection_ExecuteCommand(panelIndex, cmd);   // 命令执行转发
-}
-std::string NppSSH_PanelPrompt(int panelIndex) {
-    return SSHConnection_Prompt(panelIndex);
-}
-void NppSSH_libssh2_channel_request_pty_size(int panelId, int cols, int rows) {
-    SSHConnection_libssh2_channel_request_pty_size(panelId, cols, rows);
-}
 /**************（实际定义在SSHLog中）***************/
-// 日志转发实现：调试级
 void NppSSH_LogDebug(const std::string& event, const std::string& content) {
     SSHLog_Write(LogLevel::LOG_DEBUG, event, content);
 }
-
-// 日志转发实现：Info级别
 void NppSSH_LogInfo(const std::string& event, const std::string& content) {
     SSHLog_Write(LogLevel::LOG_INFO, event, content);
 }
-
-// 日志转发实现：警告级
 void NppSSH_LogWarn(const std::string& event, const std::string& content) {
     SSHLog_Write(LogLevel::LOG_WARN, event, content);
 }
-
-// 日志转发实现：Error级别
 void NppSSH_LogError(const std::string& event, const std::string& content) {
     SSHLog_Write(LogLevel::LOG_ERROR, event, content);  
 }
-///// ===================== 日志测试（连接成功输出，全部走SSHWindow中转）=====================
+///// ===================== 日志调用正确测试示例=====================
 //// 1. 自动获取当前函数名作为 event（最常用）
 //NppSSH_LogInfoAuto("==============测试日志使用开始==========");
 //NppSSH_LogInfoAuto("SSH连接成功，Socket与会话已创建");
@@ -113,37 +215,37 @@ void NppSSH_LogError(const std::string& event, const std::string& content) {
 //NppSSH_LogInfoAuto("==============测试日志使用结束==========");
 
 
-// 转发函数实现（仅调用SSHTerminal对应方法，无任何业务逻辑修改）
-HWND SSH_InitTerminalEditBox(HWND hParent, int panelId) {
-    return SSHTerminal_InitTerminalEditBox(hParent, panelId);
+/**************（实际定义在SSHTerminal中）***************/
+HWND SSH_TerminalInitControlPanel(HWND hParent, int panelSeqId) {
+    return SSHTerminal_InitControlPanel(hParent, panelSeqId);
 }
-void SSH_disconnectTerminalEditBox(int panelIndex) {
-    SSHTerminal_disconnectTerminalEditBox(panelIndex);
+void SSH_TerminalDisconnectHandle(int panelSeqId) {// 未用
+    SSHTerminal_DisconnectHandle(panelSeqId);
 }
-void SSH_resetSSHTerminal(int panelIndex) {
-    SSHTerminal_resetSSHTerminal(panelIndex);
+void SSH_TerminalAppendTextHandle(int panelSeqId, const std::string& text) {
+    SSHTerminal_AppendTextHandle(panelSeqId, text);
 }
-void SSH_SizeSSHTerminal(HWND hParent, int panelIndex) {
-    SSHTerminal_SizeSSHTerminal(hParent,panelIndex);
+void SSH_TerminalSetPanelPrompt(int panelSeqId, const std::string prompt) {
+    SSHTerminal_SetPanelPrompt(panelSeqId, prompt);
 }
-void SSH_AppendOutputText(int panelIndex, const std::string& text) {
-    SSHTerminal_AppendOutput(panelIndex, text);
+void SSH_TerminalSetCommandRunning(int panelSeqId, bool isCommandRunning) {
+    SSHTerminal_SetCommandRunning(panelSeqId, isCommandRunning);
 }
-void SSH_PanelPrompt(int panelIndex, const std::string prompt) {
-    SSHTerminal_PanelPrompt(panelIndex, prompt);
+void SSH_TerminalSetEnglishType(int panelSeqId) {
+    SSHTerminal_SetEnglishType(panelSeqId);
 }
-
-void SSH_SetIsCommandRunning(int panelIndex, bool isCommandRunning) {
-    SSHTerminal_SetIsCommandRunning(panelIndex, isCommandRunning);
+void SSH_TerminalExecuteClear(int panelSeqId) {
+    SSHTerminal_ExecuteClear(panelSeqId);
 }
-void SSH_SetEnglishType(int panelIndex) {
-    SSHTerminal_SetEnglishType(panelIndex);
-
+std::string SSH_TerminalPanelPrompt(int panelSeqId) {
+    return SSHTerminal_PanelPrompt(panelSeqId);
 }
-void SSH_ClearOutputText(int panelIndex) {
-    SSHTerminal_ClearOutputText(panelIndex);
+void SSH_TerminalBySeqIdRemove(int panelSeqId) {
+    SSHTerminal_BySeqIdRemove(panelSeqId);
 }
-// 获取终端命令提示符
-std::string SSH_getPanelPrompt(int panelIndex) {
-    return SSHTerminal_getPanelPrompt(panelIndex);
+void SSH_TerminalBySeqIdReset(int panelSeqId) {
+    SSHTerminal_BySeqIdReset(panelSeqId);
+}
+void SSH_TerminalResize(HWND hParent, int panelSeqId) {
+    SSHTerminal_Resize(hParent, panelSeqId);
 }

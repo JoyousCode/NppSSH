@@ -12,4 +12,6 @@
 #include <Windows.h>
 
 // 点击插件--》下拉创建面板触发，仅保留对外暴露的创建面板函数（核心逻辑已由SSHWindow转发）
-void CreateNppSSHTerminal();
+void CreateNppSSHTerminalPanel();
+
+void CreateNppSSHConEmuPanel();

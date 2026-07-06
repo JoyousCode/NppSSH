@@ -279,13 +279,14 @@ private:
 };
 
 // SSH连接操作具体声明
-bool SSHConnection_Connect(int panelId, const char* host, int port, const char* user, const char* pass);
-void SSHConnection_Disconnect(int panelId);
-bool SSHConnection_IsConnected(int panelId);
-void SSHConnection_ResetState(int panelId);
+bool SSHConnection_Handle(int panelId, const char* host, int port, const char* user, const char* pass);
+void SSHConnection_OnDisconn(int panelId);
+bool SSHConnection_IsConn(int panelId);
+void SSHConnection_ResetConn(int panelId);
 bool SSHConnection_ExecuteCommand(int panelIndex, const std::string& cmd);
-std::string SSHConnection_Prompt(int panelIndex);
-void SSHConnection_libssh2_channel_request_pty_size(int panelId, int cols, int rows);
+std::string SSHConnection_PanelPrompt(int panelIndex);
+void SSHConnection_PtySize(int panelId, int cols, int rows);
+void SSHConnection_ClearAllSSHConnections();
 
 // 工具函数声明
 inline std::wstring GBKToWstring(const std::string& str);
