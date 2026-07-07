@@ -19,13 +19,11 @@ if(MSVC)
 endif()
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(LIBSSH2_INC "D:/Users/20955/Desktop/project/C++(notepad++)/notepadSdk/libssh2/install_x64/include")
-set(LIBSSH2_LIB "D:/Users/20955/Desktop/project/C++(notepad++)/notepadSdk/libssh2/install_x64/lib/libssh2.lib")
-set(NOTEPADSDK_DIR "D:/Users/20955/Desktop/project/C++(notepad++)/notepadSdk/plugintemplate/src")
+set(LIBSSH2_INC "${CMAKE_SOURCE_DIR}/src/res/sshlib2_install_x64/include")
+set(LIBSSH2_LIB "${CMAKE_SOURCE_DIR}/src/res/sshlib2_install_x64/lib/libssh2.lib")
 
 add_library(NppSSH SHARED
     src/PluginDefinition.cpp
-    
     src/SSHClient.cpp
     src/PluginDefinition.h
     src/PluginInterface.h
@@ -58,6 +56,8 @@ add_library(NppSSH SHARED
 
     src/res/connect.ico
     src/res/disconnect.ico
+    src/res/EyeHide.ico
+    src/res/EyeShow.ico
     src/res/nppssh.ico
     src/Windows/SSHLog.h
     src/Windows/SSHLog.cpp
@@ -71,14 +71,13 @@ if(WIN32)
     set_source_files_properties(
         src/SSHClient.rc
         PROPERTIES
-        OBJECT_DEPENDS "${CMAKE_SOURCE_DIR}/src/res/connect.ico;${CMAKE_SOURCE_DIR}/src/res/disconnect.ico"
+        OBJECT_DEPENDS "${CMAKE_SOURCE_DIR}/src/res/connect.ico;${CMAKE_SOURCE_DIR}/src/res/disconnect.ico;${CMAKE_SOURCE_DIR}/src/res/EyeHide.ico;${CMAKE_SOURCE_DIR}/src/res/EyeShow.ico;${CMAKE_SOURCE_DIR}/src/res/nppssh.ico"
     )
 endif()
 
 
 target_include_directories(NppSSH PRIVATE
     ${CMAKE_SOURCE_DIR}/src
-    ${NOTEPADSDK_DIR}
     ${LIBSSH2_INC}
 )
 target_link_libraries(NppSSH PRIVATE

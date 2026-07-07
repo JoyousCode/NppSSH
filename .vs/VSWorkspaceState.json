@@ -15,8 +15,11 @@
     "",
     "\\out",
     "\\out\\build",
+    "\\out\\build\\x64-release",
     "\\src",
-    "\\src\\Windows"
+    "\\src\\res",
+    "\\src\\res\\plugintemplate",
+    "\\src\\res\\sshlib2_install_x64\\include"
   ],
   "SelectedNode": "\\CMakeLists.txt",
   "PreviewInSolutionExplorer": false
