@@ -13,6 +13,8 @@
 #include <windows.h>
 #include <consoleapi2.h>
 #include <processenv.h>
+//#include <commctrl.h>
+//#pragma comment(lib, "comctl32.lib")
 #pragma comment(lib, "gdiplus.lib")
 #pragma comment(lib, "shlwapi.lib")
 

@@ -7,6 +7,8 @@
 IDI_ICON_CONNECT        ICON    "res/connect.ico"
 IDI_ICON_DISCONNECT     ICON    "res/disconnect.ico"
 IDI_ICON_NPPSSH        ICON    "res/nppssh.ico"
+IDI_EYE_HIDE        ICON    "res/EyeHide.ico"
+IDI_EYE_SHOW        ICON    "res/EyeShow.ico"
 
 //////////////////////////////////////////////////////////////////////////
 // Notepad++ 停靠面板（官方标准样式，无警告）
@@ -42,7 +44,8 @@ BEGIN
 
     // 密码行
     LTEXT           "密码:", -1, 28, 84, 20, 12, SS_CENTERIMAGE
-    EDITTEXT        IDC_PASS,  50, 84, 200, 12, ES_AUTOHSCROLL | ES_PASSWORD | WS_TABSTOP | ES_AUTOVSCROLL
+    EDITTEXT        IDC_PASS,  50, 84, 185, 12, ES_AUTOHSCROLL | ES_PASSWORD | WS_TABSTOP | ES_AUTOVSCROLL
+    CONTROL         "", IDC_BTN_EYE, "BUTTON", WS_CHILD | WS_VISIBLE | BS_ICON, 235, 84, 15, 12
 
     // 按钮区：左下测试 / 右下连接，等宽等高，完美贴合截图样式
     PUSHBUTTON      "测试", IDC_BTN_TEST, 20, 110, 40, 15

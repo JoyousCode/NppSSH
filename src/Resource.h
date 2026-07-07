@@ -22,6 +22,10 @@
 #define IDC_PASS 1023
 #define IDC_BTN_CONNECT 1024
 #define IDC_BTN_TEST  1025  // 新增测试按钮ID
+#define IDC_BTN_EYE 1026	// 眼睛按钮控件ID
+#define IDI_EYE_HIDE 1027	//隐藏密码图标
+#define IDI_EYE_SHOW 1028	//显示密码图标
+
 
 
 #endif // RESOURCE_H

@@ -1,7 +1,6 @@
 // SSHPanel.cpp（面板 + 注册表具体实现）
 #include "SSHPanel.h"
 #include "SSHSettings.h" // 引入INI工具
-
 static NppData s_nppData;
 static HINSTANCE s_hInst;
 static int s_iconSize;
@@ -451,8 +450,25 @@ INT_PTR CALLBACK SSHPanel::SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam,
         SetDlgItemTextA(hWnd, IDC_USER, "root");
         SetDlgItemTextA(hWnd, IDC_PASS, "123456");
 
-        // 密码框样式
+        // 密码框样式：默认隐藏密码
+        HWND hPassEdit = GetDlgItem(hWnd, IDC_PASS);
         SendDlgItemMessage(hWnd, IDC_PASS, EM_SETPASSWORDCHAR, L'•', 0);
+        SendDlgItemMessageW(hWnd, IDC_HOST, EM_SETCUEBANNER, 0, (LPARAM)L"请输入SSH主机IP/域名");
+        SendDlgItemMessageW(hWnd, IDC_PORT, EM_SETCUEBANNER, 0, (LPARAM)L"请输入SSH端口");
+        SendDlgItemMessageW(hWnd, IDC_USER, EM_SETCUEBANNER, 0, (LPARAM)L"请输入登录用户");
+        SendDlgItemMessageW(hWnd, IDC_PASS, EM_SETCUEBANNER, 0, (LPARAM)L"请输入登录密码");
+        
+        // 加载默认闭眼图标
+        HWND hEyeBtn = GetDlgItem(hWnd, IDC_BTN_EYE);
+        HICON hEyeHide = (HICON)LoadImageW(s_hInst, MAKEINTRESOURCE(IDI_EYE_HIDE), IMAGE_ICON, 28, 28, LR_DEFAULTCOLOR);
+        HICON hEyeShow = (HICON)LoadImageW(s_hInst, MAKEINTRESOURCE(IDI_EYE_SHOW), IMAGE_ICON, 28, 28, LR_DEFAULTCOLOR);
+        SendMessageW(hEyeBtn, BM_SETIMAGE, IMAGE_ICON, (LPARAM)hEyeHide);
+        // 保存图标句柄到窗口属性，后续切换使用
+        SetPropW(hWnd, L"hEyeHide", (HANDLE)hEyeHide);
+        SetPropW(hWnd, L"hEyeShow", (HANDLE)hEyeShow);
+        // 标记当前密码是否隐藏（默认true隐藏）
+        SetPropW(hWnd, L"isPasswordHide", (HANDLE)1);
+
         s_isConnecting = false; // 初始化连接状态
         pPanel->setLoginPanel(hWnd);
         return TRUE;
@@ -470,6 +486,36 @@ INT_PTR CALLBACK SSHPanel::SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam,
             }
             EndDialog(hWnd, IDCANCEL); // 右上角关闭
             pPanel->setSSHConnected(false);//断开连接
+        }// ========== 眼睛按钮点击处理 ==========
+        else if (LOWORD(wParam) == IDC_BTN_EYE)
+        {
+            HWND hPassEdit = GetDlgItem(hWnd, IDC_PASS);
+            HWND hEyeBtn = GetDlgItem(hWnd, IDC_BTN_EYE);
+            // 读取当前状态
+            BOOL bHide = (BOOL)GetPropW(hWnd, L"isPasswordHide");
+            HICON hHide = (HICON)GetPropW(hWnd, L"hEyeHide");
+            HICON hShow = (HICON)GetPropW(hWnd, L"hEyeShow");
+
+            if (bHide)
+            {
+                // 当前隐藏 → 切换明文，取消掩码
+                SendDlgItemMessage(hWnd, IDC_PASS, EM_SETPASSWORDCHAR, 0, 0);
+                SendMessageW(hEyeBtn, BM_SETIMAGE, IMAGE_ICON, (LPARAM)hShow);
+                SetPropW(hWnd, L"isPasswordHide", (HANDLE)0);
+            }
+            else
+            {
+                // 当前明文 → 切换掩码隐藏
+                SendDlgItemMessage(hWnd, IDC_PASS, EM_SETPASSWORDCHAR, L'•', 0);
+                SendMessageW(hEyeBtn, BM_SETIMAGE, IMAGE_ICON, (LPARAM)hHide);
+                SetPropW(hWnd, L"isPasswordHide", (HANDLE)1);
+            }
+            // 强制重绘密码输入框
+            InvalidateRect(hPassEdit, nullptr, TRUE);
+            UpdateWindow(hPassEdit);
+
+            InvalidateRect(hEyeBtn, nullptr, TRUE);
+            return TRUE;
         }
         else {
             if (LOWORD(wParam) == IDC_BTN_CONNECT || LOWORD(wParam) == IDC_BTN_TEST)//连接按钮
@@ -524,6 +570,16 @@ INT_PTR CALLBACK SSHPanel::SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam,
         // 模态对话框销毁 → POST 消息给伪终端 → 自动修复光标
         if (pPanel)
         {
+            // 释放眼睛图标资源
+            HICON hHide = (HICON)GetPropW(hWnd, L"hEyeHide");
+            HICON hShow = (HICON)GetPropW(hWnd, L"hEyeShow");
+            if (hHide) DestroyIcon(hHide);
+            if (hShow) DestroyIcon(hHide);
+            RemovePropW(hWnd, L"hEyeHide");
+            RemovePropW(hWnd, L"hEyeShow");
+            RemovePropW(hWnd, L"isPasswordHide");
+
+
             HWND hEdit = pPanel->GetOutputEditHandle();
             if (hEdit && IsWindow(hEdit))
             {
