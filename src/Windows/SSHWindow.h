@@ -24,10 +24,12 @@
 #include <atomic>
 #include <SSHSettings.h>
 
-#include "SSHPanel.h"
+//#include "SSHBasePanel.h"
+//#include "SSHPanel.h"
+//#include "SSHConEmu.h"
 #include "SSHConnection.h"
 #include "SSHLog.h"
-#include "SSHTerminal.h"
+//#include "SSHTerminal.h"
 #include "SSHUtil.h"
 
 #include <unordered_map>
@@ -51,11 +53,11 @@
 #define TIMER_ID_RESIZE_PTY (WM_USER + 2003)
 #define WM_USER_RESIZE_PTY (WM_USER + 2004)
 
-
+class SSHBasePanel;
 class SSHPanel;
 class SSHTerminal;
 //extern std::unordered_map<int, SSHPanel*> g_SSHPanelSeqIdMap;//key：序列，每创建一个面板唯一的序列
-extern std::vector<SSHPanel*> g_SSHPanelVec;
+extern std::vector<SSHBasePanel*> g_SSHPanelVec;
 extern std::vector<SSHTerminal*> g_SSHTerminalVec;
 
 
@@ -71,13 +73,20 @@ void SSH_PanelVecClearAll();							// 释放g_SSHPanelVec集合中所有面板
 
 
 // 全局处理
+SSHBasePanel* SSH_PanelVecBySeqId(int panelSeqId);
 void SSH_PanelVecBySeqIdRemove(int panelSeqId);			// 根据序列ID移除集合中的内容
 SSHPanel* SSH_PanelVecBySeqIdGetSSHPanel(int panelSeqId);// 根据序列ID获得集合中的面板实例
 int SSH_PanelVecSize();									// 所有面板数量
 int SSH_PanelVecGetInvalidSeqId();						// 查找缺失的第一个 序列ID 或者返回下一个最大 序列ID
 bool SSH_PanelVecIsHasConnection();						// 检查所有面板中是否有连接
 void SSH_HandAllFree();									// 关闭软件正确释放所有内容
-
+template<typename Func>
+//根据序列ID直接内部执行类中中的函数
+void SSH_PanelVecBySeqIdExecFunc(int panelSeqId, Func&& func)
+{
+    SSHPanel* p = SSH_PanelVecBySeqIdGetSSHPanel(panelSeqId);
+    if (p) func(p);
+}
 
 // 其他文件调用SSHSettings中的函数
 void SSH_SettingsSavePanelCount(int count);				// Ini文件保存面板数量
@@ -91,7 +100,8 @@ void SSH_SettingsByRealIdRemove(int panelRealId);		// 删除指定面板ID对应
 
 
 // 其他文件调用SSHPanel中的函数
-void SSH_PanelInitRecreatePanel(int panelSeqId, int panelRealId);	// 自动重建面板
+void SSH_PanelInitRecreateTerminalPanel(int panelSeqId, int panelRealId);	// 自动重建面板
+void SSH_PanelInitRecreateConEmuPanel(int panelSeqId, int panelrealId);
 HWND SSH_PanelGetLoginPanelHwnd();									//获得每次登录面板创建的句柄
 HWND SSH_PanelGetPanelHwnd(int panelSeqId);							//根据面板ID获得面板句柄
 

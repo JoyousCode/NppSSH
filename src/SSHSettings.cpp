@@ -237,13 +237,13 @@ void SSHSettings_InitRecreatePanels() {
         );
         switch (panelType) {
         case PanelType::TerminalPanel:
-            SSH_PanelInitRecreatePanel(seqIndex, realPanelId);
+            SSH_PanelInitRecreateTerminalPanel(seqIndex, realPanelId);
             break;
         case PanelType::ConEmuPanel:
-            SSH_PanelInitRecreatePanel(seqIndex, realPanelId);//暂时用默认的
+            SSH_PanelInitRecreateConEmuPanel(seqIndex, realPanelId);//暂时用默认的
             break;
         default:
-            SSH_PanelInitRecreatePanel(seqIndex, realPanelId);
+            SSH_PanelInitRecreateTerminalPanel(seqIndex, realPanelId);
             //SSH_TerminalPanelIdOnNppStart(seqIndex, realPanelId);
         }
     }

@@ -1,7 +1,12 @@
 //SSHWindow.cpp（仅分发调用，无具体逻辑）
 #include "SSHWindow.h"
 
-std::vector<SSHPanel*> g_SSHPanelVec;
+#include "SSHBasePanel.h"
+#include "SSHPanel.h"
+#include "SSHConEmu.h"
+#include "SSHTerminal.h"
+
+std::vector<SSHBasePanel*> g_SSHPanelVec;
 static std::mutex g_SSHPanelMutex;
 
 
@@ -21,13 +26,19 @@ void SSH_PanelVecClearAll()
 {
     for (auto* p : g_SSHPanelVec)
     {
+        if (!p)
+            continue;
         delete p;
     }
     g_SSHPanelVec.clear();
 }
-
-
 /**************（全局处理）***************/
+SSHBasePanel* SSH_PanelVecBySeqId(int panelSeqId)
+{
+    if (panelSeqId < 0 || panelSeqId >= (int)g_SSHPanelVec.size())
+        return nullptr;
+    return g_SSHPanelVec[panelSeqId];
+}
 void SSH_PanelVecBySeqIdRemove(int panelSeqId) {
     if (panelSeqId < 0 || panelSeqId >= (int)g_SSHPanelVec.size())
     {
@@ -44,10 +55,9 @@ void SSH_PanelVecBySeqIdRemove(int panelSeqId) {
 }
 SSHPanel* SSH_PanelVecBySeqIdGetSSHPanel(int panelSeqId)
 {
-    if (panelSeqId < 0 || panelSeqId >= (int)g_SSHPanelVec.size())
-        return nullptr;
-    return g_SSHPanelVec[panelSeqId];
-    //方便直接修改实例上的属性，使用示例：SSHPanel* p = SSH_PanelVecBySeqIdGetSSHPanel(panelSeqId);if (!p) return;p->UpdateToolbarIconSize();
+    SSHBasePanel* pBase = SSH_PanelVecBySeqId(panelSeqId);
+    if (!pBase) return nullptr;;
+    return dynamic_cast<SSHPanel*>(pBase);
 }
 int SSH_PanelVecSize() {
     return g_SSHPanelVec.size();
@@ -79,7 +89,8 @@ int SSH_PanelVecGetInvalidSeqId() {
 bool SSH_PanelVecIsHasConnection() { // 检查活跃连接
     bool hasActiveConnection = false;
     for (auto* panel : g_SSHPanelVec) {
-        if (panel && panel->isSSHConnected()) {
+        if (panel && panel->Get_isConnected()) {
+            NppSSH_LogInfoAuto("【检查活跃连接】");
             hasActiveConnection = true;
             break;
         }
@@ -88,15 +99,17 @@ bool SSH_PanelVecIsHasConnection() { // 检查活跃连接
 }
 void SSH_HandAllFree() {
     // 检查活跃连接并直接断开
-    bool hasActiveConnection = SSH_PanelVecIsHasConnection();
-    if (hasActiveConnection) {
-        for (auto* panel : g_SSHPanelVec) {
-            if (panel) {
-                panel->disconnectSSH(); // 断开连接+恢复初始文本
-            }
-        }
-    }
-    SSHConnection_ClearAllSSHConnections();
+    //bool hasActiveConnection = SSH_PanelVecIsHasConnection();
+    //if (hasActiveConnection) {
+    //    for (auto* panel : g_SSHPanelVec) {
+    //        if (!panel) continue;
+    //        SSHPanel* panel =  dynamic_cast<SSHPanel*>(panel);
+    //        if (panel != nullptr) panel->disconnectSSH();
+    //        SSHConEmu* conEmuPanel = dynamic_cast<SSHConEmu*>(panel);
+    //        if (conEmuPanel != nullptr) {  }//待处理如果是ConEmu断开连接
+    //    }
+    //}
+    SSHConnection_ClearAllSSHConnections();//已在该方法中直接断开连接后清空所有内容
     SSHTerminal_ClearAllSSHTerminal();
     SSH_PanelVecClearAll();
 }
@@ -132,7 +145,7 @@ void SSH_SettingsByRealIdRemove(int panelRealId) {
 
 
 /**************（实际定义在SSHPanel中）***************/
-void SSH_PanelInitRecreatePanel(int panelSeqId, int panelrealId) {//panelSeqId索引从0开始，panelrealId面板默认标题从1开始
+void SSH_PanelInitRecreateTerminalPanel(int panelSeqId, int panelrealId) {//panelSeqId索引从0开始，panelrealId面板默认标题从1开始
     //int panelSeqId = g_SSHPanelSeqIdMap.size();panelSeqId++;
     NppSSH_LogInfoAuto("面板索引="+ std::to_string(panelSeqId) +"面板标题id="+ std::to_string(panelrealId));
     std::lock_guard<std::mutex> lock(g_SSHPanelMutex);
@@ -141,9 +154,19 @@ void SSH_PanelInitRecreatePanel(int panelSeqId, int panelrealId) {//panelSeqId�
     SSHPanel_InitRecreatePanel(pPanel);
     g_SSHPanelVec.push_back(pPanel);
 }
-HWND SSH_PanelGetLoginPanelHwnd() {
-    return SSHPanel_GetLoginPanelHwnd();        //获得登录面板句柄
+void SSH_PanelInitRecreateConEmuPanel(int panelSeqId, int panelrealId) {//panelSeqId索引从0开始，panelrealId面板默认标题从1开始
+    //int panelSeqId = g_SSHPanelSeqIdMap.size();panelSeqId++;
+    NppSSH_LogInfoAuto("面板索引=" + std::to_string(panelSeqId) + "面板标题id=" + std::to_string(panelrealId));
+    std::lock_guard<std::mutex> lock(g_SSHPanelMutex);
+    if (panelSeqId < 0) { panelSeqId = 0;panelrealId = 1; }
+    SSHConEmu* pPanel = new SSHConEmu(panelSeqId, panelrealId);
+    SSHConEmu_InitRecreatePanel(pPanel);
+    g_SSHPanelVec.push_back(pPanel);
 }
+//HWND SSH_PanelGetLoginPanelHwnd(int panelSeqId) {//暂未使用
+//    SSHPanel* pPanel = g_SSHPanelVec[panelSeqId];
+//    return pPanel->getLoginPanel();        //获得登录面板句柄
+//}
 HWND SSH_PanelGetPanelHwnd(int panelSeqId) {
     return SSHPanel_GetPanelHwnd(panelSeqId);
 }

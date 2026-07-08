@@ -105,11 +105,11 @@ extern "C" __declspec(dllexport) void beNotified(SCNotification *notifyCode)
 		case NPPN_TOOLBARICONSETCHANGED:
 		{
 			// 遍历所有面板，更新按钮尺寸
-			for (auto* panel : g_SSHPanelVec) {
-				if (panel != nullptr && panel->getHSelf() != nullptr && ::IsWindow(panel->getHSelf())) {
-					panel->UpdateToolbarIconSize();
-				}
-			}
+			//for (auto* panel : g_SSHPanelVec) {
+			//	if (panel != nullptr && panel->getHSelf() != nullptr && ::IsWindow(panel->getHSelf())) {
+			//		panel->UpdateToolbarIconSize();
+			//	}
+			//}
 			break;
 		}
 		default:

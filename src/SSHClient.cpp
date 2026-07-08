@@ -20,7 +20,7 @@ void CreateNppSSHTerminalPanel() {
 
     // 生成唯一面板ID，创建新面板（复用SSHWindow的面板类）1
     int newPanelrealId = SSH_PanelVecGetInvalidSeqId();
-    SSH_PanelInitRecreatePanel(SSH_PanelVecSize(), newPanelrealId);
+    SSH_PanelInitRecreateTerminalPanel(SSH_PanelVecSize(), newPanelrealId);
     // 同步INI（替换原注册表）
     //SavePanelCountToIni(g_sshPanels.size());
     SSH_SettingsSavePanelCount(SSH_PanelVecSize());
@@ -46,7 +46,7 @@ void CreateNppSSHConEmuPanel() {
 
     // 生成唯一面板ID，创建新面板（复用SSHWindow的面板类）1
     int newPanelrealId = SSH_PanelVecGetInvalidSeqId();
-    SSH_PanelInitRecreatePanel(SSH_PanelVecSize(), newPanelrealId);
+    SSH_PanelInitRecreateConEmuPanel(SSH_PanelVecSize(), newPanelrealId);
     // 同步INI（替换原注册表）
     //SavePanelCountToIni(g_sshPanels.size());
     SSH_SettingsSavePanelCount(SSH_PanelVecSize());

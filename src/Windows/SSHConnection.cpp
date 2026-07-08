@@ -2161,6 +2161,24 @@ void SSHConnection::SetPTYSize(int cols,int rows) {
 // 仅清空容器，连接已提前全部断开
 void SSHConnection_ClearAllSSHConnections()
 {
-    std::lock_guard<std::mutex> lock(g_panelConnMutex);
+    // 先拷贝一份key列表，避免遍历过程中容器被修改导致迭代器失效
+    std::vector<int> allPanelIds;
+    allPanelIds.reserve(g_panelConnections.size());
+    for (const auto& pair : g_panelConnections)
+    {
+        allPanelIds.push_back(pair.first);
+    }
+    // 逐个断开连接
+    for (int panelId : allPanelIds)
+    {
+        auto it = g_panelConnections.find(panelId);
+        if (it == g_panelConnections.end())
+            continue;
+        auto& spConn = it->second;
+        if (spConn && spConn->IsConnected())
+        {
+            SSHConnection_OnDisconn(panelId);
+        }
+    }
     g_panelConnections.clear();
 }
