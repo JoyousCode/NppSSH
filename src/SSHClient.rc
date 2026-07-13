@@ -9,6 +9,9 @@ IDI_ICON_DISCONNECT     ICON    "res/disconnect.ico"
 IDI_ICON_NPPSSH        ICON    "res/nppssh.ico"
 IDI_EYE_HIDE        ICON    "res/EyeHide.ico"
 IDI_EYE_SHOW        ICON    "res/EyeShow.ico"
+IDI_ICON_PUTTY        ICON    "res/putty.ico"
+IDI_ICON_SELECT        ICON    "res/selectfile.ico"
+IDI_ICON_CLOSE        ICON    "res/close.ico"
 
 //////////////////////////////////////////////////////////////////////////
 // Notepad++ 停靠面板（官方标准样式，无警告）

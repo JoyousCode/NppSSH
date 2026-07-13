@@ -27,7 +27,6 @@ SSHPanel::SSHPanel(int panelSeqId, int panelrealId)
     _hOutputEdit(NULL),
     _hBtnConnectSSH(NULL),
     _hBtnDisconnectSSH(NULL),
-    _iconSize(24), // 默认工具栏图标尺寸
     _hIconConnect(NULL) ,
     _hIconDisconnect(NULL) {
     //ZeroMemory(_titleBuf, sizeof(_titleBuf));

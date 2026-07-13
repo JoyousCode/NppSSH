@@ -59,6 +59,9 @@ add_library(NppSSH SHARED
     src/res/EyeHide.ico
     src/res/EyeShow.ico
     src/res/nppssh.ico
+    src/res/putty.ico
+    src/res/selectfile.ico
+    src/res/close.ico
     src/Windows/SSHLog.h
     src/Windows/SSHLog.cpp
     src/Windows/SSHTerminal.h

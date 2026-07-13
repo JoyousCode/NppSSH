@@ -106,7 +106,7 @@ protected://只能被子类用
 private:
     tTbData _dockData;      // 原生停靠数据结构体（需声明）
     
-    int _iconSize = 28;     // 面板中按钮大小
+    
     HWND _hOutputEdit;      // 输出编辑框句柄,面板内输出文本框
     bool _isFocused;        // 标记当前面板是否获焦
     HWND _hBtnConnectSSH;   // 连接SSH按钮句柄

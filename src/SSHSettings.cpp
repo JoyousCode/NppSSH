@@ -32,6 +32,34 @@ std::wstring SSHSettings_GetPluginsConfigDir() {
 
     return configDir;
 }
+// 获取NPP插件目录（通过NPP原生消息）
+std::wstring SSHSettings_GetPluginsDir() {
+    std::wstring configDir;
+    TCHAR szConfigDir[MAX_PATH] = { 0 };
+
+    // 调用NPP原生消息获取插件配置目录
+    SendMessage(g_nppData._nppHandle, NPPM_GETPLUGINHOMEPATH, MAX_PATH, (LPARAM)szConfigDir);
+
+    // 验证路径有效性
+    if (_tcslen(szConfigDir) > 0 && PathIsDirectory(szConfigDir)) {
+        configDir = szConfigDir;
+    }
+    else {
+        // 降级方案：使用NPP安装目录下的plugins
+        TCHAR szNppPath[MAX_PATH] = { 0 };
+        GetModuleFileName(NULL, szNppPath, MAX_PATH);
+        PathRemoveFileSpec(szNppPath);
+        _stprintf_s(szConfigDir, MAX_PATH, _T("%s\\plugins"), szNppPath);
+        configDir = szConfigDir;
+
+        // 确保目录存在
+        if (!PathIsDirectory(szConfigDir)) {
+            CreateDirectory(szConfigDir, NULL);
+        }
+    }
+
+    return configDir;
+}
 
 // 获取NppSSH.ini完整路径
 std::wstring SSHSettings_GetIniFilePath() {

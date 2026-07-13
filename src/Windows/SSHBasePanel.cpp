@@ -7,6 +7,7 @@ SSHBasePanel::SSHBasePanel(int panelSeqId, int panelrealId)
     _panelSeqId(panelSeqId),
     _panelrealId(panelrealId),
     _hTabIcon(NULL),
+    _iconSize(24), // 默认工具栏图标尺寸
     _isConnected(false)
 {
     ZeroMemory(_titleBuf, sizeof(_titleBuf));
@@ -31,4 +32,6 @@ void SSHBasePanel::setBackgroundColor(COLORREF color) {
 void SSHBasePanel::setForegroundColor(COLORREF color) {
 
 }
+
+
 INT_PTR CALLBACK SSHBasePanel::run_dlgProc(UINT message, WPARAM wParam, LPARAM lParam) { return DockingDlgInterface::run_dlgProc(message, wParam, lParam); };

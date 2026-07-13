@@ -116,6 +116,9 @@ void SSH_HandAllFree() {
 
 
 /**************（实际定义在SSHSettings中）***************/
+std::wstring SSH_SettingsGetPluginsDir() {//获取插件所在文件夹绝对路径(_T("%s\\plugins"))
+    return SSHSettings_GetPluginsDir();
+}
 void SSH_SettingsSavePanelCount(int count) {
     SSHSettings_SavePanelCount(count); // INI操作转发
 }

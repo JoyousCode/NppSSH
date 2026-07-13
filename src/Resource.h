@@ -26,6 +26,16 @@
 #define IDI_EYE_HIDE 1027	//隐藏密码图标
 #define IDI_EYE_SHOW 1028	//显示密码图标
 
+//登录面板控件ID
+#define IDI_ICON_PUTTY  1040
+#define IDC_BTN_CONNECT_PUTTY 1041  // 连接SSH按钮
+#define IDC_STATIC_PUTTY_TIP     1042
+#define IDC_EDIT_PUTTY_PATH      1043
+#define IDC_BTN_BROWSE_PUTTY     1044
+#define IDI_ICON_SELECT  1045
+#define IDI_ICON_CLOSE  1046
+#define IDC_BTN_CLOSE_SSH 1047
+
 
 
 #endif // RESOURCE_H

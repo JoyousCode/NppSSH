@@ -89,6 +89,7 @@ void SSH_PanelVecBySeqIdExecFunc(int panelSeqId, Func&& func)
 }
 
 // 其他文件调用SSHSettings中的函数
+std::wstring SSH_SettingsGetPluginsDir();//获取插件所在文件夹绝对路径(_T("%s\\plugins"))
 void SSH_SettingsSavePanelCount(int count);				// Ini文件保存面板数量
 int SSH_SettingsLoadPanelCount();						// Ini文件读取面板数量
 void SSH_SettingsDeleteFile();							// Ini文件直接删除

@@ -34,6 +34,7 @@ struct PanelIdTypeItem
 };
 // 获取NPP插件配置目录（动态适配用户/默认路径）
 std::wstring SSHSettings_GetPluginsConfigDir();
+std::wstring SSHSettings_GetPluginsDir();
 
 // 获取NppSSH.ini完整路径
 std::wstring SSHSettings_GetIniFilePath();
