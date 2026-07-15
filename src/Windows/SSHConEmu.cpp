@@ -14,13 +14,45 @@ SSHConEmu::SSHConEmu(int panelSeqId, int panelrealId)
     _hStaticPuttyTip(nullptr),
     _hEditPuttyPath(nullptr),
     _hBtnSelectFile(nullptr),
-    _strPuttyFullPath(L""),
-    _hPuttyProcess(NULL) ,
-    _hPuTTYWnd(NULL),
-    _TempExceFile(L"") {
+    _strPuttyFullPath(L"") {
 }
 SSHConEmu::~SSHConEmu() {
-    StopSeachPutty();
+    isHandleHasActiveThread();
+    // 关闭所有PuTTY会话
+    {
+        std::lock_guard<std::mutex> lock(_sessionListMtx);
+        for (PuTTYSession* pSess : _sessionList)
+        {
+            if (!pSess) continue;
+            pSess->StopMonitor();
+
+            DWORD exitCode = 0;
+            BOOL bGetExit = ::GetExitCodeProcess(pSess->hProcess, &exitCode);
+            if (!bGetExit || exitCode != STILL_ACTIVE) {
+               
+                pSess->CleanHandle();
+                continue;
+            }
+            // 优雅关闭PuTTY主窗口（发送WM_CLOSE，等效手动点叉）
+            if (pSess->hWnd != NULL)
+            {
+                // 强制PuTTY窗口前置，弹窗会显示在桌面顶层，用户可见
+                ::BringWindowToTop(pSess->hWnd);
+                ::SetForegroundWindow(pSess->hWnd);
+                NppSSH_LogInfoAuto("已将PuTTY窗口置顶");
+
+                // 异步投递关闭消息，主线程立刻返回，不会卡死NPP
+                ::PostMessageW(pSess->hWnd, WM_CLOSE, 0, 0);
+                NppSSH_LogInfoAuto("异步投递WM_CLOSE消息至PuTTY窗口，不阻塞主线程");
+            }
+            // 5. 释放句柄
+            pSess->CleanHandle();
+            if (!SSH_SettingsGetConfigFileExistPath(pSess->tmpFile).empty())
+                SSH_SettingsDeleteConfigFile(pSess->tmpFile);
+            delete pSess;
+        }
+        _sessionList.clear();
+    }
     if (_hIconPutty)
     {
         ::DestroyIcon(_hIconPutty);
@@ -36,17 +68,35 @@ SSHConEmu::~SSHConEmu() {
         ::DestroyIcon(_hIconSelectFile);
         _hIconSelectFile = nullptr;
     }
-    // 插件销毁时关闭残留PuTTY并释放句柄
-    if (_hPuttyProcess != NULL)
+}
+bool SSHConEmu::isHandleHasActiveThread() {
     {
-        DWORD exitCode = 0;
-        if (::GetExitCodeProcess(_hPuttyProcess, &exitCode) && exitCode == STILL_ACTIVE)
-        {
-            // 进程仍在运行，关闭PuTTY
-            CloseSoftWare();
+        std::lock_guard<std::mutex> lock(_sessionListMtx);
+        bool isHasActiveThread = false;
+        for (PuTTYSession* pSess : _sessionList) {
+            if (pSess->hWnd != NULL) { isHasActiveThread = true;break; }
         }
-        ::CloseHandle(_hPuttyProcess);
-        _hPuttyProcess = NULL;
+        if (isHasActiveThread) {
+            int closeResult = ::MessageBoxW(_panelHwnd,
+                L"存在活跃Putty窗口，是否需要关闭所有Putty窗口？",
+                L"NppSSH 连接提示",
+                MB_YESNO | MB_ICONWARNING);
+            // 用户取消：拦截关闭，不传递WM_CLOSE给原生窗口
+            if (closeResult == IDYES)
+            {
+                for (PuTTYSession* pSess : _sessionList) {
+                    // 强制PuTTY窗口前置，弹窗会显示在桌面顶层，用户可见
+                    ::BringWindowToTop(pSess->hWnd);
+                    ::SetForegroundWindow(pSess->hWnd);
+                    NppSSH_LogInfoAuto("已将PuTTY窗口置顶");
+
+                    // 异步投递关闭消息，主线程立刻返回，不会卡死NPP
+                    ::PostMessageW(pSess->hWnd, WM_CLOSE, 0, 0);
+                    NppSSH_LogInfoAuto("异步投递WM_CLOSE消息至PuTTY窗口，不阻塞主线程");
+                }
+            }
+        }
+        return isHasActiveThread;
     }
 }
 // 重写背景色
@@ -365,14 +415,12 @@ void SSHConEmu::initPanel() {
     if (!initPanle) initPanle = true;//面板初始化完成
 }
 
-
-
-
+/// <summary>
+/// //////////////////////废除
+/// </summary>
+/// <returns></returns>
 bool SSHConEmu::Set_hPuTTYWnd() {
     DWORD pid = ::GetProcessId(_hPuttyProcess);
-    char pidLog[128] = { 0 };
-    sprintf_s(pidLog, "当前PuTTY进程PID=%lu", pid);
-    NppSSH_LogInfoAuto(pidLog);
     struct EnumWinParam
     {
         HWND wnd;
@@ -405,88 +453,91 @@ bool SSHConEmu::Set_hPuTTYWnd() {
     return FALSE;
 }
 void SSHConEmu::CloseSoftWare() {
-    // 1. 校验进程句柄有效性
-    if (_hPuttyProcess == NULL)
+    std::lock_guard<std::mutex> lock(_sessionListMtx);
+    if (_sessionList.empty())
     {
-        ::MessageBoxW(_panelHwnd, L"当前面板未启动PuTTY程序", L"提示", MB_OK | MB_ICONINFORMATION);
-        NppSSH_LogInfoAuto("关闭PuTTY失败：无有效进程句柄");
+        ::MessageBoxW(_panelHwnd, L"当前无任何PuTTY连接会话", L"提示", MB_OK | MB_ICONINFORMATION);
+        NppSSH_LogInfoAuto("关闭所有会话：无活跃会话");
         return;
     }
-
-    // 2. 判断进程是否已经退出
-    DWORD exitCode = 0;
-    BOOL bGetExit = ::GetExitCodeProcess(_hPuttyProcess, &exitCode);
-    if (!bGetExit || exitCode != STILL_ACTIVE)
+    std::vector<PuTTYSession*> validList;
+    for (PuTTYSession* pSess : _sessionList)
     {
-        ::MessageBoxW(_panelHwnd, L"PuTTY已自行关闭", L"提示", MB_OK | MB_ICONINFORMATION);
-        NppSSH_LogInfoAuto("PuTTY进程已提前退出，清理句柄");
-        ::CloseHandle(_hPuttyProcess);
-        _hPuttyProcess = NULL;
-        return;
-    }
-
-    // 3. 优雅关闭PuTTY主窗口（发送WM_CLOSE，等效手动点叉）
-    if (_hPuTTYWnd != NULL)
-    {
-
-        // 强制PuTTY窗口前置，弹窗会显示在桌面顶层，用户可见
-        ::BringWindowToTop(_hPuTTYWnd);
-        ::SetForegroundWindow(_hPuTTYWnd);
-        NppSSH_LogInfoAuto("已将PuTTY窗口置顶");
-
-        // 异步投递关闭消息，主线程立刻返回，不会卡死NPP
-        ::PostMessageW(_hPuTTYWnd, WM_CLOSE, 0, 0);
-        NppSSH_LogInfoAuto("异步投递WM_CLOSE消息至PuTTY窗口，不阻塞主线程");
-    }
-    else
-    {
-        // 找不到窗口，弹出确认框，用户确认后才强制终止
-        int closeResult = ::MessageBoxW(_panelHwnd,
-            L"未找到PuTTY可视窗口，进程仍在后台运行。\n是否确认强制终止Putty进程？",
-            L"NppSSH 连接提示",
-            MB_YESNO | MB_ICONWARNING);
-
-        if (closeResult == IDYES)
+        if (!pSess) continue;
+        //pSess->StopMonitor();
+        DWORD exitCode = 0;
+        BOOL bGetExit = ::GetExitCodeProcess(pSess->hProcess, &exitCode);
+        if (!bGetExit || exitCode != STILL_ACTIVE){
+            ::MessageBoxW(_panelHwnd, L"PuTTY已自行关闭", L"提示", MB_OK | MB_ICONINFORMATION);
+            NppSSH_LogInfoAuto("PuTTY进程已提前退出，清理句柄");
+            //pSess->CleanHandle();
+            //if (!SSH_SettingsGetConfigFileExistPath(pSess->tmpFile).empty())
+            //    SSH_SettingsDeleteConfigFile(pSess->tmpFile);
+            //delete pSess;
+            continue;
+        }
+        // 存活会话保留
+        validList.push_back(pSess);
+        // 优雅关闭PuTTY主窗口（发送WM_CLOSE，等效手动点叉）
+        if (pSess->hWnd != NULL)
         {
-            ::TerminateProcess(_hPuttyProcess, 0);
-            NppSSH_LogInfoAuto("用户确认强制终止PuTTY进程");
+            // 强制PuTTY窗口前置，弹窗会显示在桌面顶层，用户可见
+            ::BringWindowToTop(pSess->hWnd);
+            ::SetForegroundWindow(pSess->hWnd);
+            NppSSH_LogInfoAuto("已将PuTTY窗口置顶");
+
+            // 异步投递关闭消息，主线程立刻返回，不会卡死NPP
+            ::PostMessageW(pSess->hWnd, WM_CLOSE, 0, 0);
+            NppSSH_LogInfoAuto("异步投递WM_CLOSE消息至PuTTY窗口，不阻塞主线程");
         }
         else
         {
-            NppSSH_LogInfoAuto("用户取消强制终止，放弃关闭PuTTY");
-            return; // 用户选NO，直接退出函数，不清理句柄
+            // 找不到窗口，弹出确认框，用户确认后才强制终止
+            int closeResult = ::MessageBoxW(_panelHwnd,
+                L"未找到PuTTY可视窗口，进程仍在后台运行。\n是否确认强制终止Putty进程？",
+                L"NppSSH 连接提示",
+                MB_YESNO | MB_ICONWARNING);
+
+            if (closeResult == IDYES)
+            {
+                ::TerminateProcess(pSess->hProcess, 0);
+                NppSSH_LogInfoAuto("用户确认强制终止PuTTY进程");
+            }
+            else
+            {
+                NppSSH_LogInfoAuto("用户取消强制终止，放弃关闭PuTTY");
+                continue; // 用户选NO，直接退出函数，不清理句柄
+            }
         }
     }
+    _sessionList.swap(validList);
+    NppSSH_LogInfoAuto("全部PuTTY会话清理完毕");
+}
+void SSHConEmu::CleanInvalidSession()
+{
+    std::lock_guard<std::mutex> lock(_sessionListMtx);
+    std::vector<PuTTYSession*> validList;
 
-    // 4. 等待进程退出，最多等待3秒
-    const DWORD waitMs = 10000;
-    DWORD waitRet = ::WaitForSingleObject(_hPuttyProcess, waitMs);
-    if (waitRet == WAIT_TIMEOUT)
+    for (PuTTYSession* pSess : _sessionList)
     {
-        // 等待超时，弹窗确认是否强制杀死
-        int timeoutResult = ::MessageBoxW(_panelHwnd,
-            L"PuTTY窗口关闭超时，进程未退出。\n是否确认强制终止Putty进程？",
-            L"NppSSH 连接超时",
-            MB_YESNO | MB_ICONWARNING);
-
-        if (timeoutResult == IDYES)
+        if (!pSess) continue;
+        DWORD exitCode = 0;
+        BOOL bGetExit = ::GetExitCodeProcess(pSess->hProcess, &exitCode);
+        // 进程存活、线程正常，保留
+        if (bGetExit && exitCode == STILL_ACTIVE && pSess->monitorThread.joinable())
         {
-            ::TerminateProcess(_hPuttyProcess, 0);
-            NppSSH_LogInfoAuto("PuTTY等待关闭超时，用户确认强制结束进程");
+            validList.push_back(pSess);
+            continue;
         }
-        else
-        {
-            NppSSH_LogInfoAuto("用户取消超时强制终止，放弃关闭PuTTY");
-            return;
-        }
+        // 失效会话：释放资源+销毁
+        pSess->StopMonitor();
+        pSess->CleanHandle();
+        if (!SSH_SettingsGetConfigFileExistPath(pSess->tmpFile).empty())
+            SSH_SettingsDeleteConfigFile(pSess->tmpFile);
+        delete pSess;
     }
-
-    // 5. 释放句柄、置空标识
-    ::CloseHandle(_hPuttyProcess);
-    _hPuttyProcess = NULL;
-
-    ::MessageBoxW(_panelHwnd, L"PuTTY已关闭", L"NppSSH", MB_OK);
-    NppSSH_LogInfoAuto("当前面板PuTTY进程关闭完成");
+    // 替换为仅存活跃会话的列表，彻底清除野指针
+    _sessionList.swap(validList);
 }
 void SSHConEmu::ShowPuttyLoginWindow_Modal()
 {
@@ -526,10 +577,15 @@ void SSHConEmu::ShowPuttyLoginWindow_Modal()
     std::wstring SSH_INITCD = L"/";
     std::wstring ExceComd = L"HISTFILE=/dev/null;cd " + SSH_INITCD + L";bash;";
     //std::wstring ExceFile = L"putty_auto_cd.tmp";
-    _TempExceFile = L"NppSSH_" + HwndToWString(_panelHwnd)+L".tmp";
-    if(!SSH_INITCD.empty())SSH_SettingsSaveConfigTmpFile(_TempExceFile, ExceComd);
+    // 每次连接生成唯一临时文件名（面板句柄+随机区分多会话）
+    WCHAR tmpNameBuf[128] = { 0 };
+    static ULONG tmpSerial = 0;
+    swprintf_s(tmpNameBuf, L"NppSSH_%p_%lu.tmp", _panelHwnd, tmpSerial++);
+    std::wstring newTmpFile = tmpNameBuf;
+    // 写入临时脚本
+    if (!SSH_INITCD.empty())SSH_SettingsSaveConfigTmpFile(newTmpFile, ExceComd);
     std::wstring ExceLogin = L"\""+puttyExePath+L"\" -ssh \""+SSH_HOST+L"\" -P "+ SSH_PORT+L" -l " + SSH_USER + L" -pw " + SSH_PASS;
-    std::wstring ExcelFilePath = SSH_SettingsGetConfigFileExistPath(_TempExceFile);
+    std::wstring ExcelFilePath = SSH_SettingsGetConfigFileExistPath(newTmpFile);
     if(!ExcelFilePath.empty())ExceLogin += L" -t -m \"" + ExcelFilePath + L"\"";
     NppSSH_LogInfoAuto("【当前执行的命令】"+WStringToLogStr(ExceLogin));
     // 3. 创建PuTTY独立进程
@@ -555,154 +611,149 @@ void SSHConEmu::ShowPuttyLoginWindow_Modal()
         char logErr[2048] = { 0 };
         sprintf_s(logErr, "CreateProcessW 启动PuTTY失败，Err=%d Path=%ws", errCode, puttyExePath.c_str());
         NppSSH_LogErrorAuto(std::string(logErr));
+        if (!SSH_INITCD.empty())SSH_SettingsDeleteConfigFile(newTmpFile);
         return;
     }
 
-    // 4. 进程创建成功
-    _hPuttyProcess = pi.hProcess; // 直接存入类成员，作为唯一标识
-    ::CloseHandle(pi.hThread);    // 线程句柄无需保留，直接释放
-    
-    //Set_hPuTTYWnd();
+    CleanInvalidSession();
+    // ===== 新建独立会话 =====
+    PuTTYSession* pNewSess = new PuTTYSession();
+    pNewSess->hProcess = pi.hProcess;
+    pNewSess->tmpFile = newTmpFile;
+    ::CloseHandle(pi.hThread);
 
-    // 1. 停止旧线程（防止残留）
-    StopSeachPutty();//停止会将stop置为true，启动时候如果为true会直接启动失败，所以需要补充赋值false
-    _stopSeachPutty.store(false, std::memory_order_release);
+    // 启动该会话专属监控线程
+    HANDLE hThread = CreateThread(NULL, 0, PuTTYSessionMonitor, pNewSess, 0, NULL);
+    if (hThread != NULL)
+    {
+        pNewSess->monitorThread = std::thread([hThread]() {
+            WaitForSingleObject(hThread, INFINITE);
+            CloseHandle(hThread);
+            });
+    }
 
-    // 2. 启动本次命令的ShellReader线程
-    StartSeachPutty();
+    // 加锁存入会话列表
+    {
+        std::lock_guard<std::mutex> lock(_sessionListMtx);
+        _sessionList.push_back(pNewSess);
+    }
 
-    //Sleep(500);
-    //SSH_SettingsDeleteConfigFile(ExceFile);
+
     // 打印调试日志
     NppSSH_LogInfoAuto("成功启动PuTTY进程，路径：" + WStringToLogStr(puttyExePath));
 }
-void SSHConEmu::StartSeachPutty() {
-    std::lock_guard<std::mutex> lock(_SeachPuttyMutex);
-    if ( _seachPuttyThread.joinable()) {
-        NppSSH_LogInfoAuto("【INFO】等待旧 SeachPuttyThread 线程自然结束");
-        //_seachPuttyThread.detach();
-        _seachPuttyThread.join();
-        return;
-    }
 
-    // 重置线程控制状态
-    _stopSeachPutty.store(false, std::memory_order_release);
+bool SSHConEmu::FindPuTTYWindowByPid(DWORD pid, HWND& outHwnd)
+{
+    outHwnd = NULL;
+    struct EnumWinParam
+    {
+        HWND wnd;
+        DWORD pid;
+        EnumWinParam() : wnd(NULL), pid(0) {}
+    } enumParam;
+    enumParam.pid = pid;
 
-    // 启动线程
-    _seachPuttyThread = std::thread(&SSHConEmu::SeachPuttyThread, this);
-    if (_seachPuttyThread.joinable())NppSSH_LogInfoAuto("【OK】SeachPuttyThread 线程启动成功");
-}
-// 后台无运行
-void SSHConEmu::SeachPuttyThread() {
-    NppSSH_LogInfoAuto("==============================================");
-    NppSSH_LogInfoAuto("=        SeachPuttyThread 线程运行中          =");
-    NppSSH_LogInfoAuto("==============================================");
-    //std::wstring ExceFile = L"putty_auto_cd.tmp";
-    //第一阶段：查找Putty窗口
-    const int MAX_SEACH_FIND_WAIT_MS = 1000;//查找窗口间隔时间，临界40ms进入第二阶段，41ms就是刚启动的一瞬间
-    const int MAX_DELECT_WAIT_MS = 2000;    //等待2s删除文件
-    int flag = 0;// 次数,仅仅用于日志打印
-    // 循环运行，直到收到停止信号
-    while (!_stopSeachPutty.load(std::memory_order_acquire)) {
-
+    EnumWindows([](HWND hwnd, LPARAM lp) -> BOOL
         {
-            std::unique_lock<std::mutex> lock(_SeachPuttyMutex);
-            // 等待1秒，或被唤醒（停止信号触发时唤醒）
-            if (_seachPuttyCv.wait_for(lock, std::chrono::milliseconds(MAX_SEACH_FIND_WAIT_MS),
-                [this]() { return _stopSeachPutty.load(std::memory_order_acquire); })) {
-                // 被唤醒且检测到停止信号，直接退出
-                NppSSH_LogInfoAuto("等待期间收到停止信号，退出心跳线程");
-                goto THREAD_EXIT;
+            EnumWinParam* p = reinterpret_cast<EnumWinParam*>(lp);
+            DWORD winPid = 0;
+            GetWindowThreadProcessId(hwnd, &winPid);
+            if (winPid == p->pid && GetWindow(hwnd, GW_OWNER) == nullptr)
+            {
+                p->wnd = hwnd;
+                return FALSE;
+            }
+            return TRUE;
+        }, reinterpret_cast<LPARAM>(&enumParam));
+
+    outHwnd = enumParam.wnd;
+    return outHwnd != NULL;
+}
+// 头文件声明 static DWORD WINAPI PuTTYSessionMonitor(LPVOID lp);
+DWORD WINAPI SSHConEmu::PuTTYSessionMonitor(LPVOID lp)
+{
+    PuTTYSession* pSess = reinterpret_cast<PuTTYSession*>(lp);
+    NppSSH_LogInfoAuto("新建PuTTY会话监控线程启动");
+
+    const int MAX_SEACH_FIND_WAIT_MS = 1000;
+    const int MAX_DELECT_WAIT_MS = 2000;
+    int flag = 0;
+
+    // 阶段1：循环查找窗口
+    while (!pSess->stopFlag.load(std::memory_order_acquire))
+    {
+        {
+            std::unique_lock<std::mutex> lock(pSess->mtx);
+            if (pSess->cv.wait_for(lock, std::chrono::milliseconds(MAX_SEACH_FIND_WAIT_MS),
+                [pSess]() { return pSess->stopFlag.load(std::memory_order_acquire); }))
+            {
+                NppSSH_LogInfoAuto("会话监控：收到停止信号退出阶段1");
+                goto THREAD_CLEAN;
             }
         }
-
         flag++;
-        std::ostringstream oss;
-        oss << _seachPuttyThread.get_id();
-        NppSSH_LogInfoAuto("线程[" + oss.str() + "]已启动循环.【第" + IntToStr(flag) + "次】");
+        DWORD pid = GetProcessId(pSess->hProcess);
+        char pidLog[128] = { 0 };
+        sprintf_s(pidLog, "会话PID=%lu 第%d次查找窗口", pid, flag);
+        NppSSH_LogInfoAuto(pidLog);
 
-        if (_stopSeachPutty.load(std::memory_order_acquire)) {
-            NppSSH_LogInfoAuto("收到停止信号，立即退出");
-            goto THREAD_EXIT;
-        }
-
-        bool has_hPuTTYWnd = Set_hPuTTYWnd();
-        if (has_hPuTTYWnd) {
-            NppSSH_LogInfoAuto("有Putty窗口，线程第一阶段结束");
+        bool hasWnd = FindPuTTYWindowByPid(pid, pSess->hWnd);
+        if (hasWnd)
+        {
+            NppSSH_LogInfoAuto("成功捕获PuTTY窗口，进入阶段2等待删除临时文件");
             break;
         }
     }
-    //第二阶段删除临时文件
+
+    // 阶段2：等待后删除临时脚本
     {
-        std::unique_lock<std::mutex> lock(_SeachPuttyMutex);
-        if (_seachPuttyCv.wait_for(lock, std::chrono::milliseconds(MAX_DELECT_WAIT_MS),
-            [this]() { return _stopSeachPutty.load(std::memory_order_acquire); })) {
-            NppSSH_LogInfoAuto("等待期间收到停止信号，退出心跳线程");
-            if (!SSH_SettingsGetConfigFileExistPath(_TempExceFile).empty())SSH_SettingsDeleteConfigFile(_TempExceFile);
-            goto THREAD_EXIT;
-        }
-        if (!SSH_SettingsGetConfigFileExistPath(_TempExceFile).empty())SSH_SettingsDeleteConfigFile(_TempExceFile);//第一阶段结束后删除临时文件
-        NppSSH_LogInfoAuto("【删除】"+ WStringToLogStr(_TempExceFile) +"成功，线程第二阶段结束");
-    }
-    //第三阶段：监听Putty窗口
-    const int MAX_SEACH_WAIT_MS = 1;//1s
-    int retry = 0;// 次数,仅仅用于日志打印
-    // 循环运行，直到收到停止信号
-    while (!_stopSeachPutty.load(std::memory_order_acquire)) {
+        std::unique_lock<std::mutex> lock(pSess->mtx);
+        if (pSess->cv.wait_for(lock, std::chrono::milliseconds(MAX_DELECT_WAIT_MS),
+            [pSess]() { return pSess->stopFlag.load(std::memory_order_acquire); }))
         {
-            std::unique_lock<std::mutex> lock(_SeachPuttyMutex);
-            // 等待1秒，或被唤醒（停止信号触发时唤醒）
-            if (_seachPuttyCv.wait_for(lock, std::chrono::seconds(MAX_SEACH_WAIT_MS),
-                [this]() { return _stopSeachPutty.load(std::memory_order_acquire); })) {
-                // 被唤醒且检测到停止信号，直接退出
-                NppSSH_LogInfoAuto("等待期间收到停止信号，退出心跳线程");
-                goto THREAD_EXIT;
+            NppSSH_LogInfoAuto("会话监控：阶段2收到停止信号");
+            if (!SSH_SettingsGetConfigFileExistPath(pSess->tmpFile).empty())
+                SSH_SettingsDeleteConfigFile(pSess->tmpFile);
+            goto THREAD_CLEAN;
+        }
+    }
+    if (!SSH_SettingsGetConfigFileExistPath(pSess->tmpFile).empty())
+    {
+        SSH_SettingsDeleteConfigFile(pSess->tmpFile);
+        NppSSH_LogInfoAuto("会话临时脚本文件删除成功：" + WStringToLogStr(pSess->tmpFile));
+    }
+
+    // 阶段3：持续监听窗口是否消失（进程关闭）
+    const int MAX_SEACH_WAIT_MS = 1;
+    int retry = 0;
+    while (!pSess->stopFlag.load(std::memory_order_acquire))
+    {
+        {
+            std::unique_lock<std::mutex> lock(pSess->mtx);
+            if (pSess->cv.wait_for(lock, std::chrono::seconds(MAX_SEACH_WAIT_MS),
+                [pSess]() { return pSess->stopFlag.load(std::memory_order_acquire); }))
+            {
+                NppSSH_LogInfoAuto("会话监控：阶段3收到停止信号");
+                goto THREAD_CLEAN;
             }
         }
-
         retry++;
-        std::ostringstream oss;
-        oss << _seachPuttyThread.get_id();
-        //NppSSH_LogInfoAuto("线程[" + oss.str() + "]已启动循环.【第" + IntToStr(retry) + "次】");
-
-        if (_stopSeachPutty.load(std::memory_order_acquire)) {
-            NppSSH_LogInfoAuto("收到停止信号，立即退出");
-            goto THREAD_EXIT;
-        }
-
-        bool has_hPuTTYWnd = Set_hPuTTYWnd();
-        if (!has_hPuTTYWnd) {
-            NppSSH_LogInfoAuto("没有Putty窗口，线程结束");
-            goto THREAD_EXIT;
+        DWORD pid = GetProcessId(pSess->hProcess);
+        FindPuTTYWindowByPid(pid, pSess->hWnd);
+        if (pSess->hWnd == NULL)
+        {
+            NppSSH_LogInfoAuto("PuTTY窗口消失，会话监控线程退出");
+            goto THREAD_CLEAN;
         }
     }
-THREAD_EXIT:
-    NppSSH_LogInfoAuto("线程正常退出");
-    if (_seachPuttyThread.joinable()) {
-        _seachPuttyThread.detach();
-    }
+THREAD_CLEAN:
+    pSess->CleanHandle();
+    pSess->stopFlag.store(true, std::memory_order_release);
+    NppSSH_LogInfoAuto("单个PuTTY会话监控线程正常结束");
+    return 0;
 }
-void SSHConEmu::StopSeachPutty() {
-    std::lock_guard<std::mutex> lock(_SeachPuttyMutex);
-    _stopSeachPutty.store(true, std::memory_order_release);
-    if (_hPuTTYWnd == nullptr) {//为空直接放弃，不操作
-        NppSSH_LogInfoAuto("为空直接放弃，不操作");
-        _seachPuttyThread = std::thread();
-        return;
-    }
-    if (_seachPuttyThread.joinable()) {
-        // 唤醒搜索线程（如果在wait_for中阻塞，立即唤醒）
-        _seachPuttyCv.notify_one();
-        if (_seachPuttyThread.joinable()) {
-            NppSSH_LogInfoAuto("停止线程.............直接分离心搜索线程（不等待）");
-            _seachPuttyThread.detach();//直接不等待，让线程脱离主线程，自生自灭，根据废掉所有资源会自动销毁
-            //m_heartbeatThread.join();//等线程执行完才会执行
-        }
-        else {
-            NppSSH_LogInfoAuto("停止线程.............搜索线程不存在");
-        }
-    }
-}
+
 HBITMAP SSHConEmu::LoadImageByGdiPlus(const WCHAR* filePath)
 {
     if (!PathFileExistsW(filePath))
@@ -891,7 +942,7 @@ INT_PTR CALLBACK SSHConEmu::run_dlgProc(UINT message, WPARAM wParam, LPARAM lPar
         SSH_SettingsByRealIdRemove(this->_panelrealId);
         SSH_PanelVecBySeqIdRemove(_panelSeqId);
         SSH_SettingsSavePanelCount(SSH_PanelVecSize());
-
+        isHandleHasActiveThread();//检查是否有Putty窗口
         ::DestroyWindow(this->_panelHwnd);
         this->destroy();
         delete this;

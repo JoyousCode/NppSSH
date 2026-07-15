@@ -4,7 +4,46 @@
 #include <Commdlg.h>//操作文件选择
 #include <gdiplus.h>
 #include <atomic>
+// 单个PuTTY会话完整资源包
+struct PuTTYSession
+{
+    HANDLE hProcess;
+    HWND hWnd;
+    std::thread monitorThread;
+    std::atomic<bool> stopFlag;
+    std::mutex mtx;
+    std::condition_variable cv;
+    std::wstring tmpFile;
+    //std::atomic<bool> closeFlag;
 
+    PuTTYSession()
+        : hProcess(NULL), hWnd(NULL), stopFlag(false)
+    {
+    }
+
+    // 终止监控线程
+    void StopMonitor()
+    {
+        stopFlag.store(true, std::memory_order_release);
+        cv.notify_one();
+        if (monitorThread.joinable())
+        {
+            try { monitorThread.join(); }
+            catch (...) { monitorThread.detach(); }
+        }
+    }
+
+    // 释放进程句柄
+    void CleanHandle()
+    {
+        if (hProcess != NULL)
+        {
+            CloseHandle(hProcess);
+            hProcess = NULL;
+        }
+        hWnd = NULL;
+    }
+};
 class SSHConEmu : public SSHBasePanel{
 public:
     SSHConEmu(int panelSeqId, int panelrealId);
@@ -40,6 +79,12 @@ public:
 
     void StartSeachPutty();
     void StopSeachPutty();
+
+    void CloseSingleSession(PuTTYSession& sess);
+    static bool FindPuTTYWindowByPid(DWORD pid, HWND& outHwnd);
+    static DWORD WINAPI PuTTYSessionMonitor(LPVOID lp);
+    void CleanInvalidSession();
+    bool isHandleHasActiveThread();
 private:
     COLORREF m_textColor = RGB(255, 255, 255); // 文字白色适配图片
     COLORREF _bgColor = GetSysColor(COLOR_WINDOW);
@@ -55,8 +100,7 @@ private:
     std::wstring _strPuttyFullPath; // 存储选中的Putty完整路径
     HWND _hBtnPutty;        // Putty按钮句柄
     HWND _hBtnDestroy;      // 销毁按钮句柄
-    HANDLE _hPuttyProcess; // 保存当前面板启动的PuTTY进程句柄
-    HWND _hPuTTYWnd;
+
     HICON _hIconPutty;    // 持久化连接图标句柄
     HICON _hIconDestroy; // 持久化销毁按钮句柄
     HICON _hIconSelectFile; // 持久化销毁按钮句柄
@@ -64,14 +108,20 @@ private:
     
     HWND _hBtnWinScp;// 
 
-    // 后台搜索Putty线程，线程控制锁
-    std::mutex _SeachPuttyMutex;
-    std::thread _seachPuttyThread;
-    void SeachPuttyThread();
-    std::condition_variable _seachPuttyCv;
-    std::atomic<bool> _stopSeachPutty{ false };
 
-    std::wstring _TempExceFile;
+    // 所有PuTTY会话容器
+    std::vector<PuTTYSession*> _sessionList;
+    std::mutex _sessionListMtx;// 保护会话列表并发读写
+    // 后台搜索Putty线程，线程控制锁
+    HANDLE _hPuttyProcess; // 保存当前面板启动的PuTTY进程句柄
+    HWND _hPuTTYWnd;
+    //std::mutex _SeachPuttyMutex;
+    //std::thread _seachPuttyThread;
+    //void SeachPuttyThread();
+    //std::condition_variable _seachPuttyCv;
+    //std::atomic<bool> _stopSeachPutty{ false };
+
+    //std::wstring _TempExceFile;
 
 
 };

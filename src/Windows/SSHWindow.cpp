@@ -97,6 +97,20 @@ bool SSH_PanelVecIsHasConnection() { // 检查活跃连接
     }
     return hasActiveConnection;
 }
+
+//bool SSH_PanelVecIsHasThread() { // 检查活跃连接
+//    bool hasActiveThread = false;
+//    for (auto* panel : g_SSHPanelVec) {
+//        SSHConEmu* conEmuPanel = dynamic_cast<SSHConEmu*>(panel);
+//        if (conEmuPanel != nullptr && conEmuPanel->isHasActiveThread()) {
+//            NppSSH_LogInfoAuto("【检查活跃连接】");
+//            hasActiveThread = true;
+//
+//            break;
+//        }
+//    }
+//    return hasActiveThread;
+//}
 void SSH_HandAllFree() {
     // 检查活跃连接并直接断开
     //bool hasActiveConnection = SSH_PanelVecIsHasConnection();
@@ -109,6 +123,7 @@ void SSH_HandAllFree() {
     //        if (conEmuPanel != nullptr) {  }//待处理如果是ConEmu断开连接
     //    }
     //}
+    //SSH_PanelVecIsHasThread();
     SSHConnection_ClearAllSSHConnections();//已在该方法中直接断开连接后清空所有内容
     SSHTerminal_ClearAllSSHTerminal();
     SSH_PanelVecClearAll();
