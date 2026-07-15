@@ -296,3 +296,69 @@ void SSHSettings_ByRealIdRemove(int panelRealId) {
         iniPath.c_str()
     );
 }
+
+
+// 添加/覆盖文件方法：传入文件名+文件内容，保存到插件Config目录
+void SSHSettings_SaveConfigTmpFile(const std::wstring& ExceFile, const std::wstring& ExceComd)
+{
+    // 获取插件配置根目录
+    std::wstring configDir = SSHSettings_GetPluginsConfigDir();
+    if (configDir.empty())
+        return;
+
+    // 拼接文件完整绝对路径
+    std::wstring fullFilePath = configDir + L"\\" + ExceFile;
+
+    // 创建文件并写入内容，覆盖已有文件
+    HANDLE hFile = CreateFileW(
+        fullFilePath.c_str(),
+        GENERIC_WRITE,
+        0,
+        NULL,
+        CREATE_ALWAYS, // 始终创建/覆盖文件
+        FILE_ATTRIBUTE_NORMAL,
+        NULL
+    );
+
+    if (hFile == INVALID_HANDLE_VALUE)
+        return;
+
+    // 宽字符转UTF8字节流写入文件
+    std::string fileContent = WStringToUTF8(ExceComd);
+    DWORD writeBytes = 0;
+    WriteFile(hFile, fileContent.c_str(), (DWORD)fileContent.length(), &writeBytes, NULL);
+
+    CloseHandle(hFile);
+}
+
+// 2、查询文件是否存在：存在返回完整绝对路径，不存在返回空wstring
+std::wstring SSHSettings_GetConfigFileExistPath(const std::wstring& ExceFile)
+{
+    std::wstring configDir = SSHSettings_GetPluginsConfigDir();
+    if (configDir.empty())
+        return L"";
+
+    // 拼接完整文件路径
+    std::wstring fullFilePath = configDir + L"\\" + ExceFile;
+
+    // 判断文件是否真实存在
+    if (PathFileExistsW(fullFilePath.c_str()) && !PathIsDirectoryW(fullFilePath.c_str()))
+    {
+        return fullFilePath;
+    }
+
+    // 文件不存在返回空
+    return L"";
+}
+
+// 3、根据文件名直接删除文件：无需判空、无返回值、无论是否存在直接执行删除
+void SSHSettings_DeleteConfigFile(const std::wstring& ExceFile)
+{
+    std::wstring configDir = SSHSettings_GetPluginsConfigDir();
+    if (configDir.empty())
+        return;
+
+    std::wstring fullFilePath = configDir + L"\\" + ExceFile;
+    // 直接调用删除API，文件不存在也不会报错
+    DeleteFileW(fullFilePath.c_str());
+}

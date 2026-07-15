@@ -22,3 +22,5 @@ void DeBugOutPutText(const std::string& text);
 std::wstring UTF8ToWstring(const std::string& str);
 std::wstring GBKToWstring(const std::string& str);
 std::string IntToHexStr(DWORD val);
+std::string WStringToUTF8(const std::wstring& wstr);
+std::wstring HwndToWString(HWND hWnd);

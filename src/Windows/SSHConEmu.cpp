@@ -14,9 +14,13 @@ SSHConEmu::SSHConEmu(int panelSeqId, int panelrealId)
     _hStaticPuttyTip(nullptr),
     _hEditPuttyPath(nullptr),
     _hBtnSelectFile(nullptr),
-    _strPuttyFullPath(L""){
+    _strPuttyFullPath(L""),
+    _hPuttyProcess(NULL) ,
+    _hPuTTYWnd(NULL),
+    _TempExceFile(L"") {
 }
 SSHConEmu::~SSHConEmu() {
+    StopSeachPutty();
     if (_hIconPutty)
     {
         ::DestroyIcon(_hIconPutty);
@@ -32,13 +36,29 @@ SSHConEmu::~SSHConEmu() {
         ::DestroyIcon(_hIconSelectFile);
         _hIconSelectFile = nullptr;
     }
+    // 插件销毁时关闭残留PuTTY并释放句柄
+    if (_hPuttyProcess != NULL)
+    {
+        DWORD exitCode = 0;
+        if (::GetExitCodeProcess(_hPuttyProcess, &exitCode) && exitCode == STILL_ACTIVE)
+        {
+            // 进程仍在运行，关闭PuTTY
+            CloseSoftWare();
+        }
+        ::CloseHandle(_hPuttyProcess);
+        _hPuttyProcess = NULL;
+    }
 }
+// 重写背景色
 void SSHConEmu::setBackgroundColor(COLORREF color) {
-
+    _bgColor = color;
+    // 刷新面板，触发WM_ERASEBKGND、WM_PAINT重绘
+    ::InvalidateRect(GetHwndSelf(), nullptr, TRUE);
 }
 // 重写前景文字色
 void SSHConEmu::setForegroundColor(COLORREF color) {
-
+    _fgColor = color;
+    ::InvalidateRect(GetHwndSelf(), nullptr, TRUE);
 }
 // 加载自定义图标（可以替换为自己的图标 ID）
 HICON SSHConEmu::LoadCustomIcon(int iconId, int size)
@@ -105,9 +125,7 @@ void SSHConEmu::SetButtonIconOnly(HWND btn, int iconId)
     ::SetWindowPos(btn, NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED); // 通知样式变更
     // 设置图标后，强制按钮持有句柄
     // 设置图标+按钮尺寸（与工具栏完全一致：图标尺寸+4px边距，匹配NPP工具栏按钮）
-    int btnSize = _iconSize + 4;
     ::SendMessage(btn, BM_SETIMAGE, (WPARAM)IMAGE_ICON, (LPARAM)hIcon);
-    //::SetWindowPos(btn, NULL, 0, 0, btnSize, btnSize, SWP_NOMOVE | SWP_NOZORDER);
 
     // 双重刷新（确保样式和图标生效）
     ::InvalidateRect(btn, NULL, TRUE);
@@ -202,7 +220,6 @@ void SSHConEmu::createButtonBar() {
         NULL
     );
     WCHAR initPath[] = L"D:\\software\\developer\\putty-x64-0.84-cn1\\putty.exe";
-    _strPuttyFullPath = initPath;
     // Putty路径编辑框
     _hEditPuttyPath = ::CreateWindowW(
         L"EDIT",
@@ -215,6 +232,9 @@ void SSHConEmu::createButtonBar() {
         g_hInst,
         NULL
     );
+    WCHAR buf[MAX_PATH] = { 0 };
+    ::GetWindowTextW(_hEditPuttyPath, buf, MAX_PATH);
+    _strPuttyFullPath = buf;
     
     // 浏览选择按钮
     _hBtnSelectFile = ::CreateWindowW(
@@ -339,170 +359,349 @@ void SSHConEmu::initPanel() {
     NppSSH_LogInfoAuto(bufSelf);
 
     createButtonBar();
-
-    // 获取 ConEmu 路径
-    //std::wstring conemuRootDir = SSH_SettingsGetPluginsDir()+ L"\\NppSSH\\ConEmuPack.230724";
-    //std::wstring conemuExeFullPath = conemuRootDir + L"\\ConEmu64.exe";
-    //std::wstring conemuCPath = conemuRootDir + L"\\ConEmu\\ConEmuC64.exe";
-
-    //NppSSH_LogInfoAuto(std::string("【当前拼接完整ConEmu路径】：") + WStringToLogStr(conemuExeFullPath));
-
-    //// 检查 ConEmu64.exe 是否存在
-    //DWORD fileAttr = GetFileAttributesW(conemuExeFullPath.c_str());
-    //if (fileAttr == INVALID_FILE_ATTRIBUTES || (fileAttr & FILE_ATTRIBUTE_DIRECTORY)) {
-    //    ::MessageBoxW(_panelHwnd, L"错误：ConEmu64.exe 不存在", L"NppSSH", MB_ICONERROR);
-    //    DestroyWindow(_panelHwnd);
-    //    _panelHwnd = nullptr;
-    //    return;
-    //}
-
-    //// 检查 ConEmuC64.exe 是否存在
-    //fileAttr = GetFileAttributesW(conemuCPath.c_str());
-    //if (fileAttr == INVALID_FILE_ATTRIBUTES || (fileAttr & FILE_ATTRIBUTE_DIRECTORY)) {
-    //    ::MessageBoxW(_panelHwnd, L"错误：ConEmuC64.exe 不存在", L"NppSSH", MB_ICONERROR);
-    //    DestroyWindow(_panelHwnd);
-    //    _panelHwnd = nullptr;
-    //    return;
-    //}
-    //// 容器句柄转为十六进制字符串
-    //WCHAR hwndHexStr[32] = { 0 };
-    //swprintf_s(hwndHexStr, L"0x%p", _panelHwnd);
-
-    //// ========== 第一步：启动 ConEmu64 -insidewnd 创建嵌套窗口（仅创建窗口，不启动终端会话） ==========
-    //// -insidewnd: 嵌入到指定父窗口
-    //// -NoAutoClose: 最后一个标签关闭时不自动关闭ConEmu
-    //// -Detached: 启动时不创建控制台（只有GUI窗口）
-    //std::wstring puttyExePath = L"D:\\software\\developer\\putty-x64-0.84-cn1\\putty.exe";
-    //std::wstring puttyLaunchParam = puttyExePath+  L" -load \"localhost\" -l root -pw 123456";
-    //// ConEmu -run 内置GuiMacro
-    //std::wstring runScript = puttyLaunchParam + L" -new_console";
-    //std::wstring  cmdLine = L"\"" + conemuExeFullPath + L"\" "
-    //    + L"-insidewnd " + std::wstring(hwndHexStr) + L" "
-    //    + L"-NoAutoClose -Detached "
-    //    + L"-run \"" + runScript + L"\"";
-
-    //// 2. 创建双向匿名管道（注意：这里需要一对管道，而不是一个）
-    //// 因为你需要向 mintty 写数据，也需要从 mintty 读数据
-    //SECURITY_ATTRIBUTES saPipe = { 0 };
-    //saPipe.nLength = sizeof(SECURITY_ATTRIBUTES);
-    //saPipe.bInheritHandle = TRUE;
-    //saPipe.lpSecurityDescriptor = nullptr;
-
-    //HANDLE hPipeRead = nullptr;    // 子进程的 stdin（父进程写）
-    //HANDLE hPipeWrite = nullptr;   // 父进程的 stdout（子进程写）
-    //HANDLE hPipeReadChild = nullptr; // 子进程的 stdout（父进程读）
-    //HANDLE hPipeWriteChild = nullptr; // 父进程的 stdin（子进程读）
-    //// 创建第一对管道：父写 -> 子读
-    //if (!CreatePipe(&hPipeRead, &hPipeWrite, &saPipe, 0))
-    //{
-    //    DWORD err = GetLastError();
-    //    wchar_t errMsg[256] = { 0 };
-    //    swprintf_s(errMsg, L"创建管道1失败，错误码: %d", err);
-    //    ::MessageBoxW(_panelHwnd, errMsg, L"NppSSH", MB_OK);
-    //    DestroyWindow(_panelHwnd);
-    //    _panelHwnd = nullptr;
-    //    return;
-    //}
-    //// 创建第二对管道：子写 -> 父读
-    //if (!CreatePipe(&hPipeReadChild, &hPipeWriteChild, &saPipe, 0))
-    //{
-    //    DWORD err = GetLastError();
-    //    wchar_t errMsg[256] = { 0 };
-    //    swprintf_s(errMsg, L"创建管道2失败，错误码: %d", err);
-    //    ::MessageBoxW(_panelHwnd, errMsg, L"NppSSH", MB_OK);
-    //    CloseHandle(hPipeRead);
-    //    CloseHandle(hPipeWrite);
-    //    DestroyWindow(_panelHwnd);
-    //    _panelHwnd = nullptr;
-    //    return ;
-    //}
-    //// 5. 初始化进程/线程安全属性
-    //SECURITY_ATTRIBUTES saProcess = { 0 };
-    //SECURITY_ATTRIBUTES saThread = { 0 };
-    //saProcess.nLength = sizeof(SECURITY_ATTRIBUTES);
-    //saProcess.bInheritHandle = TRUE;
-    //saProcess.lpSecurityDescriptor = nullptr;
-    //saThread.nLength = sizeof(SECURITY_ATTRIBUTES);
-    //saThread.bInheritHandle = TRUE;
-    //saThread.lpSecurityDescriptor = nullptr;
-
-    //STARTUPINFOW si = { 0 };
-    //PROCESS_INFORMATION pi = { 0 };
-    //ZeroMemory(&si, sizeof(STARTUPINFOW));
-    //ZeroMemory(&pi, sizeof(PROCESS_INFORMATION));
-    //si.cb = sizeof(STARTUPINFOW);
-    //si.dwFlags = STARTF_USESHOWWINDOW;
-    //si.wShowWindow = SW_HIDE;
-
-    //BOOL bRet = CreateProcessW(
-    //    nullptr,
-    //    const_cast<wchar_t*>(cmdLine.c_str()),
-    //    nullptr,
-    //    nullptr,
-    //    TRUE,
-    //    CREATE_NO_WINDOW,
-    //    nullptr,
-    //    nullptr,
-    //    &si,
-    //    &pi
-    //);
-    ////BOOL bRet = CreateProcessW(
-    ////    nullptr,                     // lpApplicationName：不指定，由 lpCommandLine 解析
-    ////    &cmdLine[0],                 // lpCommandLine：可写缓冲区，强制带引号
-    ////    &saProcess,                         // lpProcessAttributes：安全属性，允许句柄继承
-    ////    &saThread,                         // lpThreadAttributes：线程安全属性，同进程
-    ////    TRUE,                        // bInheritHandles：允许子进程继承句柄
-    ////    CREATE_NO_WINDOW,                           // dwCreationFlags：增加 CREATE_NO_WINDOW 标志，避免独立弹窗干扰
-    ////    nullptr,                     // lpEnvironment：使用父进程环境变量
-    ////    nullptr,                   // lpCurrentDirectory：工作目录，强制处理后的路径
-    ////    &si,                         // lpStartupInfo：显式初始化的 STARTUPINFOW
-    ////    &pi                          // lpProcessInformation：接收进程信息
-    ////);
-
-    //if (!bRet)
-    //{
-    //    DWORD err = GetLastError();
-    //    WCHAR errMsg[256] = { 0 };
-    //    swprintf_s(errMsg, L"启动ConEmu失败，错误码：%d", err);
-    //    ::MessageBoxW(_panelHwnd, errMsg, L"NppSSH", MB_OK);
-    //    DestroyWindow(_panelHwnd);
-    //    _panelHwnd = nullptr;
-    //    return;
-    //}
-    //// 保存进程句柄，关闭线程句柄
-    //_hConEumProcess = pi.hProcess;
-    //CloseHandle(pi.hThread);
-    //WaitForInputIdle(pi.hProcess, 2000);
-    //ShowWindow(_panelHwnd, SW_SHOW);
-
-    //// 等待ConEmu窗口完全就绪
-    //Sleep(1500);
-
-    //// 获取ConEmu窗口句柄（通过枚举子窗口）
-    //_hConEmuWnd = FindWindowExW(_panelHwnd, nullptr, nullptr, nullptr);
-    //if (!_hConEmuWnd) {
-    //    // 如果直接查找失败，尝试延迟后再次查找
-    //    Sleep(500);
-    //    _hConEmuWnd = FindWindowExW(_panelHwnd, nullptr, nullptr, nullptr);
-    //}
     // 日志记录（调试/排查）
     NppSSH_LogInfoAuto("面板初始化完成 [序列ID: " + std::to_string(_panelSeqId) + "]");
     NppSSH_LogInfoAuto("面板初始化完成 [标题ID: " + std::to_string(_panelrealId) + "]");
     if (!initPanle) initPanle = true;//面板初始化完成
 }
 
+
+
+
+bool SSHConEmu::Set_hPuTTYWnd() {
+    DWORD pid = ::GetProcessId(_hPuttyProcess);
+    char pidLog[128] = { 0 };
+    sprintf_s(pidLog, "当前PuTTY进程PID=%lu", pid);
+    NppSSH_LogInfoAuto(pidLog);
+    struct EnumWinParam
+    {
+        HWND wnd;
+        DWORD pid;
+        EnumWinParam() : wnd(NULL), pid(0) {}
+    } enumParam;
+    enumParam.pid = pid;
+
+    EnumWindows([](HWND hwnd, LPARAM lp) -> BOOL
+        {
+            EnumWinParam* p = reinterpret_cast<EnumWinParam*>(lp);
+            DWORD winPid = 0;
+            GetWindowThreadProcessId(hwnd, &winPid);
+            // 仅匹配无所有者的主顶层窗口
+            if (winPid == p->pid && GetWindow(hwnd, GW_OWNER) == nullptr)
+            {
+                p->wnd = hwnd;
+                return FALSE;
+            }
+            return TRUE;
+        }, reinterpret_cast<LPARAM>(&enumParam));
+
+    _hPuTTYWnd = enumParam.wnd;
+    if (_hPuTTYWnd != NULL)
+    {
+        return TRUE;
+        // 设置全局永久置顶
+        //SetWindowPos(_hPuTTYWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+    }
+    return FALSE;
+}
+void SSHConEmu::CloseSoftWare() {
+    // 1. 校验进程句柄有效性
+    if (_hPuttyProcess == NULL)
+    {
+        ::MessageBoxW(_panelHwnd, L"当前面板未启动PuTTY程序", L"提示", MB_OK | MB_ICONINFORMATION);
+        NppSSH_LogInfoAuto("关闭PuTTY失败：无有效进程句柄");
+        return;
+    }
+
+    // 2. 判断进程是否已经退出
+    DWORD exitCode = 0;
+    BOOL bGetExit = ::GetExitCodeProcess(_hPuttyProcess, &exitCode);
+    if (!bGetExit || exitCode != STILL_ACTIVE)
+    {
+        ::MessageBoxW(_panelHwnd, L"PuTTY已自行关闭", L"提示", MB_OK | MB_ICONINFORMATION);
+        NppSSH_LogInfoAuto("PuTTY进程已提前退出，清理句柄");
+        ::CloseHandle(_hPuttyProcess);
+        _hPuttyProcess = NULL;
+        return;
+    }
+
+    // 3. 优雅关闭PuTTY主窗口（发送WM_CLOSE，等效手动点叉）
+    if (_hPuTTYWnd != NULL)
+    {
+
+        // 强制PuTTY窗口前置，弹窗会显示在桌面顶层，用户可见
+        ::BringWindowToTop(_hPuTTYWnd);
+        ::SetForegroundWindow(_hPuTTYWnd);
+        NppSSH_LogInfoAuto("已将PuTTY窗口置顶");
+
+        // 异步投递关闭消息，主线程立刻返回，不会卡死NPP
+        ::PostMessageW(_hPuTTYWnd, WM_CLOSE, 0, 0);
+        NppSSH_LogInfoAuto("异步投递WM_CLOSE消息至PuTTY窗口，不阻塞主线程");
+    }
+    else
+    {
+        // 找不到窗口，弹出确认框，用户确认后才强制终止
+        int closeResult = ::MessageBoxW(_panelHwnd,
+            L"未找到PuTTY可视窗口，进程仍在后台运行。\n是否确认强制终止Putty进程？",
+            L"NppSSH 连接提示",
+            MB_YESNO | MB_ICONWARNING);
+
+        if (closeResult == IDYES)
+        {
+            ::TerminateProcess(_hPuttyProcess, 0);
+            NppSSH_LogInfoAuto("用户确认强制终止PuTTY进程");
+        }
+        else
+        {
+            NppSSH_LogInfoAuto("用户取消强制终止，放弃关闭PuTTY");
+            return; // 用户选NO，直接退出函数，不清理句柄
+        }
+    }
+
+    // 4. 等待进程退出，最多等待3秒
+    const DWORD waitMs = 10000;
+    DWORD waitRet = ::WaitForSingleObject(_hPuttyProcess, waitMs);
+    if (waitRet == WAIT_TIMEOUT)
+    {
+        // 等待超时，弹窗确认是否强制杀死
+        int timeoutResult = ::MessageBoxW(_panelHwnd,
+            L"PuTTY窗口关闭超时，进程未退出。\n是否确认强制终止Putty进程？",
+            L"NppSSH 连接超时",
+            MB_YESNO | MB_ICONWARNING);
+
+        if (timeoutResult == IDYES)
+        {
+            ::TerminateProcess(_hPuttyProcess, 0);
+            NppSSH_LogInfoAuto("PuTTY等待关闭超时，用户确认强制结束进程");
+        }
+        else
+        {
+            NppSSH_LogInfoAuto("用户取消超时强制终止，放弃关闭PuTTY");
+            return;
+        }
+    }
+
+    // 5. 释放句柄、置空标识
+    ::CloseHandle(_hPuttyProcess);
+    _hPuttyProcess = NULL;
+
+    ::MessageBoxW(_panelHwnd, L"PuTTY已关闭", L"NppSSH", MB_OK);
+    NppSSH_LogInfoAuto("当前面板PuTTY进程关闭完成");
+}
 void SSHConEmu::ShowPuttyLoginWindow_Modal()
 {
-    ::MessageBoxW(_panelHwnd, L"登录Putty", L"NppSSH", MB_OK);
-    // 官方SDK标准：DialogBoxParam 模态对话框
-    // 父窗口固定为 NPP 主窗口，自动管理Z序、激活状态、禁用/恢复
-    //DialogBoxParamW(
-    //    g_hInst,
-    //    MAKEINTRESOURCE(IDD_SSH_LOGIN),
-    //    g_nppData._nppHandle,  // 关键：父窗口是NPP主窗口
-    //    SSH_LoginDlgProc,
-    //    (LPARAM)this
-    //);
+    // 1. 取出Putty完整路径
+    const std::wstring& puttyExePath = _strPuttyFullPath;
+
+    // 校验路径非空
+    if (puttyExePath.empty())
+    {
+        ::MessageBoxW(_panelHwnd, L"未选择 putty.exe 程序路径！\n请点击浏览按钮指定程序", L"启动失败", MB_OK | MB_ICONERROR);
+        NppSSH_LogErrorAuto("启动PuTTY失败：putty路径为空");
+        return;
+    }
+
+    // 校验文件是否真实存在
+    if (!::PathFileExistsW(puttyExePath.c_str()))
+    {
+        wchar_t errTip[1024] = { 0 };
+        swprintf_s(errTip, L"指定路径不存在 putty.exe：\n\n%s", puttyExePath.c_str());
+        ::MessageBoxW(_panelHwnd, errTip, L"启动失败", MB_OK | MB_ICONERROR);
+        NppSSH_LogErrorAuto("启动PuTTY失败：文件不存在 -> " + WStringToLogStr(puttyExePath));
+        return;
+    }
+
+    // 2. 初始化进程启动参数
+    STARTUPINFOW si = { 0 };
+    PROCESS_INFORMATION pi = { 0 };
+    si.cb = sizeof(STARTUPINFOW);
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_SHOWNORMAL; // 正常窗口显示，和双击打开一致
+
+    // 命令行缓冲区
+    std::wstring SSH_HOST = L"192.168.137.201";
+    std::wstring SSH_PORT = L"22";
+    std::wstring SSH_USER = L"root";
+    std::wstring SSH_PASS = L"123456";
+    std::wstring SSH_INITCD = L"/";
+    std::wstring ExceComd = L"HISTFILE=/dev/null;cd " + SSH_INITCD + L";bash;";
+    //std::wstring ExceFile = L"putty_auto_cd.tmp";
+    _TempExceFile = L"NppSSH_" + HwndToWString(_panelHwnd)+L".tmp";
+    if(!SSH_INITCD.empty())SSH_SettingsSaveConfigTmpFile(_TempExceFile, ExceComd);
+    std::wstring ExceLogin = L"\""+puttyExePath+L"\" -ssh \""+SSH_HOST+L"\" -P "+ SSH_PORT+L" -l " + SSH_USER + L" -pw " + SSH_PASS;
+    std::wstring ExcelFilePath = SSH_SettingsGetConfigFileExistPath(_TempExceFile);
+    if(!ExcelFilePath.empty())ExceLogin += L" -t -m \"" + ExcelFilePath + L"\"";
+    NppSSH_LogInfoAuto("【当前执行的命令】"+WStringToLogStr(ExceLogin));
+    // 3. 创建PuTTY独立进程
+    BOOL bCreateOk = ::CreateProcessW(
+        nullptr,                    // lpApplicationName：null 从命令行解析exe
+        const_cast<wchar_t*>(ExceLogin.c_str()),                 // lpCommandLine：带引号程序路径
+        nullptr,                    // 进程安全属性默认
+        nullptr,                    // 线程安全属性默认
+        FALSE,                      // 不继承句柄
+        CREATE_NEW_PROCESS_GROUP | NORMAL_PRIORITY_CLASS, // 创建独立进程组
+        nullptr,                    // 使用当前环境变量
+        nullptr,                    // 使用程序所在目录作为工作目录
+        &si,                        // 启动信息
+        &pi                         // 返回进程/线程句柄
+    );
+
+    if (!bCreateOk)
+    {
+        DWORD errCode = ::GetLastError();
+        wchar_t errMsg[1024] = { 0 };
+        swprintf_s(errMsg, L"启动 putty.exe 失败\n错误码：%d\n路径：%s", errCode, puttyExePath.c_str());
+        ::MessageBoxW(_panelHwnd, errMsg, L"进程创建失败", MB_OK | MB_ICONERROR);
+        char logErr[2048] = { 0 };
+        sprintf_s(logErr, "CreateProcessW 启动PuTTY失败，Err=%d Path=%ws", errCode, puttyExePath.c_str());
+        NppSSH_LogErrorAuto(std::string(logErr));
+        return;
+    }
+
+    // 4. 进程创建成功
+    _hPuttyProcess = pi.hProcess; // 直接存入类成员，作为唯一标识
+    ::CloseHandle(pi.hThread);    // 线程句柄无需保留，直接释放
+    
+    //Set_hPuTTYWnd();
+
+    // 1. 停止旧线程（防止残留）
+    StopSeachPutty();//停止会将stop置为true，启动时候如果为true会直接启动失败，所以需要补充赋值false
+    _stopSeachPutty.store(false, std::memory_order_release);
+
+    // 2. 启动本次命令的ShellReader线程
+    StartSeachPutty();
+
+    //Sleep(500);
+    //SSH_SettingsDeleteConfigFile(ExceFile);
+    // 打印调试日志
+    NppSSH_LogInfoAuto("成功启动PuTTY进程，路径：" + WStringToLogStr(puttyExePath));
+}
+void SSHConEmu::StartSeachPutty() {
+    std::lock_guard<std::mutex> lock(_SeachPuttyMutex);
+    if ( _seachPuttyThread.joinable()) {
+        NppSSH_LogInfoAuto("【INFO】等待旧 SeachPuttyThread 线程自然结束");
+        //_seachPuttyThread.detach();
+        _seachPuttyThread.join();
+        return;
+    }
+
+    // 重置线程控制状态
+    _stopSeachPutty.store(false, std::memory_order_release);
+
+    // 启动线程
+    _seachPuttyThread = std::thread(&SSHConEmu::SeachPuttyThread, this);
+    if (_seachPuttyThread.joinable())NppSSH_LogInfoAuto("【OK】SeachPuttyThread 线程启动成功");
+}
+// 后台无运行
+void SSHConEmu::SeachPuttyThread() {
+    NppSSH_LogInfoAuto("==============================================");
+    NppSSH_LogInfoAuto("=        SeachPuttyThread 线程运行中          =");
+    NppSSH_LogInfoAuto("==============================================");
+    //std::wstring ExceFile = L"putty_auto_cd.tmp";
+    //第一阶段：查找Putty窗口
+    const int MAX_SEACH_FIND_WAIT_MS = 1000;//查找窗口间隔时间，临界40ms进入第二阶段，41ms就是刚启动的一瞬间
+    const int MAX_DELECT_WAIT_MS = 2000;    //等待2s删除文件
+    int flag = 0;// 次数,仅仅用于日志打印
+    // 循环运行，直到收到停止信号
+    while (!_stopSeachPutty.load(std::memory_order_acquire)) {
+
+        {
+            std::unique_lock<std::mutex> lock(_SeachPuttyMutex);
+            // 等待1秒，或被唤醒（停止信号触发时唤醒）
+            if (_seachPuttyCv.wait_for(lock, std::chrono::milliseconds(MAX_SEACH_FIND_WAIT_MS),
+                [this]() { return _stopSeachPutty.load(std::memory_order_acquire); })) {
+                // 被唤醒且检测到停止信号，直接退出
+                NppSSH_LogInfoAuto("等待期间收到停止信号，退出心跳线程");
+                goto THREAD_EXIT;
+            }
+        }
+
+        flag++;
+        std::ostringstream oss;
+        oss << _seachPuttyThread.get_id();
+        NppSSH_LogInfoAuto("线程[" + oss.str() + "]已启动循环.【第" + IntToStr(flag) + "次】");
+
+        if (_stopSeachPutty.load(std::memory_order_acquire)) {
+            NppSSH_LogInfoAuto("收到停止信号，立即退出");
+            goto THREAD_EXIT;
+        }
+
+        bool has_hPuTTYWnd = Set_hPuTTYWnd();
+        if (has_hPuTTYWnd) {
+            NppSSH_LogInfoAuto("有Putty窗口，线程第一阶段结束");
+            break;
+        }
+    }
+    //第二阶段删除临时文件
+    {
+        std::unique_lock<std::mutex> lock(_SeachPuttyMutex);
+        if (_seachPuttyCv.wait_for(lock, std::chrono::milliseconds(MAX_DELECT_WAIT_MS),
+            [this]() { return _stopSeachPutty.load(std::memory_order_acquire); })) {
+            NppSSH_LogInfoAuto("等待期间收到停止信号，退出心跳线程");
+            if (!SSH_SettingsGetConfigFileExistPath(_TempExceFile).empty())SSH_SettingsDeleteConfigFile(_TempExceFile);
+            goto THREAD_EXIT;
+        }
+        if (!SSH_SettingsGetConfigFileExistPath(_TempExceFile).empty())SSH_SettingsDeleteConfigFile(_TempExceFile);//第一阶段结束后删除临时文件
+        NppSSH_LogInfoAuto("【删除】"+ WStringToLogStr(_TempExceFile) +"成功，线程第二阶段结束");
+    }
+    //第三阶段：监听Putty窗口
+    const int MAX_SEACH_WAIT_MS = 1;//1s
+    int retry = 0;// 次数,仅仅用于日志打印
+    // 循环运行，直到收到停止信号
+    while (!_stopSeachPutty.load(std::memory_order_acquire)) {
+        {
+            std::unique_lock<std::mutex> lock(_SeachPuttyMutex);
+            // 等待1秒，或被唤醒（停止信号触发时唤醒）
+            if (_seachPuttyCv.wait_for(lock, std::chrono::seconds(MAX_SEACH_WAIT_MS),
+                [this]() { return _stopSeachPutty.load(std::memory_order_acquire); })) {
+                // 被唤醒且检测到停止信号，直接退出
+                NppSSH_LogInfoAuto("等待期间收到停止信号，退出心跳线程");
+                goto THREAD_EXIT;
+            }
+        }
+
+        retry++;
+        std::ostringstream oss;
+        oss << _seachPuttyThread.get_id();
+        //NppSSH_LogInfoAuto("线程[" + oss.str() + "]已启动循环.【第" + IntToStr(retry) + "次】");
+
+        if (_stopSeachPutty.load(std::memory_order_acquire)) {
+            NppSSH_LogInfoAuto("收到停止信号，立即退出");
+            goto THREAD_EXIT;
+        }
+
+        bool has_hPuTTYWnd = Set_hPuTTYWnd();
+        if (!has_hPuTTYWnd) {
+            NppSSH_LogInfoAuto("没有Putty窗口，线程结束");
+            goto THREAD_EXIT;
+        }
+    }
+THREAD_EXIT:
+    NppSSH_LogInfoAuto("线程正常退出");
+    if (_seachPuttyThread.joinable()) {
+        _seachPuttyThread.detach();
+    }
+}
+void SSHConEmu::StopSeachPutty() {
+    std::lock_guard<std::mutex> lock(_SeachPuttyMutex);
+    _stopSeachPutty.store(true, std::memory_order_release);
+    if (_hPuTTYWnd == nullptr) {//为空直接放弃，不操作
+        NppSSH_LogInfoAuto("为空直接放弃，不操作");
+        _seachPuttyThread = std::thread();
+        return;
+    }
+    if (_seachPuttyThread.joinable()) {
+        // 唤醒搜索线程（如果在wait_for中阻塞，立即唤醒）
+        _seachPuttyCv.notify_one();
+        if (_seachPuttyThread.joinable()) {
+            NppSSH_LogInfoAuto("停止线程.............直接分离心搜索线程（不等待）");
+            _seachPuttyThread.detach();//直接不等待，让线程脱离主线程，自生自灭，根据废掉所有资源会自动销毁
+            //m_heartbeatThread.join();//等线程执行完才会执行
+        }
+        else {
+            NppSSH_LogInfoAuto("停止线程.............搜索线程不存在");
+        }
+    }
 }
 HBITMAP SSHConEmu::LoadImageByGdiPlus(const WCHAR* filePath)
 {
@@ -601,7 +800,16 @@ INT_PTR CALLBACK SSHConEmu::run_dlgProc(UINT message, WPARAM wParam, LPARAM lPar
         //    GRAY_BRUSH     // 灰色
         //    LTGRAY_BRUSH   // 浅灰
         //    NULL_BRUSH     // 透明空画刷（适配背景图必备）
-        return (LRESULT)::GetStockObject(WHITE_BRUSH);
+        //return (LRESULT)::GetStockObject(WHITE_BRUSH);
+        // 静态文字：返回空画刷，直接透明
+        if (message == WM_CTLCOLORSTATIC)
+        {
+            return (LRESULT)::GetStockObject(NULL_BRUSH);
+        }
+        else
+        {
+            return (LRESULT)::GetStockObject(WHITE_BRUSH);
+        }
     }
 
     case WM_INITDIALOG:
@@ -613,42 +821,6 @@ INT_PTR CALLBACK SSHConEmu::run_dlgProc(UINT message, WPARAM wParam, LPARAM lPar
         }
         return TRUE;
     }
-    // 面板大小变化时，自动适配输出文本框（防止遮挡/空白）（最小化关闭/打开notepad++会自动触发）
-    //case WM_SIZE:
-    //{
-    //    UINT sizeType = (UINT)wParam;
-    //    int nClientW = LOWORD(lParam);
-    //    int nClientH = HIWORD(lParam);
-
-    //    if (sizeType == SIZE_MINIMIZED || nClientW <= 0 || nClientH <= 0)
-    //        break;
-    //    SetProp(_hOutputEdit, L"NppSSH_PanelW", (HANDLE)(LONG_PTR)nClientW);
-    //    SetProp(_hOutputEdit, L"NppSSH_PanelH", (HANDLE)(LONG_PTR)nClientH);
-
-    //    // 只负责重置定时器
-    //    SetTimer(GetHwndSelf(), TIMER_ID_RESIZE_PTY, 200, nullptr);
-    //    //NppSSH_LogInfoAuto("WM_SIZE 面板新尺寸 -> 宽度:" + std::to_string(nClientW)
-    //        //+ "  高度:" + std::to_string(nClientH));
-
-    //    if (initPanle && GetHwndSelf() && ::IsWindow(GetHwndSelf()) && _hOutputEdit && ::IsWindow(_hOutputEdit))
-    //    {
-    //        //::MessageBoxW(s_nppData._nppHandle, L"SSH面板变化", L"NppSSH提示", MB_OK | MB_ICONINFORMATION);
-    //        SSH_TerminalResize(GetHwndSelf(), this->_panelSeqId);
-
-    //        //重绘【整个 SSH 面板】 + 面板里面所有的子控件（包括按钮、编辑框、滚动条等全部子窗口）RDW_ALLCHILDREN = 把面板里所有子控件全部刷新一遍
-    //        ::RedrawWindow(GetHwndSelf(), NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);// 刷新整个面板 + 所有子控件（解决最大化/还原/遮挡BUG）
-    //    }
-    //    return TRUE;
-    //}
-    //case WM_TIMER:
-    //{
-    //    if (wParam == TIMER_ID_RESIZE_PTY)
-    //    {
-    //        KillTimer(GetHwndSelf(), TIMER_ID_RESIZE_PTY);
-    //        SendMessageW(_hOutputEdit, WM_USER_RESIZE_PTY, 0, 0);
-    //    }
-    //    break;
-    //}
     // 处理按钮点击消息
     case WM_COMMAND:
     {
@@ -674,9 +846,10 @@ INT_PTR CALLBACK SSHConEmu::run_dlgProc(UINT message, WPARAM wParam, LPARAM lPar
             ShowPuttyLoginWindow_Modal();
         }
         else if (cmd == IDC_BTN_CLOSE_SSH) {
-            NppSSH_LogInfoAuto("用户点击面板断开按钮" + std::to_string(this->_panelSeqId));
+            NppSSH_LogInfoAuto("用户点击面板关闭Putty按钮" + std::to_string(this->_panelSeqId));
+            CloseSoftWare();
             //if (_isConnected) {
-            //    disconnectSSH(); // 断开连接
+            //    disconnectSSH(); 
             //}
         }
         return DockingDlgInterface::run_dlgProc(message, wParam, lParam);
@@ -701,37 +874,16 @@ INT_PTR CALLBACK SSHConEmu::run_dlgProc(UINT message, WPARAM wParam, LPARAM lPar
             pnmh->code,
             pnmh->code
         );
-        //NppSSH_LogInfoAuto("【NMHDR】" + std::string(bufNMHDR));
-        // 提前预存关闭确认结果，避免在case内部模态阻塞
-        //int closeResult = IDNO;
-        // 1.消息来源是面板：全部放行，交给编辑框子类处理
         if (pnmh->hwndFrom == g_nppData._nppHandle && pnmh->code == DMN_CLOSE)
         {
-            //NppSSH_LogInfoAuto("面板【准备】关闭，当前连接状态：" + std::to_string(_isConnected) + "【触发关闭，执行断开】" + std::string(bufNMHDR));
-            //const bool bHasActiveConn = this->Get_isConnected();
-
-            // 检查当前面板是否有活跃SSH连接
-            //if (bHasActiveConn)
-            //{
-            //    this->disconnectSSH();   // 断开连接
-            //    this->display(false);//准备销毁，先隐藏防止不完整的面板出现影响效果
-            //}
             SendMessageW(GetHwndSelf(), WM_CLOSE, wParam, lParam);
         }
-
-         //2.消息来源是Terminal富文本：全部放行，交给编辑框子类处理
-        //if (pnmh->hwndFrom == this->_hOutputEdit)
-        //{
-        //    //NppSSH_LogInfoAuto("父转发Terminal通知 code:" + std::to_string(pnmh->code));
-        //    SendMessageW(_hOutputEdit, WM_NOTIFY, wParam, lParam);
-        //}
         return TRUE;
     }
     // 面板关闭：原生NPP消息，自动清理资源，无内存泄漏
     case WM_CLOSE:
     {
         NppSSH_LogInfoAuto("面板【开始】关闭，当前连接状态：" + std::to_string(_isConnected));
-        //SSH_TerminalBySeqIdRemove(_panelSeqId);
         // 从NPP原生停靠管理器移除面板
         ::SendMessage(g_nppData._nppHandle, NPPM_MODELESSDIALOG, MODELESSDIALOGREMOVE, (LPARAM)getHSelf());
         ::SendMessage(g_nppData._nppHandle, NPPM_DMMHIDE, 0, (LPARAM)getHSelf());
@@ -745,14 +897,6 @@ INT_PTR CALLBACK SSHConEmu::run_dlgProc(UINT message, WPARAM wParam, LPARAM lPar
         delete this;
         return TRUE;
     }
-
-    //// 工具栏图标大小变化时更新按钮图标
-    //case NPPN_TOOLBARICONSETCHANGED:
-    //{
-    //    UpdateToolbarIconSize();
-    //    return TRUE;
-    //}
-
     // 其他所有消息，交给DockingDlgInterface原生处理（避免NPP异常）
     default:
         return DockingDlgInterface::run_dlgProc(message, wParam, lParam);
@@ -766,8 +910,6 @@ void SSHConEmu_InitRecreatePanel(SSHConEmu* pNewPanel) {
         ::MessageBoxW(g_nppData._nppHandle, L"NPP环境未初始化，无法重建面板！", L"NppSSH错误", MB_OK | MB_ICONWARNING);
         return;
     }
-    //s_panelCounter++;// 同步计数器，保证新创建面板ID不重复
-    //SSHPanel* pNewPanel = new SSHPanel(panelId);
     if (pNewPanel) {
         pNewPanel->initPanel();
         // 获取插件DLL目录，拼接图片路径
@@ -785,7 +927,7 @@ void SSHConEmu_InitRecreatePanel(SSHConEmu* pNewPanel) {
 
         // 设置面板背景色（黑色示例）
         //pNewPanel->setBackgroundColor(RGB(240, 240, 240));
-        pNewPanel->setForegroundColor(RGB(255, 0, 0));
+        pNewPanel->setForegroundColor(RGB(0, 0, 0));
         pNewPanel->display(true);
     }
 }

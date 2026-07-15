@@ -98,6 +98,9 @@ bool SSH_SettingsSavePanelType(int panelRealId, PanelType type);// Ini文件根�
 void SSH_SettingsInitRecreatePanels();					// 重建面板,根据不同的type创建不同的面板
 void SSH_SettingsByRealIdRemove(int panelRealId);		// 删除指定面板ID对应的类型配置项，不存在直接返回不报错
 //std::vector<PanelIdTypeItem> SSH_GetAllPanelIdTypeList(); // 获取全部面板ID与类型有序集合
+void SSH_SettingsSaveConfigTmpFile(const std::wstring& ExceFile, const std::wstring& ExceComd);// 保存配置目录临时文件
+std::wstring SSH_SettingsGetConfigFileExistPath(const std::wstring& ExceFile);// 查询配置目录文件，存在返回绝对路径，不存在返回空
+void SSH_SettingsDeleteConfigFile(const std::wstring& ExceFile);// 直接删除配置目录指定文件（无判空、无返回值）
 
 
 // 其他文件调用SSHPanel中的函数

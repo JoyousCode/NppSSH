@@ -145,6 +145,15 @@ void SSH_SettingsByRealIdRemove(int panelRealId) {
 //std::vector<PanelIdTypeItem> SSH_GetAllPanelIdTypeList() {
 //    return SSHSettings_GetAllPanelIdTypeList();
 //}
+void SSH_SettingsSaveConfigTmpFile(const std::wstring& ExceFile, const std::wstring& ExceComd) {
+    SSHSettings_SaveConfigTmpFile(ExceFile, ExceComd);
+}
+std::wstring SSH_SettingsGetConfigFileExistPath(const std::wstring& ExceFile) {
+    return SSHSettings_GetConfigFileExistPath(ExceFile);
+}
+void SSH_SettingsDeleteConfigFile(const std::wstring& ExceFile) {
+    SSHSettings_DeleteConfigFile(ExceFile);
+}
 
 
 /**************（实际定义在SSHPanel中）***************/

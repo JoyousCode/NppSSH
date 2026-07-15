@@ -164,3 +164,18 @@ std::string IntToHexStr(DWORD val) {
     sprintf_s(buf, "%08X", val);
     return std::string(buf);
 }
+std::string WStringToUTF8(const std::wstring& wstr)
+{
+    if (wstr.empty()) return "";
+    int size_needed = WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), NULL, 0, NULL, NULL);
+    std::string strTo(size_needed, 0);
+    WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), &strTo[0], size_needed, NULL, NULL);
+    return strTo;
+}
+
+std::wstring HwndToWString(HWND hWnd)
+{
+    wchar_t buf[64]{};
+    swprintf(buf, L"0x%p", hWnd);
+    return std::wstring(buf);
+}

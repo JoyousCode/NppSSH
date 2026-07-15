@@ -3,6 +3,7 @@
 #include "SSHBasePanel.h"
 #include <Commdlg.h>//操作文件选择
 #include <gdiplus.h>
+#include <atomic>
 
 class SSHConEmu : public SSHBasePanel{
 public:
@@ -17,6 +18,7 @@ public:
     HICON LoadCustomIcon(int iconId, int size);
     void SetButtonIconOnly(HWND btn, int iconId);
     void ShowPuttyLoginWindow_Modal();
+    void SSHConEmu::CloseSoftWare();
     void OpenPuttyFileDialog();
     // 封装：统一设置路径区域所有控件字体大小（初始化自动调用）
     void SetPathControlFontSize(int fontSize);
@@ -34,6 +36,10 @@ public:
         m_hBgImage = LoadImageByGdiPlus(imgPath);
         InvalidateRect(GetHwndSelf(), nullptr, TRUE);
     }
+    bool Set_hPuTTYWnd();
+
+    void StartSeachPutty();
+    void StopSeachPutty();
 private:
     COLORREF m_textColor = RGB(255, 255, 255); // 文字白色适配图片
     COLORREF _bgColor = GetSysColor(COLOR_WINDOW);
@@ -49,12 +55,25 @@ private:
     std::wstring _strPuttyFullPath; // 存储选中的Putty完整路径
     HWND _hBtnPutty;        // Putty按钮句柄
     HWND _hBtnDestroy;      // 销毁按钮句柄
+    HANDLE _hPuttyProcess; // 保存当前面板启动的PuTTY进程句柄
+    HWND _hPuTTYWnd;
     HICON _hIconPutty;    // 持久化连接图标句柄
     HICON _hIconDestroy; // 持久化销毁按钮句柄
     HICON _hIconSelectFile; // 持久化销毁按钮句柄
     int _editLabelFontSize;//文字大小
     
     HWND _hBtnWinScp;// 
+
+    // 后台搜索Putty线程，线程控制锁
+    std::mutex _SeachPuttyMutex;
+    std::thread _seachPuttyThread;
+    void SeachPuttyThread();
+    std::condition_variable _seachPuttyCv;
+    std::atomic<bool> _stopSeachPutty{ false };
+
+    std::wstring _TempExceFile;
+
+
 };
 
 // NPP启动重建面板具体实现

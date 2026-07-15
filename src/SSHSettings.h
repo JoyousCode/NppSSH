@@ -64,3 +64,11 @@ void SSHSettings_ByRealIdRemove(int panelRealId);
 
 // 获取全部面板ID与类型有序集合
 std::vector<PanelIdTypeItem> SSHSettings_GetAllPanelLineList();
+
+// 保存配置目录临时文件
+void SSHSettings_SaveConfigTmpFile(const std::wstring& ExceFile, const std::wstring& ExceComd);
+// 查询配置目录文件，存在返回绝对路径，不存在返回空
+std::wstring SSHSettings_GetConfigFileExistPath(const std::wstring& ExceFile);
+// 直接删除配置目录指定文件（无判空、无返回值）
+void SSHSettings_DeleteConfigFile(const std::wstring& ExceFile);
+
