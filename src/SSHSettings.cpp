@@ -239,10 +239,6 @@ void SSHSettings_InitRecreatePanels() {
     int panelCount = SSHSettings_LoadPanelCount(); // 从INI加载
     if (panelCount <= 0) return;
     std::vector<PanelIdTypeItem> panelItemList = SSHSettings_GetAllPanelLineList();
-
-    //NppSSH_LogInfoAuto("【panelCount】panelcount=="+ std::to_string(panelCount));
-    //NppSSH_LogInfoAuto("【SSHSettings_InitRecreatePanels】缓存面板列表数量：" + std::to_string(panelItemList.size()));
-
     PanelType panelType = PanelType::TerminalPanel;
     // 按注册表记录的数量重建面板，ID延续自注册表
     for (int seqIndex = 0; seqIndex <= (panelCount-1); seqIndex++) {

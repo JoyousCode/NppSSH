@@ -39,7 +39,8 @@ SSHBasePanel* SSH_PanelVecBySeqId(int panelSeqId)
         return nullptr;
     return g_SSHPanelVec[panelSeqId];
 }
-void SSH_PanelVecBySeqIdRemove(int panelSeqId) {
+void SSH_PanelVecBySeqIdRemove(int panelSeqId, int panelrealId) {
+    SSH_SettingsByRealIdRemove(panelrealId);
     if (panelSeqId < 0 || panelSeqId >= (int)g_SSHPanelVec.size())
     {
         NppSSH_LogInfoAuto("【全局处理】无效序号:" + std::to_string(panelSeqId));
@@ -47,17 +48,27 @@ void SSH_PanelVecBySeqIdRemove(int panelSeqId) {
     }
     {
         std::lock_guard<std::mutex> lock(g_SSHPanelMutex);
-        // delete this释放内存已由窗口过程手动处理，这里不再处理
+        SSHBasePanel* pBase = SSH_PanelVecBySeqId(panelSeqId);
+		
+        pBase->destroy();
+        if (pBase) delete pBase;
         g_SSHPanelVec.erase(g_SSHPanelVec.begin() + panelSeqId);
         // 更新后续元素的 panelSeqId
         SSH_PanelVecBySeqIdUpdate(panelSeqId);
+        SSH_SettingsSavePanelCount(SSH_PanelVecSize());
     }
 }
-SSHPanel* SSH_PanelVecBySeqIdGetSSHPanel(int panelSeqId)
+SSHPanel* SSH_PanelVecBySeqIdGetSSHPane(int panelSeqId)
 {
     SSHBasePanel* pBase = SSH_PanelVecBySeqId(panelSeqId);
     if (!pBase) return nullptr;;
     return dynamic_cast<SSHPanel*>(pBase);
+}
+SSHConEmu* SSH_PanelVecBySeqIdGetSSHBtnPanel(int panelSeqId)
+{
+    SSHBasePanel* pBase = SSH_PanelVecBySeqId(panelSeqId);
+    if (!pBase) return nullptr;;
+    return dynamic_cast<SSHConEmu*>(pBase);
 }
 int SSH_PanelVecSize() {
     return g_SSHPanelVec.size();
@@ -177,16 +188,15 @@ void SSH_PanelInitRecreateTerminalPanel(int panelSeqId, int panelrealId) {//pane
     NppSSH_LogInfoAuto("面板索引="+ std::to_string(panelSeqId) +"面板标题id="+ std::to_string(panelrealId));
     std::lock_guard<std::mutex> lock(g_SSHPanelMutex);
     if (panelSeqId < 0) { panelSeqId = 0;panelrealId = 1; }
-    SSHPanel* pPanel = new SSHPanel(panelSeqId, panelrealId);
+    SSHBasePanel* pPanel = new SSHPanel(panelSeqId, panelrealId);
     SSHPanel_InitRecreatePanel(pPanel);
     g_SSHPanelVec.push_back(pPanel);
 }
 void SSH_PanelInitRecreateConEmuPanel(int panelSeqId, int panelrealId) {//panelSeqId索引从0开始，panelrealId面板默认标题从1开始
-    //int panelSeqId = g_SSHPanelSeqIdMap.size();panelSeqId++;
     NppSSH_LogInfoAuto("面板索引=" + std::to_string(panelSeqId) + "面板标题id=" + std::to_string(panelrealId));
     std::lock_guard<std::mutex> lock(g_SSHPanelMutex);
     if (panelSeqId < 0) { panelSeqId = 0;panelrealId = 1; }
-    SSHConEmu* pPanel = new SSHConEmu(panelSeqId, panelrealId);
+    SSHBasePanel* pPanel = new SSHConEmu(panelSeqId, panelrealId);
     SSHConEmu_InitRecreatePanel(pPanel);
     g_SSHPanelVec.push_back(pPanel);
 }

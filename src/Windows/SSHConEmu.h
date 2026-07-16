@@ -7,29 +7,33 @@
 // 单个PuTTY会话完整资源包
 struct PuTTYSession
 {
+	int panelSeqId;// 面板序列ID（用于关联面板设置是否存在连接）
     HANDLE hProcess;
     HWND hWnd;
-    std::thread monitorThread;
+    HANDLE hMonitorThread;
     std::atomic<bool> stopFlag;
     std::mutex mtx;
     std::condition_variable cv;
     std::wstring tmpFile;
     //std::atomic<bool> closeFlag;
 
-    PuTTYSession()
-        : hProcess(NULL), hWnd(NULL), stopFlag(false)
+    PuTTYSession(int _panelSeqId)
+        : hProcess(NULL), hWnd(NULL), stopFlag(false), hMonitorThread(nullptr), panelSeqId(_panelSeqId)
     {
     }
-
+    DWORD WINAPI PuTTYSessionMonitor();
+    bool FindPuTTYWindowByPid(DWORD pid, HWND& outHwnd);
     // 终止监控线程
     void StopMonitor()
     {
         stopFlag.store(true, std::memory_order_release);
-        cv.notify_one();
-        if (monitorThread.joinable())
+        //cv.notify_one();
+        cv.notify_all();
+        if (hMonitorThread != nullptr)
         {
-            try { monitorThread.join(); }
-            catch (...) { monitorThread.detach(); }
+            WaitForSingleObject(hMonitorThread, INFINITE);
+            CloseHandle(hMonitorThread);
+            hMonitorThread = nullptr;
         }
     }
 
@@ -76,13 +80,10 @@ public:
         InvalidateRect(GetHwndSelf(), nullptr, TRUE);
     }
     bool Set_hPuTTYWnd();
-
-    void StartSeachPutty();
-    void StopSeachPutty();
-
-    void CloseSingleSession(PuTTYSession& sess);
-    static bool FindPuTTYWindowByPid(DWORD pid, HWND& outHwnd);
-    static DWORD WINAPI PuTTYSessionMonitor(LPVOID lp);
+    
+    
+    // 新增静态代理，仅作为CreateThread合法入口，不写业务逻辑
+    static DWORD WINAPI MonitorThreadProxy(LPVOID lpParam);
     void CleanInvalidSession();
     bool isHandleHasActiveThread();
 private:
@@ -127,4 +128,4 @@ private:
 };
 
 // NPP启动重建面板具体实现
-void SSHConEmu_InitRecreatePanel(SSHConEmu* pNewPanel);
+void SSHConEmu_InitRecreatePanel(SSHBasePanel* pNewPanel);

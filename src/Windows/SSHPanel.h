@@ -135,7 +135,7 @@ NppData& SSHPanel_GetGlobalNppData();
 HINSTANCE& SSHPanel_GetGlobalHInst();
 
 // NPP启动重建面板具体实现
-void SSHPanel_InitRecreatePanel(SSHPanel* pNewPanel);
+void SSHPanel_InitRecreatePanel(SSHBasePanel* pNewPanel);
 
 // 获取面板索引进行转发
 

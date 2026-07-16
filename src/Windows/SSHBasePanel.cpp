@@ -14,8 +14,14 @@ SSHBasePanel::SSHBasePanel(int panelSeqId, int panelrealId)
 }
 SSHBasePanel::~SSHBasePanel()
 {
+    
     // 仅释放基类自己的图标/句柄
     if (_hTabIcon) ::DestroyIcon(_hTabIcon);
+    //NppSSH_LogInfoAuto("执行SSHBasePanel析构函数1");
+    if (::IsWindow(_panelHwnd))::DestroyWindow(_panelHwnd);//会直接销毁，导致delete失效，析构函数不会被调用，导致内存泄漏，需要最后释放
+	//delete this;会先执行派生类的析构函数，之后执行基类的析构函数。
+	
+    //NppSSH_LogInfoAuto("执行SSHBasePanel析构函数2");
 }
 /*
 * 根据面板ID获得面板句柄

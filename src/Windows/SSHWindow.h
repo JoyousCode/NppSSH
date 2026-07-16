@@ -55,6 +55,7 @@
 
 class SSHBasePanel;
 class SSHPanel;
+class SSHConEmu;
 class SSHTerminal;
 //extern std::unordered_map<int, SSHPanel*> g_SSHPanelSeqIdMap;//key：序列，每创建一个面板唯一的序列
 extern std::vector<SSHBasePanel*> g_SSHPanelVec;
@@ -74,8 +75,9 @@ void SSH_PanelVecClearAll();							// 释放g_SSHPanelVec集合中所有面板
 
 // 全局处理
 SSHBasePanel* SSH_PanelVecBySeqId(int panelSeqId);
-void SSH_PanelVecBySeqIdRemove(int panelSeqId);			// 根据序列ID移除集合中的内容
+void SSH_PanelVecBySeqIdRemove(int panelSeqId, int panelrealId);			// 根据序列ID移除集合中的内容
 SSHPanel* SSH_PanelVecBySeqIdGetSSHPanel(int panelSeqId);// 根据序列ID获得集合中的面板实例
+SSHConEmu* SSH_PanelVecBySeqIdGetSSHBtnPanel(int panelSeqId); // 根据序列ID获得集合中的ConEmu面板实例
 int SSH_PanelVecSize();									// 所有面板数量
 int SSH_PanelVecGetInvalidSeqId();						// 查找缺失的第一个 序列ID 或者返回下一个最大 序列ID
 bool SSH_PanelVecIsHasConnection();						// 检查所有面板中是否有连接

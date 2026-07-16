@@ -331,14 +331,13 @@ void SSHPanel::initPanel() {
 
     createTopButtonBar();               // 调用创建顶部按钮栏
 
-    //  从资源中获取EDIT控件句柄（不再手动CreateWindow）
-    //_hOutputEdit = ::GetDlgItem(GetHwndSelf(), IDC_OUTPUT_EDIT);
     s_iconSize = _iconSize;
-    _hOutputEdit = SSH_TerminalInitControlPanel(GetHwndSelf(), _panelSeqId);
-    if (!_hOutputEdit) {
-        ::MessageBoxW(s_nppData._nppHandle, L"NPP插件环境_hOutputEdit初始化失败！", L"NppSSH调试提示", MB_OK);
-    }
-    SSH_TerminalAppendTextHandle(_panelSeqId, "✅NppSSH面板已创建\r\n等待SSH连接...");
+    // TODO：出现BUG，序列不是按照顺序的，需要将伪终端面板封装到面板类中
+    //_hOutputEdit = SSH_TerminalInitControlPanel(GetHwndSelf(), _panelSeqId);
+    //if (!_hOutputEdit) {
+    //    ::MessageBoxW(s_nppData._nppHandle, L"NPP插件环境_hOutputEdit初始化失败！", L"NppSSH调试提示", MB_OK);
+    //}
+    //SSH_TerminalAppendTextHandle(_panelSeqId, "✅NppSSH面板已创建\r\n等待SSH连接...");
     
     //if (GetHwndSelf() && ::IsWindow(GetHwndSelf())) {         // 强制设置面板窗口样式，解决遮挡/闪烁问题
     //    DWORD dwStyle = ::GetWindowLongPtrW(GetHwndSelf(), GWL_STYLE);
@@ -977,19 +976,12 @@ INT_PTR CALLBACK SSHPanel::run_dlgProc(UINT message, WPARAM wParam, LPARAM lPara
     // 面板关闭：原生NPP消息，自动清理资源，无内存泄漏
     case WM_CLOSE: 
     {
-        NppSSH_LogInfoAuto("面板【开始】关闭，当前连接状态：" + std::to_string(_isConnected));
-        SSH_TerminalBySeqIdRemove(_panelSeqId);
+        NppSSH_LogInfoAuto("SSH_Panel面板【开始】关闭，当前连接状态：" + std::to_string(_isConnected));
+        //SSH_TerminalBySeqIdRemove(_panelSeqId);
         // 从NPP原生停靠管理器移除面板
         ::SendMessage(s_nppData._nppHandle, NPPM_MODELESSDIALOG, MODELESSDIALOGREMOVE, (LPARAM)getHSelf());
         ::SendMessage(s_nppData._nppHandle, NPPM_DMMHIDE, 0, (LPARAM)getHSelf());
-
-        SSH_SettingsByRealIdRemove(this->_panelrealId);
-        SSH_PanelVecBySeqIdRemove(_panelSeqId);
-        SSH_SettingsSavePanelCount(SSH_PanelVecSize());
-        
-        ::DestroyWindow(this->_panelHwnd);
-        this->destroy();
-        delete this;
+        SSH_PanelVecBySeqIdRemove(_panelSeqId, _panelrealId);
         return TRUE;
     }
     
@@ -1007,15 +999,16 @@ INT_PTR CALLBACK SSHPanel::run_dlgProc(UINT message, WPARAM wParam, LPARAM lPara
 }
 
 // NPP启动重建面板具体实现
-void SSHPanel_InitRecreatePanel(SSHPanel* pNewPanel) {
+void SSHPanel_InitRecreatePanel(SSHBasePanel* pNewPanel) {
     if (s_nppData._nppHandle == NULL || s_hInst == NULL) {
         ::MessageBoxW(s_nppData._nppHandle, L"NPP环境未初始化，无法重建面板！", L"NppSSH错误", MB_OK | MB_ICONWARNING);
         return;
     }
     //s_panelCounter++;// 同步计数器，保证新创建面板ID不重复
     //SSHPanel* pNewPanel = new SSHPanel(panelId);
-    if (pNewPanel) {
-        pNewPanel->initPanel();
+    SSHPanel* pCon = dynamic_cast<SSHPanel*>(pNewPanel);
+    if (pCon) {
+        pCon->initPanel();
         
         // 获取插件DLL目录，拼接图片路径
         TCHAR szNppPath[MAX_PATH] = { 0 };
@@ -1028,13 +1021,13 @@ void SSHPanel_InitRecreatePanel(SSHPanel* pNewPanel) {
         WideCharToMultiByte(CP_UTF8, 0, szConfigDir, -1, logBuf, 1024, NULL, NULL);
         NppSSH_LogInfoAuto(std::string("当前拼接完整图片路径：") + logBuf);
         // 设置图片背景
-        pNewPanel->SetBackgroundImage(szConfigDir);
+        pCon->SetBackgroundImage(szConfigDir);
 
         // 设置面板背景色（黑色示例）
-        //pNewPanel->setBackgroundColor(RGB(240, 240, 240));
-        pNewPanel->setForegroundColor(RGB(255, 0, 0));
-        pNewPanel->display(true);
-        //::SendMessage(s_nppData._nppHandle, NPPM_DMMSHOW, 0, reinterpret_cast<LPARAM>(pNewPanel->getHSelf()));
+        //pCon->setBackgroundColor(RGB(240, 240, 240));
+        pCon->setForegroundColor(RGB(255, 0, 0));
+        pCon->display(true);
+        //::SendMessage(s_nppData._nppHandle, NPPM_DMMSHOW, 0, reinterpret_cast<LPARAM>(pCon->getHSelf()));
         // 额外触发标签栏重绘（兜底）
         //::RedrawWindow(s_nppData._nppHandle, NULL, NULL, RDW_FRAME | RDW_INVALIDATE | RDW_UPDATENOW);
     }
