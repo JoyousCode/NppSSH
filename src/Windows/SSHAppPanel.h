@@ -48,10 +48,10 @@ struct PuTTYSession
         hWnd = NULL;
     }
 };
-class SSHConEmu : public SSHBasePanel{
+class SSHAppPanel : public SSHBasePanel{
 public:
-    SSHConEmu(int panelSeqId, int panelrealId);
-    ~SSHConEmu() override;
+    SSHAppPanel(int panelSeqId, int panelrealId);
+    ~SSHAppPanel() override;
     void initPanel();
     INT_PTR CALLBACK run_dlgProc(UINT message, WPARAM wParam, LPARAM lParam) override;
     void setBackgroundColor(COLORREF color) override;
@@ -61,7 +61,7 @@ public:
     HICON LoadCustomIcon(int iconId, int size);
     void SetButtonIconOnly(HWND btn, int iconId);
     void ShowPuttyLoginWindow_Modal();
-    void SSHConEmu::CloseSoftWare();
+    void CloseSoftWare();
     void OpenPuttyFileDialog();
     // 封装：统一设置路径区域所有控件字体大小（初始化自动调用）
     void SetPathControlFontSize(int fontSize);
@@ -79,10 +79,8 @@ public:
         m_hBgImage = LoadImageByGdiPlus(imgPath);
         InvalidateRect(GetHwndSelf(), nullptr, TRUE);
     }
-    bool Set_hPuTTYWnd();
-    
-    
-    // 新增静态代理，仅作为CreateThread合法入口，不写业务逻辑
+
+    // 静态代理，仅作为CreateThread合法入口，不写业务逻辑
     static DWORD WINAPI MonitorThreadProxy(LPVOID lpParam);
     void CleanInvalidSession();
     bool isHandleHasActiveThread();
@@ -91,10 +89,7 @@ private:
     COLORREF _bgColor = GetSysColor(COLOR_WINDOW);
     COLORREF _fgColor = GetSysColor(COLOR_WINDOWTEXT);
     HBITMAP m_hBgImage;
-    HANDLE _hConEumProcess = nullptr;// ConEmu进程句柄
-    HWND _hConEmuWnd = nullptr;      // ConEmu主窗口句柄（用于GuiMacro定位）
 
-    
     HWND _hStaticPuttyTip;     // 静态文字：设置Putty路径：
     HWND _hEditPuttyPath;      // 路径输入框
     HWND _hBtnSelectFile;    // 浏览选择按钮
@@ -113,19 +108,7 @@ private:
     // 所有PuTTY会话容器
     std::vector<PuTTYSession*> _sessionList;
     std::mutex _sessionListMtx;// 保护会话列表并发读写
-    // 后台搜索Putty线程，线程控制锁
-    HANDLE _hPuttyProcess; // 保存当前面板启动的PuTTY进程句柄
-    HWND _hPuTTYWnd;
-    //std::mutex _SeachPuttyMutex;
-    //std::thread _seachPuttyThread;
-    //void SeachPuttyThread();
-    //std::condition_variable _seachPuttyCv;
-    //std::atomic<bool> _stopSeachPutty{ false };
-
-    //std::wstring _TempExceFile;
-
-
 };
 
 // NPP启动重建面板具体实现
-void SSHConEmu_InitRecreatePanel(SSHBasePanel* pNewPanel);
+void SSHAppPanel_InitRecreatePanel(SSHBasePanel* pNewPanel);

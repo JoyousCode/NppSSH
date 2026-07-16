@@ -1,14 +1,12 @@
-#include "SSHConEmu.h"
+#include "SSHAppPanel.h"
 
 static bool initPanle;//防止未初始化完成就调用面板
-SSHConEmu::SSHConEmu(int panelSeqId, int panelrealId)
+SSHAppPanel::SSHAppPanel(int panelSeqId, int panelrealId)
     :SSHBasePanel(panelSeqId, panelrealId),
     _editLabelFontSize(18),
     _hIconPutty(nullptr),
     _hIconSelectFile(nullptr),
     _hIconDestroy(nullptr),
-    _hConEumProcess(nullptr),
-    _hConEmuWnd(nullptr),
     _hBtnPutty(nullptr),
     _hBtnDestroy(nullptr),
     _hStaticPuttyTip(nullptr),
@@ -16,7 +14,7 @@ SSHConEmu::SSHConEmu(int panelSeqId, int panelrealId)
     _hBtnSelectFile(nullptr),
     _strPuttyFullPath(L"") {
 }
-SSHConEmu::~SSHConEmu() {
+SSHAppPanel::~SSHAppPanel() {
     isHandleHasActiveThread();
     // 关闭所有PuTTY会话
     {
@@ -57,9 +55,9 @@ SSHConEmu::~SSHConEmu() {
         ::DestroyIcon(_hIconSelectFile);
         _hIconSelectFile = nullptr;
     }
-    NppSSH_LogInfoAuto("执行【SSHConEmu】析构函数");
+    NppSSH_LogInfoAuto("执行【SSHAppPanel】析构函数");
 }
-bool SSHConEmu::isHandleHasActiveThread() {
+bool SSHAppPanel::isHandleHasActiveThread() {
     std::lock_guard<std::mutex> lock(_sessionListMtx);
     if (_isConnected) {
         int closeResult = ::MessageBoxW(_panelHwnd,
@@ -84,18 +82,18 @@ bool SSHConEmu::isHandleHasActiveThread() {
     return _isConnected;
 }
 // 重写背景色
-void SSHConEmu::setBackgroundColor(COLORREF color) {
+void SSHAppPanel::setBackgroundColor(COLORREF color) {
     _bgColor = color;
     // 刷新面板，触发WM_ERASEBKGND、WM_PAINT重绘
     ::InvalidateRect(GetHwndSelf(), nullptr, TRUE);
 }
 // 重写前景文字色
-void SSHConEmu::setForegroundColor(COLORREF color) {
+void SSHAppPanel::setForegroundColor(COLORREF color) {
     _fgColor = color;
     ::InvalidateRect(GetHwndSelf(), nullptr, TRUE);
 }
 // 加载自定义图标（可以替换为自己的图标 ID）
-HICON SSHConEmu::LoadCustomIcon(int iconId, int size)
+HICON SSHAppPanel::LoadCustomIcon(int iconId, int size)
 {
     // 校验基础参数
     if (g_hInst == NULL || iconId <= 0 || size <= 0) {
@@ -137,7 +135,7 @@ HICON SSHConEmu::LoadCustomIcon(int iconId, int size)
 
 }
 // 把按钮变成纯图标模式
-void SSHConEmu::SetButtonIconOnly(HWND btn, int iconId)
+void SSHAppPanel::SetButtonIconOnly(HWND btn, int iconId)
 {
     if (btn == nullptr || !::IsWindow(btn))
     {
@@ -166,7 +164,7 @@ void SSHConEmu::SetButtonIconOnly(HWND btn, int iconId)
     ::UpdateWindow(btn);
     ::RedrawWindow(btn, NULL, NULL, RDW_FRAME | RDW_INVALIDATE | RDW_UPDATENOW);
 }
-void SSHConEmu::OpenPuttyFileDialog()
+void SSHAppPanel::OpenPuttyFileDialog()
 {
     OPENFILENAMEW ofn = { 0 };
     WCHAR szFile[MAX_PATH] = { 0 };
@@ -194,7 +192,7 @@ void SSHConEmu::OpenPuttyFileDialog()
         NppSSH_LogInfoAuto("已选择Putty路径：" + WStringToLogStr(_strPuttyFullPath));
     }
 }
-void SSHConEmu::SetPathControlFontSize(int fontSize)
+void SSHAppPanel::SetPathControlFontSize(int fontSize)
 {
     // 更新私有字号变量
     _editLabelFontSize = fontSize*0.8;
@@ -222,7 +220,7 @@ void SSHConEmu::SetPathControlFontSize(int fontSize)
     // 字体句柄交给窗口托管，无需手动释放，窗口销毁系统自动回收
 }
 // 创建按钮栏
-void SSHConEmu::createButtonBar() {
+void SSHAppPanel::createButtonBar() {
     if (!GetHwndSelf() || !::IsWindow(GetHwndSelf()))
     {
         ::MessageBoxW(g_nppData._nppHandle, L"面板句柄无效，无法创建按钮", L"NppSSH 错误提示", MB_OK | MB_ICONWARNING);
@@ -338,7 +336,7 @@ void SSHConEmu::createButtonBar() {
     }
 }
 // 面板初始化：纯原生接口
-void SSHConEmu::initPanel() {
+void SSHAppPanel::initPanel() {
     if (initPanle) initPanle = false;//标记正在初始化
     // 检查资源是否存在
     HRSRC hRes = ::FindResource(g_hInst, MAKEINTRESOURCE(IDD_SSH_PANEL), RT_DIALOG);
@@ -401,9 +399,10 @@ void SSHConEmu::initPanel() {
     NppSSH_LogInfoAuto("面板初始化完成 [标题ID: " + std::to_string(_panelrealId) + "]");
     if (!initPanle) initPanle = true;//面板初始化完成
 }
+
 // 设置全局永久置顶
         //SetWindowPos(_hPuTTYWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
-void SSHConEmu::CloseSoftWare() {
+void SSHAppPanel::CloseSoftWare() {
     std::lock_guard<std::mutex> lock(_sessionListMtx);
     if (_sessionList.empty())
     {
@@ -460,7 +459,7 @@ void SSHConEmu::CloseSoftWare() {
     _sessionList.swap(validList);
     NppSSH_LogInfoAuto("全部PuTTY会话清理完毕");
 }
-void SSHConEmu::CleanInvalidSession()
+void SSHAppPanel::CleanInvalidSession()
 {
     std::lock_guard<std::mutex> lock(_sessionListMtx);
     std::vector<PuTTYSession*> validList;
@@ -486,7 +485,7 @@ void SSHConEmu::CleanInvalidSession()
     // 替换为仅存活跃会话的列表，彻底清除野指针
     _sessionList.swap(validList);
 }
-void SSHConEmu::ShowPuttyLoginWindow_Modal()
+void SSHAppPanel::ShowPuttyLoginWindow_Modal()
 {
     // 1. 取出Putty完整路径
     const std::wstring& puttyExePath = _strPuttyFullPath;
@@ -608,7 +607,7 @@ bool PuTTYSession::FindPuTTYWindowByPid(DWORD pid, HWND& outHwnd)
         }, reinterpret_cast<LPARAM>(&enumParam));
 
     outHwnd = enumParam.wnd;
-    SSHConEmu* pPanel = SSH_PanelVecBySeqIdGetSSHBtnPanel(panelSeqId);
+    SSHAppPanel* pPanel = SSH_PanelVecBySeqIdGetSSHBtnPanel(panelSeqId);
     if (pPanel == nullptr)
         return outHwnd != NULL;
     if (outHwnd != NULL) {
@@ -619,7 +618,7 @@ bool PuTTYSession::FindPuTTYWindowByPid(DWORD pid, HWND& outHwnd)
     }
     return outHwnd != NULL;
 }
-DWORD WINAPI SSHConEmu::MonitorThreadProxy(LPVOID lpParam)
+DWORD WINAPI SSHAppPanel::MonitorThreadProxy(LPVOID lpParam)
 {
     PuTTYSession* pSess = reinterpret_cast<PuTTYSession*>(lpParam);
     if (pSess == nullptr)
@@ -719,7 +718,7 @@ THREAD_CLEAN:
     return 0;
 }
 
-HBITMAP SSHConEmu::LoadImageByGdiPlus(const WCHAR* filePath)
+HBITMAP SSHAppPanel::LoadImageByGdiPlus(const WCHAR* filePath)
 {
     if (!PathFileExistsW(filePath))
     {
@@ -758,7 +757,7 @@ HBITMAP SSHConEmu::LoadImageByGdiPlus(const WCHAR* filePath)
     delete pBitmap;
     return hBmp;
 }
-INT_PTR CALLBACK SSHConEmu::run_dlgProc(UINT message, WPARAM wParam, LPARAM lParam) {
+INT_PTR CALLBACK SSHAppPanel::run_dlgProc(UINT message, WPARAM wParam, LPARAM lParam) {
 
     // 把消息值转宽字符
     wchar_t msgBuf[64] = { 0 };
@@ -914,12 +913,12 @@ INT_PTR CALLBACK SSHConEmu::run_dlgProc(UINT message, WPARAM wParam, LPARAM lPar
 }
 
 // NPP启动重建面板具体实现
-void SSHConEmu_InitRecreatePanel(SSHBasePanel* pNewPanel) {
+void SSHAppPanel_InitRecreatePanel(SSHBasePanel* pNewPanel) {
     if (g_nppData._nppHandle == NULL || g_hInst == NULL) {
         ::MessageBoxW(g_nppData._nppHandle, L"NPP环境未初始化，无法重建面板！", L"NppSSH 错误提示", MB_OK | MB_ICONWARNING);
         return;
     }
-    SSHConEmu* pCon = dynamic_cast<SSHConEmu*>(pNewPanel);
+    SSHAppPanel* pCon = dynamic_cast<SSHAppPanel*>(pNewPanel);
     if (pCon) {
         pCon->initPanel();
         // 获取插件DLL目录，拼接图片路径

@@ -64,13 +64,13 @@ void pluginCleanUp()
     SSH_HandAllFree();
     UninitGDIPlus(); // NPP关闭/卸载插件，释放GDI+
 }
-ShortcutKey SSHLIB2_OpenPanelShortcut = {
+ShortcutKey SSHTermPanel_OpenPanelShortcut = {
         true,   // _isCtrl
         false,   // _isAlt
         true,  // _isShift
         'G'     // _key
 };
-ShortcutKey ConEmu_OpenPanelShortcut = {
+ShortcutKey SSHAppPanel_OpenPanelShortcut = {
         true,   // _isCtrl
         false,   // _isAlt
         true,  // _isShift
@@ -95,8 +95,8 @@ void commandMenuInit()
     setCommand(0, TEXT("Hello Notepad++"), hello, NULL, false);
     setCommand(1, TEXT("Hello (with dialog)"), helloDlg, NULL, false);
     setCommand(2, TEXT("测试连接状态"), onNppSSH, NULL, false);
-    setCommand(3, TEXT("创建SSH远程面板(Alt+Q集成sshlib2)"), onNppSSHWindow, &SSHLIB2_OpenPanelShortcut, false);
-    setCommand(4, TEXT("创建ConEmu面板(Alt+W集成Putty)"), onNppSSHConEmu, &ConEmu_OpenPanelShortcut, false);
+    setCommand(3, TEXT("创建终端面板"), onNppSSHTermPanel, &SSHTermPanel_OpenPanelShortcut, false);
+    setCommand(4, TEXT("创建软件面板"), onNppSSHAppPanel, &SSHAppPanel_OpenPanelShortcut, false);
 }
 
 //
@@ -161,12 +161,12 @@ void onNppSSH()
         ::MessageBoxW(NULL, L"SSH 连接失败 ❌", L"NppSSH提示", MB_OK);
 }
 
-void onNppSSHWindow()
+void onNppSSHTermPanel()
 {
-    CreateNppSSHTerminalPanel();  // 调用 SSHClient.cpp 里的实现
+    CreateNppSSHTermPanel();  // 调用 SSHClient.cpp 里的实现
 }
-void onNppSSHConEmu()
+void onNppSSHAppPanel()
 {
-    CreateNppSSHConEmuPanel();
+    CreateNppSSHAppPanel();
 }
 

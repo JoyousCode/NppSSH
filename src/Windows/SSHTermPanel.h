@@ -1,4 +1,4 @@
-// SSHPanel.h（面板 + INI操作核心逻辑）
+// SSHTermPanel.h（面板 + INI操作核心逻辑）
 #pragma once
 #include "SSHWindow.h"
 //#include "DockingFeature/DockingDlgInterface.h"
@@ -20,10 +20,10 @@
 #pragma comment(lib, "shlwapi.lib")
 
 // 可停靠面板类（具体实现）
-class SSHPanel : public SSHBasePanel {
+class SSHTermPanel : public SSHBasePanel {
 public:
-    SSHPanel(int panelSeqId, int panelrealId);
-    ~SSHPanel() override;
+    SSHTermPanel(int panelSeqId, int panelrealId);
+    ~SSHTermPanel() override;
     // 窗口句柄获取（原有）
     HWND getHSelf() const { return  GetHwndSelf(); } // 需确保_hSelf已声明
     // 焦点状态设置
@@ -41,7 +41,7 @@ public:
     void UpdateToolbarIconSize();
     HICON LoadCustomIcon(int iconId, int size);
     void SetButtonIconOnly(HWND btn, int iconId);
-    void OnConnect(HWND hWnd, SSHPanel* pPanel);
+    void OnConnect(HWND hWnd, SSHTermPanel* pPanel);
     
     // 官方标准模态登录窗口（修复NPP置底）
     void ShowSSHLoginWindow_Modal();
@@ -131,12 +131,12 @@ private:
 };
 
 // 全局变量封装
-NppData& SSHPanel_GetGlobalNppData();
-HINSTANCE& SSHPanel_GetGlobalHInst();
+NppData& SSHTermPanel_GetGlobalNppData();
+HINSTANCE& SSHTermPanel_GetGlobalHInst();
 
 // NPP启动重建面板具体实现
-void SSHPanel_InitRecreatePanel(SSHBasePanel* pNewPanel);
+void SSHTermPanel_InitRecreatePanel(SSHBasePanel* pNewPanel);
 
 // 获取面板索引进行转发
 
-int& SSHPanel_iconSize();
+int& SSHTermPanel_iconSize();

@@ -1,8 +1,7 @@
 #include "SSHClient.h"
 
-
 // 仅保留分发逻辑，核心实现全部委托给SSHWindow
-void CreateNppSSHTerminalPanel() {
+void CreateNppSSHTermPanel() {
     // 前置检查（复用SSHWindow的全局变量）
     if (g_nppData._nppHandle == NULL || g_hInst == NULL) {
         ::MessageBoxW(NULL, L"Notepad++插件环境未初始化！", L"NppSSH提示", MB_OK | MB_ICONERROR);
@@ -20,15 +19,15 @@ void CreateNppSSHTerminalPanel() {
 
     // 生成唯一面板ID，创建新面板（复用SSHWindow的面板类）1
     int newPanelrealId = SSH_PanelVecGetInvalidSeqId();
-    SSH_PanelInitRecreateTerminalPanel(SSH_PanelVecSize(), newPanelrealId);
+    SSH_PanelInitRecreateSSHTermPanel(SSH_PanelVecSize(), newPanelrealId);
     // 同步INI（替换原注册表）
     //SavePanelCountToIni(g_sshPanels.size());
     SSH_SettingsSavePanelCount(SSH_PanelVecSize());
-    SSH_SettingsSavePanelType(newPanelrealId, PanelType::TerminalPanel);
+    SSH_SettingsSavePanelType(newPanelrealId, PanelType::SSHTermPanel);
 }
 
 // 仅保留分发逻辑，核心实现全部委托给SSHWindow
-void CreateNppSSHConEmuPanel() {
+void CreateNppSSHAppPanel() {
     // 前置检查（复用SSHWindow的全局变量）
     if (g_nppData._nppHandle == NULL || g_hInst == NULL) {
         ::MessageBoxW(NULL, L"Notepad++插件环境未初始化！", L"NppSSH提示", MB_OK | MB_ICONERROR);
@@ -46,9 +45,9 @@ void CreateNppSSHConEmuPanel() {
 
     // 生成唯一面板ID，创建新面板（复用SSHWindow的面板类）1
     int newPanelrealId = SSH_PanelVecGetInvalidSeqId();
-    SSH_PanelInitRecreateConEmuPanel(SSH_PanelVecSize(), newPanelrealId);
+    SSH_PanelInitRecreateSSHAppPanel(SSH_PanelVecSize(), newPanelrealId);
     // 同步INI（替换原注册表）
     //SavePanelCountToIni(g_sshPanels.size());
     SSH_SettingsSavePanelCount(SSH_PanelVecSize());
-    SSH_SettingsSavePanelType(newPanelrealId, PanelType::ConEmuPanel);
+    SSH_SettingsSavePanelType(newPanelrealId, PanelType::SSHAppPanel);
 }

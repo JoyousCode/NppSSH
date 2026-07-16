@@ -82,7 +82,7 @@ void UninitGDIPlus();
 void hello();
 void helloDlg();
 void onNppSSH();
-void onNppSSHWindow();
-void onNppSSHConEmu();
+void onNppSSHTermPanel();
+void onNppSSHAppPanel();
 
 #endif //PLUGINDEFINITION_H

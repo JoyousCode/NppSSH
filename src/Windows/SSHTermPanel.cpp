@@ -1,5 +1,5 @@
-// SSHPanel.cpp（面板 + 注册表具体实现）
-#include "SSHPanel.h"
+// SSHTermPanel.cpp（面板 + 注册表具体实现）
+#include "SSHTermPanel.h"
 #include "SSHSettings.h" // 引入INI工具
 #include <CommCtrl.h>
 static NppData s_nppData;
@@ -7,21 +7,21 @@ static HINSTANCE s_hInst;
 static int s_iconSize;
 static bool initPanle;//防止未初始化完成就调用面板
 
-//static SSHPanel* pPanel = nullptr;
+//static SSHTermPanel* pPanel = nullptr;
 // 标记是否正在连接，避免重复操作
 static std::atomic<bool> s_isConnecting = false;
 
-NppData& SSHPanel_GetGlobalNppData() {
+NppData& SSHTermPanel_GetGlobalNppData() {
     return s_nppData;
 }
 
-HINSTANCE& SSHPanel_GetGlobalHInst() {
+HINSTANCE& SSHTermPanel_GetGlobalHInst() {
     return s_hInst;
 }
-int& SSHPanel_iconSize() { return s_iconSize; }//获取点击连接图标面板索引
+int& SSHTermPanel_iconSize() { return s_iconSize; }//获取点击连接图标面板索引
 
 // 面板类构造函数
-SSHPanel::SSHPanel(int panelSeqId, int panelrealId)
+SSHTermPanel::SSHTermPanel(int panelSeqId, int panelrealId)
     :
     SSHBasePanel(panelSeqId, panelrealId),
     _hOutputEdit(NULL),
@@ -33,18 +33,18 @@ SSHPanel::SSHPanel(int panelSeqId, int panelrealId)
 }
 
 // 析构函数：释放图标资源，防止内存泄漏
-SSHPanel::~SSHPanel() {
+SSHTermPanel::~SSHTermPanel() {
     if (_hIconConnect) ::DestroyIcon(_hIconConnect);
     if (_hIconDisconnect) ::DestroyIcon(_hIconDisconnect);
     if (_hTabIcon)  ::DestroyIcon(_hTabIcon);
 }
 // 判断SSH是否连接
-//bool SSHPanel::isSSHConnected() const {
+//bool SSHTermPanel::isSSHConnected() const {
 //    return _isSSHConnected;
 //}
 
 // 设置SSH是否连接
-void SSHPanel::setSSHConnected(bool state) {
+void SSHTermPanel::setSSHConnected(bool state) {
     // 加锁：防止快速断开/重连造成流程混乱、文本被覆盖
     //if (s_isPanelChangingConnection)
     //    return;
@@ -91,7 +91,7 @@ void SSHPanel::setSSHConnected(bool state) {
 }
 
 // 断开当前面板的SSH连接（无提示）
-void SSHPanel::disconnectSSH() {//_isSSHConnected= true表示登录成功
+void SSHTermPanel::disconnectSSH() {//_isSSHConnected= true表示登录成功
     if (_isConnected) {      // 调用SSHConnection的断开逻辑
         //NppSSH_Disconnect();    // 调用转发断开连接释放资源
         //DisconnectPanel(this->_panelId);//通过面板ID断开连接
@@ -99,7 +99,7 @@ void SSHPanel::disconnectSSH() {//_isSSHConnected= true表示登录成功
     }
 }
 
-void SSHPanel::resetPanelToInit() {//关闭面板进行销毁时调用
+void SSHTermPanel::resetPanelToInit() {//关闭面板进行销毁时调用
     disconnectSSH();
     if (_hOutputEdit && ::IsWindow(_hOutputEdit)) {
         ::SetWindowTextW(_hOutputEdit, L"✅ NppSSH面板已创建\r\n等待SSH连接...resetPanelToInit");
@@ -117,7 +117,7 @@ void SSHPanel::resetPanelToInit() {//关闭面板进行销毁时调用
 }
 
 // 加载自定义图标（可以替换为自己的图标 ID）
-HICON SSHPanel::LoadCustomIcon(int iconId, int size)
+HICON SSHTermPanel::LoadCustomIcon(int iconId, int size)
 {
     // 校验基础参数
     if (s_hInst == NULL || iconId <= 0 || size <= 0) {
@@ -155,7 +155,7 @@ HICON SSHPanel::LoadCustomIcon(int iconId, int size)
     
 }
 // 把按钮变成纯图标模式
-void SSHPanel::SetButtonIconOnly(HWND btn, int iconId)
+void SSHTermPanel::SetButtonIconOnly(HWND btn, int iconId)
 {
     if (btn == nullptr || !::IsWindow(btn))
     {
@@ -188,7 +188,7 @@ void SSHPanel::SetButtonIconOnly(HWND btn, int iconId)
 }
 
 // 当用户修改 Npp 工具栏大小时自动更新
-void SSHPanel::UpdateToolbarIconSize()
+void SSHTermPanel::UpdateToolbarIconSize()
 {
     //int newIconSize = ::SendMessage(s_nppData._nppHandle, NPPM_GETTOOLBARICONSIZE, 0, 0);
     ::MessageBoxW(s_nppData._nppHandle, L"触发工具栏尺寸更新", L"NppSSH调试", MB_OK | MB_ICONINFORMATION);
@@ -208,7 +208,7 @@ void SSHPanel::UpdateToolbarIconSize()
     }
 }
 // 创建顶部按钮栏（去掉文字，直接设为图标）
-void SSHPanel::createTopButtonBar() {
+void SSHTermPanel::createTopButtonBar() {
     if (!GetHwndSelf() || !::IsWindow(GetHwndSelf()))
     {
         ::MessageBoxW(s_nppData._nppHandle, L"面板句柄无效，无法创建按钮", L"NppSSH错误", MB_OK | MB_ICONWARNING);
@@ -268,7 +268,7 @@ void SSHPanel::createTopButtonBar() {
 }
 
 // 面板初始化：纯原生接口
-void SSHPanel::initPanel() {
+void SSHTermPanel::initPanel() {
     if(initPanle) initPanle = false;//标记正在初始化
     // 检查资源是否存在
     HRSRC hRes = ::FindResource(s_hInst, MAKEINTRESOURCE(IDD_SSH_PANEL), RT_DIALOG);
@@ -361,7 +361,7 @@ void SSHPanel::initPanel() {
         // 1. 获取原窗口过程
         // 防重复子类化：判断当前WndProc是否已经是自定义过程
         WNDPROC curProc = (WNDPROC)GetWindowLongPtrW(_hTopParent, GWLP_WNDPROC);
-        if (curProc == SSHPanel::PanelSubclassWndProc)
+        if (curProc == SSHTermPanel::PanelSubclassWndProc)
         {
             NppSSH_LogInfoAuto("面板已完成子类化，跳过");
         }else {
@@ -370,7 +370,7 @@ void SSHPanel::initPanel() {
             //if (!_oldPanelWndProc)_oldPanelWndProc = DefWindowProcW;
 
             // 绑定当前面板实例到窗口属性
-            swprintf_s(_titleParentBuf, _countof(_titleParentBuf), L"SSHPanel-%p", _hTopParent);
+            swprintf_s(_titleParentBuf, _countof(_titleParentBuf), L"SSHTermPanel-%p", _hTopParent);
             ::SetPropW(_hTopParent, _titleParentBuf, (HANDLE)this);
 
             // 设置新窗口过程
@@ -411,7 +411,7 @@ void CenterWindow(HWND hWndChild, HWND hWndParent)
 }
 
 // 官方标准模态登录窗口（修复关闭后NPP被置底）
-void SSHPanel::ShowSSHLoginWindow_Modal()
+void SSHTermPanel::ShowSSHLoginWindow_Modal()
 {
     // 官方SDK标准：DialogBoxParam 模态对话框
     // 父窗口固定为 NPP 主窗口，自动管理Z序、激活状态、禁用/恢复
@@ -425,19 +425,19 @@ void SSHPanel::ShowSSHLoginWindow_Modal()
 }
 //static thread_local bool s_LoginProcessingMsg = false;
 // 官方标准对话框过程
-INT_PTR CALLBACK SSHPanel::SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+INT_PTR CALLBACK SSHTermPanel::SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-    SSHPanel* pPanel = nullptr;
+    SSHTermPanel* pPanel = nullptr;
     // 统一从窗口属性读取面板指针，替代每次遍历全局vector
     wchar_t buf[128]{};
     swprintf_s(buf, _countof(buf), L"SSHLoginDlg-%p", hWnd);
-    pPanel = (SSHPanel*)GetPropW(hWnd, buf);
+    pPanel = (SSHTermPanel*)GetPropW(hWnd, buf);
     switch (uMsg)
     {
     case WM_INITDIALOG:
     {
         // lParam是DialogBoxParam传入的this，存入窗口属性
-        pPanel = (SSHPanel*)lParam;
+        pPanel = (SSHTermPanel*)lParam;
         wchar_t buf[128]{};
         swprintf_s(buf, _countof(buf), L"SSHLoginDlg-%p", hWnd);
         SetPropW(hWnd, buf, (HANDLE)pPanel);
@@ -478,7 +478,7 @@ INT_PTR CALLBACK SSHPanel::SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam,
 
     case WM_COMMAND:
     {
-        //SSHPanel* pPanel = SSH_PanelVecBySeqIdGetSSHPanel((int)lParam);
+        //SSHTermPanel* pPanel = SSH_PanelVecBySeqIdGetSSHTermPanel((int)lParam);
         //pPanel->setLoginPanel(hWnd);
         if (LOWORD(wParam) == IDCANCEL)////取消连接，无论面板什么状态直接断开
         {
@@ -573,7 +573,7 @@ INT_PTR CALLBACK SSHPanel::SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam,
         wchar_t buf[128]{};
         swprintf_s(buf, _countof(buf), L"SSHLoginDlg-%p", hWnd);
         RemovePropW(hWnd, buf);
-        //SSHPanel* pPanel = SSH_PanelVecBySeqIdGetSSHPanel((int)lParam);
+        //SSHTermPanel* pPanel = SSH_PanelVecBySeqIdGetSSHTermPanel((int)lParam);
         // 模态对话框销毁 → POST 消息给伪终端 → 自动修复光标
         if (pPanel)
         {
@@ -626,7 +626,7 @@ INT_PTR CALLBACK SSHPanel::SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam,
 }
 std::mutex g_panelVecMtx;
 static thread_local bool s_bProcessingMsg = false;
-LRESULT CALLBACK SSHPanel::PanelSubclassWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
+LRESULT CALLBACK SSHTermPanel::PanelSubclassWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     //bool isOk = WM_SETFONT || WM_INITDIALOG || WM_GETDLGCODE || WM_KILLFOCUS || WM_IME_SETCONTEXT || WM_SETFOCUS;
     char mbuf[64] = { 0 };
@@ -636,8 +636,8 @@ LRESULT CALLBACK SSHPanel::PanelSubclassWndProc(HWND hWnd, UINT msg, WPARAM wPar
 
     LRESULT res = 0;
     wchar_t buf[128]{};
-    swprintf_s(buf, _countof(buf), L"SSHPanel-%p", hWnd);
-    SSHPanel* dockPanel = (SSHPanel*)GetProp(hWnd, buf);
+    swprintf_s(buf, _countof(buf), L"SSHTermPanel-%p", hWnd);
+    SSHTermPanel* dockPanel = (SSHTermPanel*)GetProp(hWnd, buf);
 
     //if (!dockPanel) {
     //    std::lock_guard<std::mutex> lock(g_panelVecMtx);
@@ -759,7 +759,7 @@ inline std::string CheckHwndParentChildRelation(HWND hRoot, HWND hTarget)
     return std::string(buf);
 }
 
-HBITMAP SSHPanel::LoadImageByGdiPlus(const WCHAR* filePath)
+HBITMAP SSHTermPanel::LoadImageByGdiPlus(const WCHAR* filePath)
 {
     if (!PathFileExistsW(filePath))
     {
@@ -803,7 +803,7 @@ HBITMAP SSHPanel::LoadImageByGdiPlus(const WCHAR* filePath)
 * 面板处理开始
 */
 // 重写原生run_dlgProc：创建面板内UI，处理窗口消息（纯原生）
-INT_PTR CALLBACK SSHPanel::run_dlgProc(UINT message, WPARAM wParam, LPARAM lParam) {
+INT_PTR CALLBACK SSHTermPanel::run_dlgProc(UINT message, WPARAM wParam, LPARAM lParam) {
     
     // 把消息值转宽字符
     wchar_t msgBuf[64] = { 0 };
@@ -999,14 +999,14 @@ INT_PTR CALLBACK SSHPanel::run_dlgProc(UINT message, WPARAM wParam, LPARAM lPara
 }
 
 // NPP启动重建面板具体实现
-void SSHPanel_InitRecreatePanel(SSHBasePanel* pNewPanel) {
+void SSHTermPanel_InitRecreatePanel(SSHBasePanel* pNewPanel) {
     if (s_nppData._nppHandle == NULL || s_hInst == NULL) {
         ::MessageBoxW(s_nppData._nppHandle, L"NPP环境未初始化，无法重建面板！", L"NppSSH错误", MB_OK | MB_ICONWARNING);
         return;
     }
     //s_panelCounter++;// 同步计数器，保证新创建面板ID不重复
-    //SSHPanel* pNewPanel = new SSHPanel(panelId);
-    SSHPanel* pCon = dynamic_cast<SSHPanel*>(pNewPanel);
+    //SSHTermPanel* pNewPanel = new SSHTermPanel(panelId);
+    SSHTermPanel* pCon = dynamic_cast<SSHTermPanel*>(pNewPanel);
     if (pCon) {
         pCon->initPanel();
         

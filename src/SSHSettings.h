@@ -22,8 +22,8 @@
 // 面板类型的键名前缀（拼接面板ID，如PanelType_1）
 #define NPP_SSH_PANEL_TYPE_KEY_PREFIX _T("PanelType_")
 enum class PanelType {
-    TerminalPanel = 1,        // SSHTerminal面板类型
-    ConEmuPanel = 2,       // ConEmu面板类型
+    SSHTermPanel = 1,        // SSHTermPanel面板类型
+    SSHAppPanel = 2,       // SSHAppPanel面板类型
 };
 // 存储面板ID与对应类型的结构体
 struct PanelIdTypeItem

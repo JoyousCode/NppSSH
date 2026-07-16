@@ -17,7 +17,7 @@
 
 
 #include "SSHClient.h" 
-#include "Windows/SSHPanel.h"
+#include "Windows/SSHTermPanel.h"
 #include "SSHSettings.h" // 引入INI工具
 #include "Windows/SSHLog.h"
 

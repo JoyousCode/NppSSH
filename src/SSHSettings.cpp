@@ -133,18 +133,18 @@ PanelType SSHSettings_LoadPanelTypeFromIni(int panelId) {
     int typeVal = GetPrivateProfileInt(
         NPP_SSH_INI_SECTIONTYPE,
         typeKey,
-        static_cast<int>(PanelType::TerminalPanel),  // 默认值
+        static_cast<int>(PanelType::SSHTermPanel),  // 默认值
         iniPath.c_str()
     );
 
     // 校验枚举值有效性，防止非法值
     switch (typeVal) {
-    case static_cast<int>(PanelType::TerminalPanel):
-        return PanelType::TerminalPanel;
-    case static_cast<int>(PanelType::ConEmuPanel):
-        return PanelType::ConEmuPanel;
+    case static_cast<int>(PanelType::SSHTermPanel):
+        return PanelType::SSHTermPanel;
+    case static_cast<int>(PanelType::SSHAppPanel):
+        return PanelType::SSHAppPanel;
     default:
-        return PanelType::TerminalPanel; // 非法值默认返回SSH类型
+        return PanelType::SSHTermPanel; // 非法值默认返回SSH类型
     }
 }
 
@@ -204,17 +204,17 @@ std::vector<PanelIdTypeItem> SSHSettings_GetAllPanelLineList()
 
         int panelId = _ttoi(pLine + underscorePos + 1);
         int typeVal = _ttoi(pEqual + 1);
-        PanelType curType = PanelType::TerminalPanel;
+        PanelType curType = PanelType::SSHTermPanel;
         switch (typeVal)
         {
-        case static_cast<int>(PanelType::TerminalPanel):
-            curType = PanelType::TerminalPanel;
+        case static_cast<int>(PanelType::SSHTermPanel):
+            curType = PanelType::SSHTermPanel;
             break;
-        case static_cast<int>(PanelType::ConEmuPanel):
-            curType = PanelType::ConEmuPanel;
+        case static_cast<int>(PanelType::SSHAppPanel):
+            curType = PanelType::SSHAppPanel;
             break;
         default:
-            curType = PanelType::TerminalPanel;
+            curType = PanelType::SSHTermPanel;
             break;
         }
 
@@ -239,7 +239,7 @@ void SSHSettings_InitRecreatePanels() {
     int panelCount = SSHSettings_LoadPanelCount(); // 从INI加载
     if (panelCount <= 0) return;
     std::vector<PanelIdTypeItem> panelItemList = SSHSettings_GetAllPanelLineList();
-    PanelType panelType = PanelType::TerminalPanel;
+    PanelType panelType = PanelType::SSHTermPanel;
     // 按注册表记录的数量重建面板，ID延续自注册表
     for (int seqIndex = 0; seqIndex <= (panelCount-1); seqIndex++) {
         NppSSH_LogInfoAuto("【SSHSettings_InitRecreatePanels】开始创建第" + std::to_string(seqIndex) + "个面板");
@@ -260,14 +260,14 @@ void SSHSettings_InitRecreatePanels() {
             + " 类型=" + std::to_string(static_cast<int>(panelType))
         );
         switch (panelType) {
-        case PanelType::TerminalPanel:
-            SSH_PanelInitRecreateTerminalPanel(seqIndex, realPanelId);
+        case PanelType::SSHTermPanel:
+            SSH_PanelInitRecreateSSHTermPanel(seqIndex, realPanelId);
             break;
-        case PanelType::ConEmuPanel:
-            SSH_PanelInitRecreateConEmuPanel(seqIndex, realPanelId);//暂时用默认的
+        case PanelType::SSHAppPanel:
+            SSH_PanelInitRecreateSSHAppPanel(seqIndex, realPanelId);//暂时用默认的
             break;
         default:
-            SSH_PanelInitRecreateTerminalPanel(seqIndex, realPanelId);
+            SSH_PanelInitRecreateSSHTermPanel(seqIndex, realPanelId);
             //SSH_TerminalPanelIdOnNppStart(seqIndex, realPanelId);
         }
     }

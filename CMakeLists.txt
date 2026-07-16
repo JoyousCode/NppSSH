@@ -47,8 +47,8 @@ add_library(NppSSH SHARED
 
     src/windows/SSHWindow.cpp
     src/Windows/SSHWindow.h
-    src/Windows/SSHPanel.h
-    src/Windows/SSHPanel.cpp
+    src/Windows/SSHTermPanel.h
+    src/Windows/SSHTermPanel.cpp
     src/Windows/SSHConnection.h
     src/Windows/SSHConnection.cpp
     src/SSHSettings.h
@@ -71,8 +71,8 @@ add_library(NppSSH SHARED
     src/SSHClassUtil.h
     src/Windows/SSHBasePanel.h
     src/Windows/SSHBasePanel.cpp
-    src/Windows/SSHConEmu.h
-    src/Windows/SSHConEmu.cpp
+    src/Windows/SSHAppPanel.h
+    src/Windows/SSHAppPanel.cpp
 )
 # 新增：指定 RC 文件为资源编译（Windows 特有）
 if(WIN32)

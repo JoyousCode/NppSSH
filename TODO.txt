@@ -4,18 +4,18 @@ src/
 		sshlib2_install_x64/		sshlib2安装包（官方SDK）
 	Windows/
 		closeNotepad++.bat			关闭Notepad++软件（部署项目后测试专用）
+		SSHAppPanel.cpp				【面板派生类】调用第三方软件进行连接（实现）
+		SSHAppPanel.h					【面板派生类】调用第三方软件进行连接（声明）
 		SSHBasePanel.cpp			【面板基类】（实现）
 		SSHBasePanel.h				【面板基类】（声明）
-		SSHConEmu.cpp				【面板派生类】调用第三方软件进行连接（实现）
-		SSHConEmu.h					【面板派生类】调用第三方软件进行连接（声明）
 		SSHConnection.cpp			sshlib2连接（实现）
 		SSHConnection.h				sshlib2连接（声明）
 		SSHLog.cpp					项目日志打印（实现）（部署项目后测试专用）
 		SSHLog.h					项目日志打印（声明）（部署项目后测试专用）
-		SSHPanel.cpp				【面板派生类】调用sshlib2进行连接（实现）
-		SSHPanel.h					【面板派生类】调用sshlib2进行连接（声明）
 		SSHTerminal.cpp				伪终端面板（实现）
 		SSHTerminal.h				伪终端面板（声明）
+		SSHTermPanel.cpp				【面板派生类】调用sshlib2进行连接（实现）
+		SSHTermPanel.h					【面板派生类】调用sshlib2进行连接（声明）
 		SSHUtil.cpp					全局使用的工具（实现）
 		SSHUtil.h					全局使用的工具（声明）
 		SSHWindow.cpp				转发隔离不同处理（实现）
@@ -40,14 +40,17 @@ SSHLog.bat					监听项目日志打印（部署项目后测试专用）
 
 							【项目进度】
 (注：【】表示将要开发，待定表示尚未确定是否能实现功能)
+【紧急】
+非面板
+> g_nppData和g_hInst的全局赋值待优化（待开发）
 伪终端面板
 > 实现libvterm+ImGui的伪终端面板（待定）
 > 目前子类化Notepad++软件关闭的自定义处理是基于SSHPanel面板类，需改进到基于基类进行子类化，因为每个面板都需要公共判断是否存在连接（待定）
 > 优化伪终端面板的序列ID存在的无序问题（待开发）
-> 改变所有SSHPanel->SSHTermPanel‌【待开发】
+> 改变所有SSHPanel->SSHTermPanel‌【已完成】
 
 启动软件面板
-> 改变所有SSHConEmu->SSHAppPanel‌【待开发】
+> 改变所有SSHConEmu->SSHAppPanel‌【已完成】
 > 添加Putty连接窗口置顶按钮功能（待开发）
 > 实现SSHBtnPanel面板的按钮提示（待开发）
 
