@@ -42,8 +42,68 @@ void SSHBasePanel::setForegroundColor(COLORREF color) {
 
 
 INT_PTR CALLBACK SSHBasePanel::run_dlgProc(UINT message, WPARAM wParam, LPARAM lParam) { return DockingDlgInterface::run_dlgProc(message, wParam, lParam); };
+// 面板初始化：纯原生接口
+bool SSHBasePanel::initDockData() {
+    // 检查资源是否存在
+    HRSRC hRes = ::FindResource(g_hInst, MAKEINTRESOURCE(IDD_SSH_PANEL), RT_DIALOG);
+    if (hRes == NULL) {
+        wchar_t errMsg[256] = { 0 };
+        swprintf_s(errMsg, L"找不到IDD_SSH_PANEL资源！GetLastError: %d", ::GetLastError());
+        ::MessageBoxW(g_nppData._nppHandle, errMsg, L"NppSSH资源错误", MB_OK | MB_ICONERROR);
+        return false;
+    }
 
-// ==== 挂载子类化 ====
+    DockingDlgInterface::init(g_hInst, g_nppData._nppHandle);   // 调用DockingDlgInterface原生init：绑定NPP实例和父窗口
+    ZeroMemory(&_dockData, sizeof(tTbData));                    // 初始化原生tTbData结构体（完全按Docking.h定义，无多余成员）
+
+    // 面板标签名（多标签区分：NppSSH-1、NppSSH-2...，NPP底部标签栏显示）
+    std::wstring panelTitle = L"NppSSH-" + std::to_wstring(_panelrealId);
+    wcscpy_s(_titleBuf, _countof(_titleBuf), panelTitle.c_str());
+
+    _hTabIcon = (HICON)::LoadImage(
+        g_hInst,
+        MAKEINTRESOURCE(IDI_ICON_NPPSSH),
+        IMAGE_ICON,
+        16, 16,
+        LR_DEFAULTCOLOR | LR_SHARED
+    );
+    if (_hTabIcon == NULL) {
+        _hTabIcon = LoadIcon(NULL, IDI_APPLICATION);
+    }
+
+    _dockData.pszName = _titleBuf;                           // 原生成员：面板名称
+    _dockData.uMask = DWS_DF_CONT_BOTTOM | DWS_DF_FLOATING | DWS_ICONTAB;  // 面板默认停靠在底部和允许面板浮动为独立窗口
+    _dockData.iPrevCont = CONT_BOTTOM;                       // 原生要求：记录上一次停靠位置为底部
+    _dockData.dlgID = IDD_SSH_PANEL;                        // 原生成员：对话框ID
+    _dockData.pszModuleName = this->getPluginFileName();    // 原生方法：获取插件模块名（NPP识别用）
+    _dockData.hIconTab = _hTabIcon;                           // 标签图标
+    _dockData.pszAddInfo = nullptr;                         // 无额外信息，设为null
+    //wchar_t* pFlag = new wchar_t[32];
+    //wcscpy_s(pFlag, 32, L"NO_CLOSE_BUTTON");
+    //_dockData.pszAddInfo = pFlag;
+
+    // 调用DockingDlgInterface原生create：绑定停靠数据，创建面板窗口
+    StaticDialog::create(_dlgID, false);
+
+    //DockingDlgInterface::create(&_dockData);
+    //StaticDialog::create(IDD_SSH_PANEL);//固定面板，适合单一 SSH 面板
+
+    DWORD dwStyle = ::GetWindowLongPtrW(_hSelf, GWL_STYLE);
+    SetWindowLongPtrW(_hSelf, GWL_STYLE, dwStyle | WS_CLIPCHILDREN | WS_CLIPSIBLINGS | WS_SYSMENU);
+
+    _dockData.hClient = _hSelf;//_hSelf
+    if (!_hSelf) {
+        ::MessageBoxW(g_nppData._nppHandle, L"面板窗口创建失败！", L"NppSSH错误", MB_OK | MB_ICONERROR);
+        return false;
+    }
+    _panelHwnd = _hSelf;
+    // 注册面板到NPP停靠管理器
+    ::SendMessage(g_nppData._nppHandle, NPPM_DMMREGASDCKDLG, 0, reinterpret_cast<LPARAM>(&_dockData));
+    ::SendMessage(g_nppData._nppHandle, NPPM_MODELESSDIALOG, MODELESSDIALOGADD, reinterpret_cast<LPARAM>(_hSelf));
+    return true;
+}
+
+// 挂载Notepad++软件子类化
 bool SSHBasePanel::GlobalSubclassTopWnd() {
     if (isSubclassTopWnd && ::IsWindow(_panelHwnd)) {
         _hTopPanelHwnd = _panelHwnd;
@@ -77,8 +137,7 @@ bool SSHBasePanel::GlobalSubclassTopWnd() {
         isSubclassTopWnd = false;
     }
 }
-std::mutex g_panelVecMtx;
-static thread_local bool s_bProcessingMsg = false;
+//static thread_local bool s_bProcessingMsg = false;
 LRESULT CALLBACK SSHBasePanel::GlobalTopWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     //bool isOk = WM_SETFONT || WM_INITDIALOG || WM_GETDLGCODE || WM_KILLFOCUS || WM_IME_SETCONTEXT || WM_SETFOCUS;
     char mbuf[64] = { 0 };
@@ -91,30 +150,39 @@ LRESULT CALLBACK SSHBasePanel::GlobalTopWndProc(HWND hWnd, UINT msg, WPARAM wPar
     swprintf_s(buf, _countof(buf), L"SSHTermPanel-%p", hWnd);
     SSHBasePanel* dockPanel = reinterpret_cast<SSHBasePanel*>(GetProp(hWnd, buf));
     WNDPROC oldWndProc = dockPanel->Get_oldTopPanelWndProc();
-
-    if (!dockPanel || s_bProcessingMsg) {
-        NppSSH_LogInfoAuto("GlobalTopWndProc未找到终端！hWnd=" + PtrToHexStr(hWnd) + " msg=" + msgStr);
-        //WNDPROC realCurWndProc = (WNDPROC)GetWindowLongPtrW(hWnd, GWLP_WNDPROC);
+    bool isNCInterceptMsg = (msg == WM_CLOSE);
+    if (!isNCInterceptMsg) {
+        //res = DefWindowProcW(hWnd, msg, wParam, lParam);
+        //if (oldWndProc)
+        //{
+        //    NppSSH_LogInfoAuto("isNCInterceptMsg原始的窗口过程未找到！hWnd=" + PtrToHexStr(hWnd) + " msg=" + msgStr);
+        //    res = CallWindowProc(oldWndProc, hWnd, msg, wParam, lParam);
+        //}
+        res = CallWindowProc(oldWndProc, hWnd, msg, wParam, lParam);
+        return res;
+    }
+    //处理isNCInterceptMsg设置的拦截消息
+    if ((!dockPanel || !oldWndProc)) {
+        if (!dockPanel) { NppSSH_LogInfoAuto("GlobalTopWndProc未找到终端！hWnd=" + PtrToHexStr(hWnd) + " msg=" + msgStr); }
         res = DefWindowProcW(hWnd, msg, wParam, lParam);
-        if (oldWndProc != nullptr)
+        if (oldWndProc)
         {
             res = CallWindowProc(oldWndProc, hWnd, msg, wParam, lParam);
+        }
+        else {
+            NppSSH_LogInfoAuto("原始的窗口过程未找到！hWnd=" + PtrToHexStr(hWnd) + " msg=" + msgStr);
+
         }
         return res;
     }
 
-    
-    if (!oldWndProc) {
-        NppSSH_LogInfoAuto("原始的窗口过程未找到！hWnd=" + PtrToHexStr(hWnd) + " msg=" + msgStr);
-        res = DefWindowProc(hWnd, msg, wParam, lParam);
-        s_bProcessingMsg = true;
-        return res;
-    }
-    // 区分需要拦截的非客户区消息，其余直接放行（和TerminalEditProc筛选逻辑对齐）
-    bool isNCInterceptMsg = (msg == WM_CLOSE);
-    if (!isNCInterceptMsg) {
-        return CallWindowProc(oldWndProc, hWnd, msg, wParam, lParam);
-    }
+    //if (s_bProcessingMsg) {
+    //    s_bProcessingMsg = false;
+    //    res = 0;
+    //    return res;
+    //}
+    NppSSH_LogInfoAuto("Notepad++窗口过程！hWnd=" + PtrToHexStr(hWnd) + " msg=" + msgStr);
+
     switch (msg)
     {
     case WM_CLOSE:
@@ -123,30 +191,28 @@ LRESULT CALLBACK SSHBasePanel::GlobalTopWndProc(HWND hWnd, UINT msg, WPARAM wPar
         if (hasActiveConn)
         {
             int closeResult = ::MessageBoxW(hWnd,
-                L"存在活跃SSH连接，关闭Notepad++将全部断开，确认退出？",
-                L"NppSSH 连接提示",
+                L"存在活跃SSH连接，关闭Notepad++软件将全部断开!\n\n请确认是否继续退出？",
+                L"NppSSH 提示",
                 MB_YESNO | MB_ICONWARNING);
             // 用户取消：拦截关闭，不传递WM_CLOSE给原生窗口
             if (closeResult != IDYES)
             {
-                s_bProcessingMsg = true;
-                return 0;
+                res = 0;
+                return res;
             }
         }
         // 用户确认放行，执行原生关闭逻辑
         res = CallWindowProc(oldWndProc, hWnd, msg, wParam, lParam);
-        s_bProcessingMsg = true;
+        
         return res;
     }
     default: {// 其余消息交给原始窗口过程处理
         res = CallWindowProc(oldWndProc, hWnd, msg, wParam, lParam);
-        s_bProcessingMsg = true;//放重入
         return res;
     }
     }
     // 其余消息交给原始窗口过程处理
     res = CallWindowProc(oldWndProc, hWnd, msg, wParam, lParam);
-    s_bProcessingMsg = true;
     return res;
 }
 

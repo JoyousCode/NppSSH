@@ -59,7 +59,7 @@ bool SSHAppPanel::isHandleHasActiveThread() {
     std::lock_guard<std::mutex> lock(_sessionListMtx);
     if (_isConnected) {
         int closeResult = ::MessageBoxW(_panelHwnd,
-            L"存在活跃Putty窗口，是否需要关闭所有Putty窗口？",
+            L"存在已绑定的Putty窗口，需要给所有Putty窗口发送关闭消息吗？",
             L"NppSSH 提示",
             MB_YESNO | MB_ICONWARNING);
         // 用户取消：拦截关闭，不传递WM_CLOSE给原生窗口
@@ -335,61 +335,15 @@ void SSHAppPanel::createButtonBar() {
 }
 // 面板初始化：纯原生接口
 void SSHAppPanel::initPanel() {
-    // 检查资源是否存在
-    HRSRC hRes = ::FindResource(g_hInst, MAKEINTRESOURCE(IDD_SSH_PANEL), RT_DIALOG);
-    if (hRes == NULL) {
-        wchar_t errMsg[256] = { 0 };
-        swprintf_s(errMsg, L"找不到IDD_SSH_PANEL资源！GetLastError: %d", ::GetLastError());
-        ::MessageBoxW(g_nppData._nppHandle, errMsg, L"NppSSH 错误提示", MB_OK | MB_ICONERROR);
+    bool isDockDataInitialized = initDockData();
+    if (!isDockDataInitialized && !::IsWindow(_panelHwnd)) {
+        NppSSH_LogInfoAuto("面板停靠数据初始化失败！");
         return;
     }
-
-    DockingDlgInterface::init(g_hInst, g_nppData._nppHandle);   // 调用DockingDlgInterface原生init：绑定NPP实例和父窗口
-    ZeroMemory(&_dockData, sizeof(tTbData));                    // 初始化原生tTbData结构体（完全按Docking.h定义，无多余成员）
-
-    // 面板标签名（多标签区分：NppSSH-1、NppSSH-2...，NPP底部标签栏显示）
-    std::wstring panelTitle = L"NppSSH-" + std::to_wstring(_panelrealId);
-    wcscpy_s(_titleBuf, _countof(_titleBuf), panelTitle.c_str());
-
-    _hTabIcon = (HICON)::LoadImage(
-        g_hInst,
-        MAKEINTRESOURCE(IDI_ICON_NPPSSH),
-        IMAGE_ICON,
-        16, 16,
-        LR_DEFAULTCOLOR | LR_SHARED
-    );
-    if (_hTabIcon == NULL) {
-        _hTabIcon = LoadIcon(NULL, IDI_APPLICATION);
-    }
-
-    _dockData.pszName = _titleBuf;                           // 原生成员：面板名称
-    _dockData.uMask = DWS_DF_CONT_BOTTOM | DWS_DF_FLOATING | DWS_ICONTAB;  // 面板默认停靠在底部和允许面板浮动为独立窗口
-    _dockData.iPrevCont = CONT_BOTTOM;                       // 原生要求：记录上一次停靠位置为底部
-    _dockData.dlgID = IDD_SSH_PANEL;                        // 原生成员：对话框ID
-    _dockData.pszModuleName = this->getPluginFileName();    // 原生方法：获取插件模块名（NPP识别用）
-    _dockData.hIconTab = _hTabIcon;                           // 标签图标
-    _dockData.pszAddInfo = nullptr;                         // 无额外信息，设为null
-    // 调用DockingDlgInterface原生create：绑定停靠数据，创建面板窗口
-    StaticDialog::create(_dlgID, false);
-
-    DWORD dwStyle = ::GetWindowLongPtrW(_hSelf, GWL_STYLE);
-    SetWindowLongPtrW(_hSelf, GWL_STYLE, dwStyle | WS_CLIPCHILDREN | WS_CLIPSIBLINGS | WS_SYSMENU);
-    _dockData.hClient = _hSelf;
-    if (!_hSelf) {
-        ::MessageBoxW(g_nppData._nppHandle, L"面板窗口创建失败！", L"NppSSH 错误提示", MB_OK | MB_ICONERROR);
-        return;
-    }
-    _panelHwnd = _hSelf;
-    // 注册面板到NPP停靠管理器
-    ::SendMessage(g_nppData._nppHandle, NPPM_DMMREGASDCKDLG, 0, reinterpret_cast<LPARAM>(&_dockData));
-    ::SendMessage(g_nppData._nppHandle, NPPM_MODELESSDIALOG, MODELESSDIALOGADD, reinterpret_cast<LPARAM>(_hSelf));
     char bufSelf[64] = { 0 };
     sprintf(bufSelf, "_panelHwnd(_hSelf)=0x%p", _panelHwnd);
     NppSSH_LogInfoAuto(bufSelf);
-    if (::IsWindow(_panelHwnd))
-    {
-        createButtonBar();
-    }
+    createButtonBar();
 
     bool isSubclass = GlobalSubclassTopWnd(); //挂载子类化
     _isConnected = false;
@@ -399,7 +353,7 @@ void SSHAppPanel::initPanel() {
 }
 
 // 设置全局永久置顶
-        //SetWindowPos(_hPuTTYWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+//SetWindowPos(_hPuTTYWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
 void SSHAppPanel::CloseSoftWare() {
     std::lock_guard<std::mutex> lock(_sessionListMtx);
     if (_sessionList.empty())

@@ -29,7 +29,7 @@ protected://只能被子类用
     void setForegroundColor(COLORREF color) override;
     HWND GetHwndSelf() const { return _hSelf; }
     INT_PTR CALLBACK run_dlgProc(UINT message, WPARAM wParam, LPARAM lParam) override;
-
+    bool initDockData();
     bool GlobalSubclassTopWnd();
     // 子类化Notepad++软件面板过程监听
     static LRESULT CALLBACK GlobalTopWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);

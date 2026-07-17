@@ -265,64 +265,13 @@ void SSHTermPanel::createTopButtonBar() {
 
 // 面板初始化：纯原生接口
 void SSHTermPanel::initPanel() {
-    // 检查资源是否存在
-    HRSRC hRes = ::FindResource(s_hInst, MAKEINTRESOURCE(IDD_SSH_PANEL), RT_DIALOG);
-    if (hRes == NULL) {
-        wchar_t errMsg[256] = { 0 };
-        swprintf_s(errMsg, L"找不到IDD_SSH_PANEL资源！GetLastError: %d", ::GetLastError());
-        ::MessageBoxW(s_nppData._nppHandle, errMsg, L"NppSSH资源错误", MB_OK | MB_ICONERROR);
+    bool isDockDataInitialized = initDockData();
+    if (!isDockDataInitialized && !::IsWindow(_panelHwnd)) {
+        NppSSH_LogInfoAuto("面板停靠数据初始化失败！");
         return;
     }
-
-    DockingDlgInterface::init(s_hInst, s_nppData._nppHandle);   // 调用DockingDlgInterface原生init：绑定NPP实例和父窗口
-    ZeroMemory(&_dockData, sizeof(tTbData));                    // 初始化原生tTbData结构体（完全按Docking.h定义，无多余成员）
-
-    // 面板标签名（多标签区分：NppSSH-1、NppSSH-2...，NPP底部标签栏显示）
-    std::wstring panelTitle = L"NppSSH-" + std::to_wstring(_panelrealId);
-    wcscpy_s(_titleBuf, _countof(_titleBuf), panelTitle.c_str());
-
-    _hTabIcon = (HICON)::LoadImage(
-        s_hInst,
-        MAKEINTRESOURCE(IDI_ICON_NPPSSH),
-        IMAGE_ICON,
-        16, 16,
-        LR_DEFAULTCOLOR | LR_SHARED
-    );
-    if (_hTabIcon == NULL) {
-        _hTabIcon = LoadIcon(NULL, IDI_APPLICATION);
-    }
-
-    _dockData.pszName = _titleBuf;                           // 原生成员：面板名称
-    _dockData.uMask = DWS_DF_CONT_BOTTOM | DWS_DF_FLOATING | DWS_ICONTAB;  // 面板默认停靠在底部和允许面板浮动为独立窗口
-    _dockData.iPrevCont = CONT_BOTTOM;                       // 原生要求：记录上一次停靠位置为底部
-    _dockData.dlgID = IDD_SSH_PANEL;                        // 原生成员：对话框ID
-    _dockData.pszModuleName = this->getPluginFileName();    // 原生方法：获取插件模块名（NPP识别用）
-    _dockData.hIconTab = _hTabIcon;                           // 标签图标
-    _dockData.pszAddInfo = nullptr;                         // 无额外信息，设为null
-    //wchar_t* pFlag = new wchar_t[32];
-    //wcscpy_s(pFlag, 32, L"NO_CLOSE_BUTTON");
-    //_dockData.pszAddInfo = pFlag;
-    
-    // 调用DockingDlgInterface原生create：绑定停靠数据，创建面板窗口
-    StaticDialog::create(_dlgID, false);
-
-    //DockingDlgInterface::create(&_dockData);
-    //StaticDialog::create(IDD_SSH_PANEL);//固定面板，适合单一 SSH 面板
-
-    DWORD dwStyle = ::GetWindowLongPtrW(GetHwndSelf(), GWL_STYLE);
-    SetWindowLongPtrW(GetHwndSelf(), GWL_STYLE, dwStyle | WS_CLIPCHILDREN | WS_CLIPSIBLINGS | WS_SYSMENU);
-
-    _dockData.hClient = GetHwndSelf();
-    if (!GetHwndSelf()) {
-        ::MessageBoxW(s_nppData._nppHandle, L"面板窗口创建失败！", L"NppSSH错误", MB_OK | MB_ICONERROR);
-        return;
-    }
-    _panelHwnd = GetHwndSelf();
-    // 注册面板到NPP停靠管理器
-    ::SendMessage(s_nppData._nppHandle, NPPM_DMMREGASDCKDLG, 0, reinterpret_cast<LPARAM>(&_dockData));
-    ::SendMessage(s_nppData._nppHandle, NPPM_MODELESSDIALOG, MODELESSDIALOGADD, reinterpret_cast<LPARAM>(GetHwndSelf()));
-
     createTopButtonBar();               // 调用创建顶部按钮栏
+    
 
     s_iconSize = _iconSize;
     // TODO：出现BUG，序列不是按照顺序的，需要将伪终端面板封装到面板类中
@@ -337,7 +286,7 @@ void SSHTermPanel::initPanel() {
     NppSSH_LogInfoAuto(bufSelf);
     bool isSubclass = GlobalSubclassTopWnd(); //挂载子类化
 
-    // 13. 日志记录（调试/排查）
+    // 日志记录（调试/排查）
     NppSSH_LogInfoAuto("面板初始化完成 [序列ID: " + std::to_string(_panelSeqId) + "]");
     NppSSH_LogInfoAuto("面板初始化完成 [标题ID: " + std::to_string(_panelrealId) + "]");
 }
