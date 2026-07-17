@@ -66,6 +66,7 @@ extern std::vector<SSHTerminal*> g_SSHTerminalVec;
 extern NppData& g_nppData;
 extern HINSTANCE& g_hInst;
 extern int& iconSize;
+extern bool isSubclassTopWnd;
 
 
 // 工具函数

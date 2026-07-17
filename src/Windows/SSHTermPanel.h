@@ -1,12 +1,14 @@
 // SSHTermPanel.h（面板 + INI操作核心逻辑）
 #pragma once
-#include "SSHWindow.h"
+//#include "SSHWindow.h"
 //#include "DockingFeature/DockingDlgInterface.h"
 #include "SSHBasePanel.h"
 #include <shlwapi.h>
 #include <algorithm>
 #include <windowsx.h>
 #include <gdiplus.h>
+#include "SSHSettings.h" // 引入INI工具
+#include <CommCtrl.h>
 
 // 兼容普通Edit的GETTEXTRANGE
 
@@ -51,12 +53,6 @@ public:
     HWND getLoginPanel() {
         return _hLoginPanel;
     }
-    HWND Get_hTopParent() const { return _hTopParent; }
-    WNDPROC Get_oldPanelWndProc() const { return _oldPanelWndProc; }
-    void Set_oldPanelWndProc(WNDPROC oldPanelWndProc) { _oldPanelWndProc = oldPanelWndProc; }
-    // 子类化Notepad++软件面板过程监听
-    static LRESULT CALLBACK PanelSubclassWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
-
     // 重写背景色
     void setBackgroundColor(COLORREF color) override
     {
@@ -104,29 +100,19 @@ protected://只能被子类用
     // 官方对话框过程
     static INT_PTR CALLBACK SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 private:
+    void createTopButtonBar();// 创建面板顶部按钮栏
+
     tTbData _dockData;      // 原生停靠数据结构体（需声明）
-    
     
     HWND _hOutputEdit;      // 输出编辑框句柄,面板内输出文本框
     bool _isFocused;        // 标记当前面板是否获焦
     HWND _hBtnConnectSSH;   // 连接SSH按钮句柄
     HWND _hBtnDisconnectSSH;// 断开SSH按钮句柄
     
-    HWND _hTopParent;       //notepad++软件句柄
     HWND _hLoginPanel;      //登录面板句柄
-    //wchar_t _titleBuf[64];  // 面板标题缓冲区（成员变量，非静态！）
-    wchar_t _titleParentBuf[64];
-    //bool _isSSHConnected;   //当前面板是否SSH登录成功  测试：true
-    
-    void createTopButtonBar();// 创建面板顶部按钮栏
 
-    
     HICON _hIconConnect;    // 持久化连接图标句柄
     HICON _hIconDisconnect; // 持久化断开图标句柄
-    
-    
-
-    WNDPROC _oldPanelWndProc = nullptr; // 传统子类化保存旧过程
 
 };
 

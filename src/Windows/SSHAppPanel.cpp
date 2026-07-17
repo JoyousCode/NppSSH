@@ -1,6 +1,4 @@
 #include "SSHAppPanel.h"
-
-static bool initPanle;//防止未初始化完成就调用面板
 SSHAppPanel::SSHAppPanel(int panelSeqId, int panelrealId)
     :SSHBasePanel(panelSeqId, panelrealId),
     _editLabelFontSize(18),
@@ -337,7 +335,6 @@ void SSHAppPanel::createButtonBar() {
 }
 // 面板初始化：纯原生接口
 void SSHAppPanel::initPanel() {
-    if (initPanle) initPanle = false;//标记正在初始化
     // 检查资源是否存在
     HRSRC hRes = ::FindResource(g_hInst, MAKEINTRESOURCE(IDD_SSH_PANEL), RT_DIALOG);
     if (hRes == NULL) {
@@ -393,11 +390,12 @@ void SSHAppPanel::initPanel() {
     {
         createButtonBar();
     }
+
+    bool isSubclass = GlobalSubclassTopWnd(); //挂载子类化
     _isConnected = false;
     // 日志记录（调试/排查）
     NppSSH_LogInfoAuto("面板初始化完成 [序列ID: " + std::to_string(_panelSeqId) + "]");
     NppSSH_LogInfoAuto("面板初始化完成 [标题ID: " + std::to_string(_panelrealId) + "]");
-    if (!initPanle) initPanle = true;//面板初始化完成
 }
 
 // 设置全局永久置顶

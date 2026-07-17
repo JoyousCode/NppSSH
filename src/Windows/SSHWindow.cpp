@@ -6,14 +6,15 @@
 #include "SSHAppPanel.h"
 #include "SSHTerminal.h"
 
-std::vector<SSHBasePanel*> g_SSHPanelVec;
 static std::mutex g_SSHPanelMutex;
+std::vector<SSHBasePanel*> g_SSHPanelVec;
 
 
 // 全局变量转发（实际定义在SSHTermPanel中）
 NppData& g_nppData = SSHTermPanel_GetGlobalNppData();
 HINSTANCE& g_hInst = SSHTermPanel_GetGlobalHInst();
 int& iconSize = SSHTermPanel_iconSize();
+bool isSubclassTopWnd = true;
 
 
 /**************（工具函数）***************/

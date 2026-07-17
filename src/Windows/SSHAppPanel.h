@@ -1,5 +1,4 @@
 #pragma once
-//#include "SSHWindow.h"
 #include "SSHBasePanel.h"
 #include <Commdlg.h>//操作文件选择
 #include <gdiplus.h>

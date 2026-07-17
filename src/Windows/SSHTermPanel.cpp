@@ -1,13 +1,10 @@
 // SSHTermPanel.cpp（面板 + 注册表具体实现）
 #include "SSHTermPanel.h"
-#include "SSHSettings.h" // 引入INI工具
-#include <CommCtrl.h>
+
 static NppData s_nppData;
 static HINSTANCE s_hInst;
 static int s_iconSize;
-static bool initPanle;//防止未初始化完成就调用面板
 
-//static SSHTermPanel* pPanel = nullptr;
 // 标记是否正在连接，避免重复操作
 static std::atomic<bool> s_isConnecting = false;
 
@@ -29,7 +26,6 @@ SSHTermPanel::SSHTermPanel(int panelSeqId, int panelrealId)
     _hBtnDisconnectSSH(NULL),
     _hIconConnect(NULL) ,
     _hIconDisconnect(NULL) {
-    //ZeroMemory(_titleBuf, sizeof(_titleBuf));
 }
 
 // 析构函数：释放图标资源，防止内存泄漏
@@ -269,7 +265,6 @@ void SSHTermPanel::createTopButtonBar() {
 
 // 面板初始化：纯原生接口
 void SSHTermPanel::initPanel() {
-    if(initPanle) initPanle = false;//标记正在初始化
     // 检查资源是否存在
     HRSRC hRes = ::FindResource(s_hInst, MAKEINTRESOURCE(IDD_SSH_PANEL), RT_DIALOG);
     if (hRes == NULL) {
@@ -316,8 +311,6 @@ void SSHTermPanel::initPanel() {
 
     DWORD dwStyle = ::GetWindowLongPtrW(GetHwndSelf(), GWL_STYLE);
     SetWindowLongPtrW(GetHwndSelf(), GWL_STYLE, dwStyle | WS_CLIPCHILDREN | WS_CLIPSIBLINGS | WS_SYSMENU);
-    
-
 
     _dockData.hClient = GetHwndSelf();
     if (!GetHwndSelf()) {
@@ -339,51 +332,14 @@ void SSHTermPanel::initPanel() {
     //}
     //SSH_TerminalAppendTextHandle(_panelSeqId, "✅NppSSH面板已创建\r\n等待SSH连接...");
     
-    //if (GetHwndSelf() && ::IsWindow(GetHwndSelf())) {         // 强制设置面板窗口样式，解决遮挡/闪烁问题
-    //    DWORD dwStyle = ::GetWindowLongPtrW(GetHwndSelf(), GWL_STYLE);
-    //    SetWindowLongPtrW(GetHwndSelf(), GWL_STYLE, dwStyle | WS_CLIPCHILDREN | WS_CLIPSIBLINGS);
-    //    //::SetWindowPos(GetHwndSelf(), HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);     // 确保面板在停靠容器的顶层，不被覆盖
-    //}
     char bufSelf[64] = { 0 };
     sprintf(bufSelf, "_panelHwnd(GetHwndSelf())=0x%p", _panelHwnd);
     NppSSH_LogInfoAuto(bufSelf);
+    bool isSubclass = GlobalSubclassTopWnd(); //挂载子类化
 
-    // ==== 挂载子类化 ====
-    if (::IsWindow(_panelHwnd)) {
-        _hTopParent = _panelHwnd;
-        while (true)
-        {
-            HWND hTmpParent = ::GetParent(_hTopParent);
-            if (hTmpParent == nullptr)
-                break;
-            _hTopParent = hTmpParent;
-        }
-        // 1. 获取原窗口过程
-        // 防重复子类化：判断当前WndProc是否已经是自定义过程
-        WNDPROC curProc = (WNDPROC)GetWindowLongPtrW(_hTopParent, GWLP_WNDPROC);
-        if (curProc == SSHTermPanel::PanelSubclassWndProc)
-        {
-            NppSSH_LogInfoAuto("面板已完成子类化，跳过");
-        }else {
-            // 获取原生窗口过程，不再存入GWLP_USERDATA
-            _oldPanelWndProc = (WNDPROC)::GetWindowLongPtrW(_hTopParent, GWLP_WNDPROC);
-            //if (!_oldPanelWndProc)_oldPanelWndProc = DefWindowProcW;
-
-            // 绑定当前面板实例到窗口属性
-            swprintf_s(_titleParentBuf, _countof(_titleParentBuf), L"SSHTermPanel-%p", _hTopParent);
-            ::SetPropW(_hTopParent, _titleParentBuf, (HANDLE)this);
-
-            // 设置新窗口过程
-            ::SetWindowLongPtrW(_hTopParent, GWLP_WNDPROC, (LONG_PTR)PanelSubclassWndProc);
-        }
-        NppSSH_LogInfoAuto("Notepad++软件子类化完成！hWnd=" + PtrToHexStr(_hTopParent)
-            + " 原过程：" + PtrToHexStr(_oldPanelWndProc)
-            + " 新过程：" + PtrToHexStr(PanelSubclassWndProc));
-    }
     // 13. 日志记录（调试/排查）
     NppSSH_LogInfoAuto("面板初始化完成 [序列ID: " + std::to_string(_panelSeqId) + "]");
     NppSSH_LogInfoAuto("面板初始化完成 [标题ID: " + std::to_string(_panelrealId) + "]");
-    if (!initPanle) initPanle = true;//面板初始化完成
 }
 /////////////////////////////////////////开始处理登录对话框/////////////////////////
 // 窗口居中工具函数
@@ -624,85 +580,6 @@ INT_PTR CALLBACK SSHTermPanel::SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM wPa
 
     return FALSE;
 }
-std::mutex g_panelVecMtx;
-static thread_local bool s_bProcessingMsg = false;
-LRESULT CALLBACK SSHTermPanel::PanelSubclassWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
-{
-    //bool isOk = WM_SETFONT || WM_INITDIALOG || WM_GETDLGCODE || WM_KILLFOCUS || WM_IME_SETCONTEXT || WM_SETFOCUS;
-    char mbuf[64] = { 0 };
-    sprintf(mbuf, "0x%04X", msg);
-    std::string msgStr(mbuf);
-    //NppSSH_LogInfoAuto("【拦截PanelSubclassWndProc】消息message===" + msgStr);
-
-    LRESULT res = 0;
-    wchar_t buf[128]{};
-    swprintf_s(buf, _countof(buf), L"SSHTermPanel-%p", hWnd);
-    SSHTermPanel* dockPanel = (SSHTermPanel*)GetProp(hWnd, buf);
-
-    //if (!dockPanel) {
-    //    std::lock_guard<std::mutex> lock(g_panelVecMtx);
-    //    for (auto* pPanel : g_SSHPanelVec) {
-    //        if (pPanel && pPanel->Get_hTopParent() == hWnd) {
-    //            dockPanel = pPanel;
-    //            SetProp(hWnd, buf, (HANDLE)dockPanel);
-    //            break;
-    //        }
-    //    }
-    //}
-
-    if (!dockPanel) {
-        NppSSH_LogInfoAuto("PanelSubclassWndProc未找到终端！hWnd=" + PtrToHexStr(hWnd) + " msg=" + IntToStr(msg));
-        WNDPROC oldProc = (WNDPROC)GetWindowLongPtr(hWnd, GWLP_USERDATA);
-        res = oldProc ? CallWindowProc(oldProc, hWnd, msg, wParam, lParam) : DefWindowProc(hWnd, msg, wParam, lParam);
-        return res;
-    }
-
-    WNDPROC oldWndProc = dockPanel->Get_oldPanelWndProc();
-    if (!oldWndProc) {
-        NppSSH_LogInfoAuto("原始的窗口过程未找到！hWnd=" + PtrToHexStr(hWnd) + " msg=" + IntToStr(msg));
-        return TRUE;
-        //oldWndProc = DefWindowProc;//防止oldWndProc为空，用系统默认窗口执行过程兜底
-    }
-    // 区分需要拦截的非客户区消息，其余直接放行（和TerminalEditProc筛选逻辑对齐）
-    bool isNCInterceptMsg = (WM_CLOSE);
-    if (!isNCInterceptMsg) {
-        return CallWindowProc(oldWndProc, hWnd, msg, wParam, lParam);
-    }
-    switch (msg)
-    {
-        case WM_CLOSE:
-        {
-            //NppSSH_LogInfoAuto("【拦截WM_CLOSE】消息message===" + msgStr);
-            bool hasActiveConn = SSH_PanelVecIsHasConnection();
-            if (hasActiveConn)
-            {
-                int closeResult = ::MessageBoxW(hWnd,
-                    L"存在活跃SSH连接，关闭Notepad++将全部断开，确认退出？",
-                    L"NppSSH 连接提示",
-                    MB_YESNO | MB_ICONWARNING);
-                // 用户取消：拦截关闭，不传递WM_CLOSE给原生窗口
-                if (closeResult != IDYES)
-                {
-                    s_bProcessingMsg = false;
-                    return 0;
-                }
-            }
-            // 用户确认放行，执行原生关闭逻辑
-            res = CallWindowProc(oldWndProc, hWnd, msg, wParam, lParam);
-            s_bProcessingMsg = false;
-            return res;
-        }
-        default:{// 其余消息交给原始窗口过程处理
-            res = CallWindowProc(oldWndProc, hWnd, msg, wParam, lParam);
-            s_bProcessingMsg = false;//放重入
-            return res;
-        }
-    }
-    // 其余消息交给原始窗口过程处理
-    res = CallWindowProc(oldWndProc, hWnd, msg, wParam, lParam);
-    s_bProcessingMsg = false;
-    return res;
-}
 
 inline std::string CheckHwndParentChildRelation(HWND hRoot, HWND hTarget)
 {
@@ -890,7 +767,7 @@ INT_PTR CALLBACK SSHTermPanel::run_dlgProc(UINT message, WPARAM wParam, LPARAM l
         //NppSSH_LogInfoAuto("WM_SIZE 面板新尺寸 -> 宽度:" + std::to_string(nClientW)
             //+ "  高度:" + std::to_string(nClientH));
 
-        if (initPanle && GetHwndSelf() && ::IsWindow(GetHwndSelf()) && _hOutputEdit && ::IsWindow(_hOutputEdit))
+        if (GetHwndSelf() && ::IsWindow(GetHwndSelf()) && _hOutputEdit && ::IsWindow(_hOutputEdit))
         {
             //::MessageBoxW(s_nppData._nppHandle, L"SSH面板变化", L"NppSSH提示", MB_OK | MB_ICONINFORMATION);
             SSH_TerminalResize(GetHwndSelf(), this->_panelSeqId);
