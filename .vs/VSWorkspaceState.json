@@ -13,11 +13,9 @@
   },
   "ExpandedNodes": [
     "",
-    "\\out",
-    "\\out\\build",
     "\\src",
     "\\src\\Windows"
   ],
-  "SelectedNode": "\\TODO.txt",
+  "SelectedNode": "\\CMakeLists.txt",
   "PreviewInSolutionExplorer": false
 }

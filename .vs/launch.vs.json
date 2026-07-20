@@ -4,14 +4,7 @@
   "configurations": [
     {
       "type": "dll",
-      "exe": "D:\\software\\application\\Notepad++\\notepad++.exe",
-      "project": "CMakeLists.txt",
-      "projectTarget": "NppSSH.dll (bin\\Release\\NppSSH.dll)",
-      "name": "NppSSH.dll (bin\\Release\\NppSSH.dll)"
-    },
-    {
-      "type": "dll",
-      "exe": "",
+      "exe": "D:\\software\\developer\\Notepad++\\Notepad++.exe",
       "project": "CMakeLists.txt",
       "projectTarget": "NppSSH.dll (D:\\software\\developer\\Notepad++\\plugins\\NppSSH\\NppSSH.dll)",
       "name": "NppSSH.dll (D:\\software\\developer\\Notepad++\\plugins\\NppSSH\\NppSSH.dll)"

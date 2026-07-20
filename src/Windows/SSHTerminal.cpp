@@ -2023,7 +2023,7 @@ void SSHTerminal_BySeqIdRemove(int panelSeqId) {
 */
 SSHTerminal* getSSHTerminal(int panelIndex) {
     std::string szDebugMsg = "获取当前面板 "+ IntToStr(panelIndex) + " 【vectorSSHTerminal】 内容 ===\r\n总数：" + IntToStr((int)g_SSHTerminalVec.size()) + "\r\n\r\n";
-    int i;
+    int i = 0;
     for (auto* p : g_SSHTerminalVec) {
         if (p == nullptr) {
             szDebugMsg += "[" + IntToStr(i) + "] 指针：空指针\r\n";

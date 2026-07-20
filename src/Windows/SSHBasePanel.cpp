@@ -107,7 +107,7 @@ bool SSHBasePanel::initDockData() {
 bool SSHBasePanel::GlobalSubclassTopWnd() {
     if (isSubclassTopWnd && ::IsWindow(_panelHwnd)) {
         _hTopPanelHwnd = _panelHwnd;
-        while (true)
+        while (true)//TODO存在已完成子类化，跳过前赋值的问题。
         {
             HWND hTmpParent = ::GetParent(_hTopPanelHwnd);
             if (hTmpParent == nullptr)
@@ -136,6 +136,7 @@ bool SSHBasePanel::GlobalSubclassTopWnd() {
             + " 新过程：" + PtrToHexStr(GlobalTopWndProc));
         isSubclassTopWnd = false;
     }
+    return true;
 }
 //static thread_local bool s_bProcessingMsg = false;
 LRESULT CALLBACK SSHBasePanel::GlobalTopWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {

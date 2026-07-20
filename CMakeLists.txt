@@ -1,8 +1,33 @@
 ﻿# CMakeList.txt: CMackBase 的 CMake 项目，在此处包括源代码并定义
 # 项目特定的逻辑。
 #
-cmake_minimum_required(VERSION 4.2.3-msvc3)
+cmake_minimum_required(VERSION 3.25)
 project(NppSSH LANGUAGES C CXX)
+
+# ========== 配置阶段强制生成带正确exe的launch.vs.json 
+set(NPP_HOST_EXE "D:\\\\software\\\\developer\\\\Notepad++\\\\Notepad++.exe")
+set(VS_LAUNCH_FILE "${CMAKE_SOURCE_DIR}/.vs/launch.vs.json")
+file(MAKE_DIRECTORY "${CMAKE_SOURCE_DIR}/.vs")
+# 直接覆盖写入标准dll类型配置
+file(WRITE "${VS_LAUNCH_FILE}"
+"{
+  \"version\": \"0.2.1\",
+  \"defaults\": {},
+  \"configurations\": [
+    {
+      \"type\": \"dll\",
+      \"exe\": \"${NPP_HOST_EXE}\",
+      \"project\": \"CMakeLists.txt\",
+      \"projectTarget\": \"NppSSH.dll (D:\\\\software\\\\developer\\\\Notepad++\\\\plugins\\\\NppSSH\\\\NppSSH.dll)\",
+      \"name\": \"NppSSH.dll (D:\\\\software\\\\developer\\\\Notepad++\\\\plugins\\\\NppSSH\\\\NppSSH.dll)\"
+    }
+  ]
+}"
+)
+# 设置文件只读，阻止VS清空exe字段
+if(WIN32)
+    execute_process(COMMAND attrib +r "${VS_LAUNCH_FILE}")
+endif()
 
 if(MSVC)
     # 强制 UTF-8 + Unicode + 64位 + 动态CRT
@@ -107,4 +132,5 @@ set_target_properties(NppSSH PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "D:/software/developer/Notepad++/plugins/NppSSH"
     WINDOWS_EXPORT_ALL_SYMBOLS OFF  # 禁用自动导出，仅手动导出
     ARCHITECTURE "x64"
+    LINK_FLAGS "/DLL"
 )
