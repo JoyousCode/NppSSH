@@ -1,19 +1,10 @@
 #include "SSHLog.h"
-#include <ctime>
-#include <sstream>
-#include <iomanip>
-#include <shlwapi.h>
-#include <queue>
-#include <windows.h>
-
-#pragma comment(lib, "shlwapi.lib")
 
 static std::queue<std::string> g_logQueue;
 static CRITICAL_SECTION g_logCs; // 全局临界区，替代原来的局部静态cs
 static HANDLE g_logEvent = NULL;
 static HANDLE g_logThread = NULL;
 static bool g_logActive = true;
-
 // 初始化临界区（只执行一次）
 void InitLogCs() {
     static bool inited = false;

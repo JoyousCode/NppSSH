@@ -1,8 +1,5 @@
 #pragma once
 #include "SSHBasePanel.h"
-#include <Commdlg.h>//操作文件选择
-#include <gdiplus.h>
-#include <atomic>
 // 单个PuTTY会话完整资源包
 struct PuTTYSession
 {
@@ -14,33 +11,24 @@ struct PuTTYSession
     std::mutex mtx;
     std::condition_variable cv;
     std::wstring tmpFile;
-    //std::atomic<bool> closeFlag;
 
     PuTTYSession(int _panelSeqId)
-        : hProcess(NULL), hWnd(NULL), stopFlag(false), hMonitorThread(nullptr), panelSeqId(_panelSeqId)
-    {
-    }
+        : hProcess(NULL), hWnd(NULL), stopFlag(false), hMonitorThread(nullptr), panelSeqId(_panelSeqId), tmpFile(L"")
+    {}
     DWORD WINAPI PuTTYSessionMonitor();
     bool FindPuTTYWindowByPid(DWORD pid, HWND& outHwnd);
-    // 终止监控线程
-    void StopMonitor()
-    {
+    void StopMonitor(){// 终止监控线程
         stopFlag.store(true, std::memory_order_release);
-        //cv.notify_one();
-        cv.notify_all();
-        if (hMonitorThread != nullptr)
-        {
+        cv.notify_all();//cv.notify_one();
+        if (hMonitorThread != nullptr){
             WaitForSingleObject(hMonitorThread, INFINITE);
             CloseHandle(hMonitorThread);
             hMonitorThread = nullptr;
         }
     }
-
     // 释放进程句柄
-    void CleanHandle()
-    {
-        if (hProcess != NULL)
-        {
+    void CleanHandle(){
+        if (hProcess != NULL){
             CloseHandle(hProcess);
             hProcess = NULL;
         }
@@ -51,63 +39,53 @@ class SSHAppPanel : public SSHBasePanel{
 public:
     SSHAppPanel(int panelSeqId, int panelrealId);
     ~SSHAppPanel() override;
-    void initPanel();
+    // 面板独有工具封装
+    static DWORD WINAPI MonitorThreadProxy(LPVOID lpParam);// 静态代理，仅作PuTTYSessionMonitor合法入口，不写业务逻辑
+    void CleanInvalidSession();                 // 清理vetor存储的无效会话
+    bool isHandleHasActiveThread();             // 检查句柄是否有活动线程
+
+    // 必须重写的函数
     INT_PTR CALLBACK run_dlgProc(UINT message, WPARAM wParam, LPARAM lParam) override;
     void setBackgroundColor(COLORREF color) override;
-    // 重写前景文字色
     void setForegroundColor(COLORREF color) override;
-    void createButtonBar();
-    HICON LoadCustomIcon(int iconId, int size);
-    void SetButtonIconOnly(HWND btn, int iconId);
-    void ShowPuttyLoginWindow_Modal();
-    void CloseSoftWare();
-    void OpenPuttyFileDialog();
-    // 封装：统一设置路径区域所有控件字体大小（初始化自动调用）
-    void SetPathControlFontSize(int fontSize);
 
-    HBITMAP LoadImageByGdiPlus(const WCHAR* filePath);
-    void SetBackgroundImage(const WCHAR* imgPath)
-    {
-        // 释放旧图片
-        if (m_hBgImage)
-        {
-            DeleteObject(m_hBgImage);
-            m_hBgImage = NULL;
-        }
-        // GDI+加载任意格式图片
-        m_hBgImage = LoadImageByGdiPlus(imgPath);
-        InvalidateRect(GetHwndSelf(), nullptr, TRUE);
-    }
+    // 面板独有功能函数
+    void initPanel();                           //初始化面板
+    void createButtonBar();                     //初始化创建按钮控件
+	void SetButtonIconOnly(HWND btn, int iconId);//设置按钮图标
+	HICON LoadCustomIcon(int iconId, int size); //加载自定义图标
+	void OpenPuttyFileDialog();                 // 打开文件选择对话框
+    void SetPathControlFontSize(int fontSize);  //初始化统一设置路径区域所有控件字体大小
 
-    // 静态代理，仅作为CreateThread合法入口，不写业务逻辑
-    static DWORD WINAPI MonitorThreadProxy(LPVOID lpParam);
-    void CleanInvalidSession();
-    bool isHandleHasActiveThread();
+	void SetBackgroundImage(const WCHAR* imgPath);// 设置面板背景图片
+	HBITMAP LoadImageByGdiPlus(const WCHAR* filePath);// GDI+加载任意格式图片
+
+    void ShowPuttyLoginWindow_Modal();          //点击连接Putty按钮
+	void CloseSoftWare();                       //点击销毁按钮，关闭所有PuTTY会话
+
 private:
-    COLORREF m_textColor = RGB(255, 255, 255); // 文字白色适配图片
-    COLORREF _bgColor = GetSysColor(COLOR_WINDOW);
-    COLORREF _fgColor = GetSysColor(COLOR_WINDOWTEXT);
-    HBITMAP m_hBgImage;
+    std::vector<PuTTYSession*> _sessionList;// 所有PuTTY会话容器
+    std::mutex _sessionListMtx;             // 保护会话列表并发读写
 
-    HWND _hStaticPuttyTip;     // 静态文字：设置Putty路径：
-    HWND _hEditPuttyPath;      // 路径输入框
-    HWND _hBtnSelectFile;    // 浏览选择按钮
-    std::wstring _strPuttyFullPath; // 存储选中的Putty完整路径
-    HWND _hBtnPutty;        // Putty按钮句柄
-    HWND _hBtnDestroy;      // 销毁按钮句柄
+    COLORREF _textColor = RGB(255, 255, 255);          // 字体颜色
+    COLORREF _bgColor = GetSysColor(COLOR_WINDOW);      // 背景颜色
+	COLORREF _fgColor = GetSysColor(COLOR_WINDOWTEXT);  // 前景颜色
+	HBITMAP _hBgImage;                                 // 背景图片句柄
 
-    HICON _hIconPutty;    // 持久化连接图标句柄
-    HICON _hIconDestroy; // 持久化销毁按钮句柄
-    HICON _hIconSelectFile; // 持久化销毁按钮句柄
-    int _editLabelFontSize;//文字大小
+    HWND _hStaticPuttyTip;          // 显示静态文字句柄
+    HWND _hEditPuttyPath;           // 路径输入框句柄
+    HWND _hBtnSelectFile;           // 选择文件按钮句柄
+    std::wstring _strPuttyFullPath; // 存储选择文件按钮选中的完整路径
+    HWND _hBtnPutty;                // 连接Putty按钮句柄
+    HWND _hBtnDestroy;              // 销毁所有连接Putty窗口按钮句柄
+
+    HICON _hIconPutty;              // 连接Putty按钮图标句柄
+    HICON _hIconDestroy;            // 销毁所有连接Putty窗口按钮图标句柄
+    HICON _hIconSelectFile;         // 选择文件按钮图标句柄
+    int _editLabelFontSize;         // 文字大小
     
-    HWND _hBtnWinScp;// 
-
-
-    // 所有PuTTY会话容器
-    std::vector<PuTTYSession*> _sessionList;
-    std::mutex _sessionListMtx;// 保护会话列表并发读写
+    HWND _hBtnWinScp;// 待定
 };
 
-// NPP启动重建面板具体实现
+// NPP启动重建面板对外调用
 void SSHAppPanel_InitRecreatePanel(SSHBasePanel* pNewPanel);

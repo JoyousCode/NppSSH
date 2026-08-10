@@ -1,5 +1,4 @@
 #include "SSHBasePanel.h"
-#include <Resource.h>
 
 SSHBasePanel::SSHBasePanel(int panelSeqId, int panelrealId)
     : DockingDlgInterface(IDD_SSH_PANEL),
@@ -145,6 +144,7 @@ LRESULT CALLBACK SSHBasePanel::GlobalTopWndProc(HWND hWnd, UINT msg, WPARAM wPar
     sprintf(mbuf, "0x%04X", msg);
     std::string msgStr(mbuf);
     //NppSSH_LogInfoAuto("【拦截GlobalTopWndProc】消息message===" + msgStr);
+
 
     LRESULT res = 0;
     wchar_t buf[128]{};

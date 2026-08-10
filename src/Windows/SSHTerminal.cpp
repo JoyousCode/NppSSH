@@ -1,6 +1,7 @@
 // SSHTerminal.cpp模拟终端，具体实现
 #include "SSHTerminal.h"
 static std::vector<SSHTerminal*> g_SSHTerminalVec;
+
 static std::mutex g_SSHTerminalMutex;
 
 // 根据选中区间，算出不含尾部\r\n的真实结束下标，原文不动

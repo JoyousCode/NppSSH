@@ -15,16 +15,12 @@
 //along with this program; if not, write to the Free Software
 //Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
-
-#include "SSHClient.h" 
-#include "Windows/SSHTermPanel.h"
-#include "SSHSettings.h" // 引入INI工具
-#include "Windows/SSHLog.h"
+#include "Windows/SSHWindow.h"
 
 extern FuncItem funcItem[nbFunc];
 extern NppData nppData;
-extern NppData& g_nppData;
-extern HINSTANCE& g_hInst;
+//extern HINSTANCE hInst;
+
 
 BOOL APIENTRY DllMain(HANDLE hModule, DWORD  reasonForCall, LPVOID /*lpReserved*/)
 {
@@ -33,8 +29,8 @@ BOOL APIENTRY DllMain(HANDLE hModule, DWORD  reasonForCall, LPVOID /*lpReserved*
 		switch (reasonForCall)
 		{
 			case DLL_PROCESS_ATTACH:
-				g_hInst = (HINSTANCE)hModule;
-				pluginInit(hModule);
+				//hInst = (HINSTANCE)hModule;
+				pluginInit(hModule);//直接在PluginDefinition.cpp中定义全局变量hInst
 				break;
 
 			case DLL_PROCESS_DETACH:
@@ -59,7 +55,7 @@ BOOL APIENTRY DllMain(HANDLE hModule, DWORD  reasonForCall, LPVOID /*lpReserved*
 	}
 	catch (...) { 
 		// 捕获异常，避免插件崩溃导致Notepad++退出
-		::MessageBox(NULL, _T("插件初始化/清理异常！"), NPP_PLUGIN_NAME, MB_ICONERROR);
+		::MessageBox(NULL, TEXT("插件初始化/清理异常！"), NPP_PLUGIN_NAME, MB_ICONERROR);
 		return FALSE;
 	}
 
@@ -69,11 +65,9 @@ BOOL APIENTRY DllMain(HANDLE hModule, DWORD  reasonForCall, LPVOID /*lpReserved*
 
 extern "C" __declspec(dllexport) void setInfo(NppData notpadPlusData)
 {
-	
-	g_nppData = notpadPlusData;
 	nppData = notpadPlusData;
 	commandMenuInit();
-	SSHLog_Init();
+	
 	SSH_SettingsInitRecreatePanels();// NPP插件环境初始化完成后，自动重建配置中记录的面板
 }
 

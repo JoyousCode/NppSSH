@@ -1,8 +1,5 @@
 // SSHSettings.cpp - INI配置文件操作实现
 #include "SSHSettings.h"
-#include "Windows/SSHWindow.h" // 用于获取NppData全局变量
-#include <Shlwapi.h>
-#pragma comment(lib, "shlwapi.lib")
 
 // 获取NPP插件配置目录（通过NPP原生消息）
 std::wstring SSHSettings_GetPluginsConfigDir() {

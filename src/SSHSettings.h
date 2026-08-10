@@ -1,16 +1,6 @@
 // SSHSettings.h - INI配置文件操作封装
 #pragma once
-#define WIN32_LEAN_AND_MEAN  // 减少Windows头文件冗余
-#include <winsock2.h>
-#include <ws2tcpip.h>	// 补充IPv6相关定义（可选，libssh2可能需要）
-#pragma comment(lib, "ws2_32.lib") 
-
-#include <Windows.h>
-#include <tchar.h>
-#include <string>
-#include <vector>
-#include <sstream>
-#include <fstream>
+#include "Windows/SSHWindow.h" // 用于获取NppData全局变量
 
 // 配置文件名
 #define NPP_SSH_INI_NAME _T("NppSSH.ini")
@@ -21,10 +11,7 @@
 #define NPP_SSH_INI_SECTIONTYPE _T("GeneralPanelType")
 // 面板类型的键名前缀（拼接面板ID，如PanelType_1）
 #define NPP_SSH_PANEL_TYPE_KEY_PREFIX _T("PanelType_")
-enum class PanelType {
-    SSHTermPanel = 1,        // SSHTermPanel面板类型
-    SSHAppPanel = 2,       // SSHAppPanel面板类型
-};
+
 // 存储面板ID与对应类型的结构体
 struct PanelIdTypeItem
 {

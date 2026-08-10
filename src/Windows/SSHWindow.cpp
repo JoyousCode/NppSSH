@@ -5,14 +5,17 @@
 #include "SSHTermPanel.h"
 #include "SSHAppPanel.h"
 #include "SSHTerminal.h"
+#include "SSHSettings.h"
+#include "SSHConnection.h"
+#include "SSHLog.h"
 
 static std::mutex g_SSHPanelMutex;
-std::vector<SSHBasePanel*> g_SSHPanelVec;
+static std::vector<SSHBasePanel*> g_SSHPanelVec;//key：序列，每创建一个面板唯一的序列
 
 
 // 全局变量转发（实际定义在SSHTermPanel中）
-NppData& g_nppData = SSHTermPanel_GetGlobalNppData();
-HINSTANCE& g_hInst = SSHTermPanel_GetGlobalHInst();
+NppData& g_nppData = G_NppSSH_nppData();
+HINSTANCE& g_hInst = G_NppSSH_hInst();
 int& iconSize = SSHTermPanel_iconSize();
 bool isSubclassTopWnd = true;
 
@@ -234,6 +237,9 @@ void SSH_ConnectionPtySize(int panelSeqId, int cols, int rows) {
 
 
 /**************（实际定义在SSHLog中）***************/
+void NppSSH_Log_Init() {
+    SSHLog_Init();
+}
 void NppSSH_LogDebug(const std::string& event, const std::string& content) {
     SSHLog_Write(LogLevel::LOG_DEBUG, event, content);
 }

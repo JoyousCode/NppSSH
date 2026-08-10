@@ -120,9 +120,17 @@ target_link_libraries(NppSSH PRIVATE
     advapi32.lib
     crypt32.lib
     imm32.lib
+    gdiplus.lib
+    user32.lib
+    gdi32.lib
 )
-
-
+target_compile_definitions(NppSSH PRIVATE
+    WIN32_LEAN_AND_MEAN
+    _WINSOCKAPI_
+    UNICODE
+    _UNICODE
+    NOMINMAX
+)
 
 set_target_properties(NppSSH PROPERTIES
     OUTPUT_NAME "NppSSH"

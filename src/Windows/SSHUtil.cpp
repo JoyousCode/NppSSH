@@ -1,7 +1,5 @@
 // SSHUtil.cpp工具处理，具体实现
 #include "SSHUtil.h"
-static NppData s_nppData;
-static HINSTANCE s_hInst;
 
 // 日志专用：安全地把 std::wstring 转为 std::string （日志专用）（避免乱码和异常）
 std::string WStringToLogStr(const std::wstring& wstr) {

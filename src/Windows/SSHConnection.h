@@ -1,22 +1,6 @@
 //SSHConnection.h（SSH 连接核心逻辑声明）
 #pragma once
 #include "SSHWindow.h"
-#include <unordered_map>
-#include <libssh2.h>
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <windows.h>
-#include <tchar.h>
-#include <mutex>
-#include <thread>
-#include <sstream> 
-#include <stdexcept>
-#include <string>
-#include <future>
-#include <atomic>
-#include <memory>
-#include <chrono>
-#include <functional>
 
 // 前置声明
 class SSHConnection;

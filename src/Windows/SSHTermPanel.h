@@ -1,26 +1,6 @@
 // SSHTermPanel.h（面板 + INI操作核心逻辑）
 #pragma once
-//#include "SSHWindow.h"
-//#include "DockingFeature/DockingDlgInterface.h"
 #include "SSHBasePanel.h"
-#include <shlwapi.h>
-#include <algorithm>
-#include <windowsx.h>
-#include <gdiplus.h>
-#include "SSHSettings.h" // 引入INI工具
-#include <CommCtrl.h>
-
-// 兼容普通Edit的GETTEXTRANGE
-
-#define _WIN32_WINNT 0x0A00
-#include <windows.h>
-#include <consoleapi2.h>
-#include <processenv.h>
-//#include <commctrl.h>
-//#pragma comment(lib, "comctl32.lib")
-#pragma comment(lib, "gdiplus.lib")
-#pragma comment(lib, "shlwapi.lib")
-
 // 可停靠面板类（具体实现）
 class SSHTermPanel : public SSHBasePanel {
 public:
@@ -115,10 +95,6 @@ private:
     HICON _hIconDisconnect; // 持久化断开图标句柄
 
 };
-
-// 全局变量封装
-NppData& SSHTermPanel_GetGlobalNppData();
-HINSTANCE& SSHTermPanel_GetGlobalHInst();
 
 // NPP启动重建面板具体实现
 void SSHTermPanel_InitRecreatePanel(SSHBasePanel* pNewPanel);

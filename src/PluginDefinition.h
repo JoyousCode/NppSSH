@@ -14,21 +14,22 @@
 //You should have received a copy of the GNU General Public License
 //along with this program; if not, write to the Free Software
 //Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
-#define WIN32_LEAN_AND_MEAN
-#define _WINSOCKAPI_
-#define NOMINMAX
-
+//#define WIN32_LEAN_AND_MEAN
+//#define _WINSOCKAPI_
+//#define NOMINMAX
+//
 #ifndef PLUGINDEFINITION_H
 #define PLUGINDEFINITION_H
 
 //
 // All difinitions of plugin interface
 //
+#include "Windows/SSHWindow.h"
 #include "PluginInterface.h"
-// 全局存储 Notepad++ 插件接口数据（NppData 是 Notepad++ 定义的结构体）
-extern NppData& g_nppData;
-// 全局存储插件实例句柄
-extern HINSTANCE& g_hInst;
+//#pragma comment(lib, "gdiplus.lib")
+
+NppData& G_NppSSH_nppData();// 全局存储 Notepad++ 插件接口数据（NppData 是 Notepad++ 定义的结构体）
+HINSTANCE& G_NppSSH_hInst();// 全局存储插件实例句柄
 
 //-------------------------------------//
 //-- STEP 1. DEFINE YOUR PLUGIN NAME --//

@@ -1,9 +1,5 @@
 //SSHConnection.cpp（SSH 连接具体实现）
 #include "SSHConnection.h"
-#include <algorithm>
-#include <cstdio>
-#include <chrono>
-#include <stdarg.h>
 
 // 全局变量（改用智能指针管理）
 //std::unordered_map<int, std::unique_ptr<SSHConnection>> g_panelConnections;

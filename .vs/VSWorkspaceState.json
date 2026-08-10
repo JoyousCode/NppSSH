@@ -13,6 +13,8 @@
   },
   "ExpandedNodes": [
     "",
+    "\\out",
+    "\\out\\build",
     "\\src",
     "\\src\\Windows"
   ],

@@ -1,7 +1,6 @@
 #pragma once
 #include "SSHWindow.h"
 #include "SSHClassUtil.h"
-#include "DockingFeature/DockingDlgInterface.h"
 
 class SSHBasePanel : public DockingDlgInterface{
     //Getting/Setting 自动生成Getting/Setting方法
@@ -19,8 +18,6 @@ public:
     // 纯虚接口，所有面板必须实现
     //virtual void UpdateUI() = 0;//0代表 只有声明，如果某个子类没有重写全部纯虚函数，该子类也会变成抽象类，无法new实例
     //virtual void ClosePanel() = 0;
-
-    //Getting/Setting 自动生成Getting/Setting方法
 
         
 protected://只能被子类用

@@ -1,21 +1,6 @@
 // SSHTerminal.h模拟终端的头文件，只做声明
 #pragma once
-#define _WIN32_WINNT 0x0A00
 #include "SSHWindow.h"
-#include <shlwapi.h>
-#include <algorithm>
-#include <windows.h>
-#include <consoleapi.h>      // ConPTY API
-#include <consoleapi2.h>    // 控制台API扩展
-#include <wincon.h>          // 控制台常量
-#include <processthreadsapi.h> // 进程/线程API
-#include <thread>
-#include <processenv.h>
-#include <richedit.h>       // RichEdit 核心头文件
-#include <commctrl.h>       // 可选（若需高级功能）
-#include <sstream>
-#include <iterator>
-#include <unordered_map>
 
 //#pragma comment(lib, "msftedit.lib")
 // PTY 特性配置（适配不同终端类型的核心）

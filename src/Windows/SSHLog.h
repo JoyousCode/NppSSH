@@ -1,23 +1,8 @@
 // SSHLog.h（调试 + 连接日志输出逻辑）
 #pragma once
-#include <libssh2.h>
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <windows.h>
-#include <tchar.h>
-
-#include <locale>
-#include <string>
-#include <fstream> 
-#include <codecvt>
 
 #include "SSHWindow.h"
-#include "DockingFeature/DockingDlgInterface.h"
 
-//#include <shlwapi.h>
-//#include <algorithm>
-//#include <windowsx.h>
-//#pragma comment(lib, "shlwapi.lib")
 // 日志文件名常量
 #define NPPSSH_LOG_FILE_NAME L"NppSSH.log"
 

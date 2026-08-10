@@ -3,10 +3,20 @@
 *     前提：头文件包含该头文件；
 *     变量：变量可以随意调用改变内容，如有在某个文件中要设置初始值，则在某个文件中定义函数并返回值作为该变量值，具体转发的调用函数在Cpp文件中设置；
 *     函数：函数只能调用，具体转发的调用函数在Cpp文件中
-* 自己文件可以调用自己的函数，调用别的文件函数，必须通过此文件转发调用
+*     容器：外部无法直接操作容器，只能调用转发函数
+*     自己文件可以调用自己的函数，调用别的文件函数，必须通过此文件转发调用
 * 第三方库可以在自己文件的头文件声明
+* 注意不能改变顺序：
+*    #include <winsock2.h>
+*    #include <ws2tcpip.h>
+*    #include <Windows.h>
+* 
 */
 #pragma once
+
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <Windows.h>
 #include "PluginDefinition.h"
 #include "menuCmdID.h"
 #include "Notepad_plus_msgs.h"
@@ -14,25 +24,51 @@
 #include "DockingFeature/dockingResource.h"
 #include "Resource.h"
 #include "DockingFeature/Window.h"  
-#include <Windows.h>
+
 #include <libssh2.h> 
 #include <tchar.h>
 #include <string>
-#include <winsock2.h>
-#include <ws2tcpip.h>
+
 #include <vector>
 #include <atomic>
-#include <SSHSettings.h>
 
-//#include "SSHBasePanel.h"
-//#include "SSHTermPanel.h"
-//#include "SSHAppPanel.h"
-#include "SSHConnection.h"
-#include "SSHLog.h"
-//#include "SSHTerminal.h"
-#include "SSHUtil.h"
+#include <locale>
+#include <fstream> 
+#include <codecvt>
+
+#include <ctime>
+#include <sstream>
+#include <iomanip>
+#include <shlwapi.h>
+#include <queue>
+
+#include <Commdlg.h>//操作文件选择
+#include <gdiplus.h>
+
+#include <CommCtrl.h>// 登录对话框
+
+#include <mutex>
+#include <thread>
+#include <stdexcept>
+#include <future>
+#include <memory>
+#include <functional>
+#include <algorithm>
+#include <cstdio>
+#include <chrono>
+#include <stdarg.h>
+
+#include <processthreadsapi.h> // 进程/线程API
+#include <processenv.h>
+#include <iterator>
+
+#include <consoleapi.h>      // ConPTY API
+#include <consoleapi2.h>    // 控制台API扩展
+#include <wincon.h>          // 控制台常量
+#include <richedit.h>       // RichEdit 核心头文件
 
 #include <unordered_map>
+#include "SSHUtil.h"
 
 //#define WM_SSH_CONNECT_RESULT (WM_USER + 100)
 // 自定义SSH消息体系（完全替代WM_）
@@ -57,17 +93,17 @@ class SSHBasePanel;
 class SSHTermPanel;
 class SSHAppPanel;
 class SSHTerminal;
-//extern std::unordered_map<int, SSHTermPanel*> g_SSHTermPanelSeqIdMap;//key：序列，每创建一个面板唯一的序列
-extern std::vector<SSHBasePanel*> g_SSHPanelVec;
-extern std::vector<SSHTerminal*> g_SSHTerminalVec;
-
+enum class PanelType {
+    SSHTermPanel = 1,        // SSHTermPanel面板类型
+    SSHAppPanel = 2,         // SSHAppPanel面板类型
+};
 
 // 全局变量转发
+struct NppData;
 extern NppData& g_nppData;
 extern HINSTANCE& g_hInst;
 extern int& iconSize;
 extern bool isSubclassTopWnd;
-
 
 // 工具函数
 void SSH_PanelVecBySeqIdUpdate(int startIndex);			// 根据删除的序列，后面的序列ID实例内容统一都向前移动
@@ -109,7 +145,7 @@ void SSH_SettingsDeleteConfigFile(const std::wstring& ExceFile);// 直接删除�
 // 其他文件调用SSHTermPanel中的函数
 void SSH_PanelInitRecreateSSHTermPanel(int panelSeqId, int panelRealId);	// 自动重建面板
 void SSH_PanelInitRecreateSSHAppPanel(int panelSeqId, int panelrealId);
-HWND SSH_PanelGetLoginPanelHwnd();									//获得每次登录面板创建的句柄
+//HWND SSH_PanelGetLoginPanelHwnd();									//获得每次登录面板创建的句柄
 HWND SSH_PanelGetPanelHwnd(int panelSeqId);							//根据面板ID获得面板句柄
 
 
@@ -125,6 +161,7 @@ void SSH_ConnectionPtySize(int panelSeqId, int cols, int rows);// 设置申请�
 
 // 其他文件调用SSHLog中的函数
 // 日志转发接口（核心：只转发，不处理逻辑）
+void NppSSH_Log_Init();                                                      // 初始化队列，准备日志打印
 void NppSSH_LogDebug(const std::string& event, const std::string& content);  // 日志转发实现：调试级
 void NppSSH_LogInfo(const std::string& event, const std::string& content);	 // 日志转发实现：Info级别
 void NppSSH_LogWarn(const std::string& event, const std::string& content);   // 日志转发实现：警告级

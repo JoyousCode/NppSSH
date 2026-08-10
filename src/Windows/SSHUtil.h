@@ -1,15 +1,6 @@
 // SSHUtil.h工具处理的头文件，只做声明
 #pragma once
 #include "SSHWindow.h"
-#include <shlwapi.h>
-#include <algorithm>
-#include <windows.h>
-#include <processthreadsapi.h> // 进程/线程API
-#include <processenv.h>
-#include <thread>
-#include <sstream>
-#include <iterator>
-#include <unordered_map>
 
 
 std::string WStringToLogStr(const std::wstring& wstr);

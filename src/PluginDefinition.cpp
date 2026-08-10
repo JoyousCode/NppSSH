@@ -17,7 +17,6 @@
 
 
 #include "SSHClient.h" 
-#include <gdiplus.h>
 using namespace Gdiplus;
 
 //
@@ -29,7 +28,13 @@ FuncItem funcItem[nbFunc];
 // The data of Notepad++ that you can use in your plugin commands
 //
 NppData nppData;
-
+HINSTANCE hInst;
+NppData& G_NppSSH_nppData() {
+    return nppData;
+}
+HINSTANCE& G_NppSSH_hInst() {
+    return hInst;
+}
 ULONG_PTR g_gdiToken = 0;
 
 void InitGDIPlus()
@@ -53,7 +58,9 @@ void UninitGDIPlus()
 // It will be called while plugin loading   
 void pluginInit(HANDLE hModule)
 {
+    hInst = (HINSTANCE)hModule;
     InitGDIPlus(); // NPP加载插件时，启动GDI+
+    NppSSH_Log_Init();// 初始化日志系统，以队列的方式处理日志，防止写入日志发送争抢，并防止阻塞主线程。
 }
 
 //
