@@ -508,30 +508,67 @@ HICON SSHAppPanel::LoadCustomIcon(int iconId, int size)
 }
 void SSHAppPanel::OpenPuttyFileDialog()
 {
-    OPENFILENAMEW ofn = { 0 };
     WCHAR szFile[MAX_PATH] = { 0 };
-    ZeroMemory(&ofn, sizeof(ofn));
-    ZeroMemory(szFile, sizeof(szFile));
-
-    // 预填充当前路径
-    wcscpy_s(szFile, _strPuttyFullPath.c_str());
-
-    ofn.lStructSize = sizeof(OPENFILENAMEW);
-    ofn.hwndOwner = _panelHwnd;
-    ofn.hInstance = g_hInst;
-    ofn.lpstrFilter = L"PuTTY程序 (putty.exe)\0putty.exe\0所有文件 (*.*)\0*.*\0\0";
-    ofn.lpstrFile = szFile;
-    ofn.nMaxFile = MAX_PATH;
-    ofn.lpstrTitle = L"选择 putty.exe";
-    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_EXPLORER | OFN_ENABLESIZING | OFN_NOCHANGEDIR;
-
-    BOOL bOk = ::GetOpenFileNameW(&ofn);
-    if (bOk)
+    WCHAR szInitialDir[MAX_PATH] = { 0 };
+    ZeroMemory(szInitialDir, sizeof(szInitialDir));
+    if (!_strPuttyFullPath.empty())
     {
-        // 更新成员变量 + 编辑框内容
-        _strPuttyFullPath = szFile;
-        ::SetWindowTextW(_hEditPuttyPath, szFile);
-        NppSSH_LogInfoAuto("已选择Putty路径：" + WStringToLogStr(_strPuttyFullPath));
+        wcscpy_s(szInitialDir, _strPuttyFullPath.c_str());
+        ::PathRemoveFileSpecW(szInitialDir);
+    }
+
+    while (true)
+    {
+        OPENFILENAMEW ofn = { 0 };
+        ZeroMemory(&ofn, sizeof(ofn));
+        ZeroMemory(szFile, sizeof(szFile));
+
+        ofn.lStructSize = sizeof(OPENFILENAMEW);
+        ofn.hwndOwner = _panelHwnd;
+        ofn.hInstance = g_hInst;
+        // 过滤器：2个选项：exe文件 / 所有文件
+        ofn.lpstrFilter = L"EXE可执行文件 (*.exe)\0*.exe\0所有文件 (*.*)\0*.*\0\0";
+        ofn.nFilterIndex = 1;               // 默认选中第1项：exe过滤
+        ofn.lpstrInitialDir = szInitialDir; // 上次选择的文件夹作为初始目录
+        ofn.lpstrFile = szFile;
+        ofn.nMaxFile = MAX_PATH;
+        ofn.lpstrTitle = L"选择PuTTY主程序";
+        ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_EXPLORER | OFN_ENABLESIZING | OFN_NOCHANGEDIR | OFN_DONTADDTORECENT;
+
+        BOOL bOk = ::GetOpenFileNameW(&ofn);
+        if (!bOk)
+        {
+            // 用户点击取消，退出循环，结束选择
+            break;
+        }
+
+        std::wstring tempPuttyPath = szFile;
+        // 保存旧路径，临时替换用于校验
+        std::wstring oldPath = _strPuttyFullPath;
+        _strPuttyFullPath = tempPuttyPath;
+
+        bool bValid = puttyLoginPathHandle();
+
+        // 恢复旧路径
+        _strPuttyFullPath.swap(oldPath);
+
+        if (bValid)
+        {
+            // 校验通过，正式保存，退出循环
+            _strPuttyFullPath = tempPuttyPath;
+            ::SetWindowTextW(_hEditPuttyPath, _strPuttyFullPath.c_str());
+            NppSSH_LogInfoAuto("已选择Putty路径：" + WStringToLogStr(_strPuttyFullPath));
+            break;
+        }
+        else
+        {
+            // 校验失败：puttyLoginPathHandle已经弹出错误MessageBox
+            // 不break，继续下一轮循环：重新打开文件对话框
+            // 注意：szInitialDir会沿用本次选中文件所在目录，用户不用重新导航文件夹
+            wcscpy_s(szInitialDir, tempPuttyPath.c_str());
+            ::PathRemoveFileSpecW(szInitialDir);
+            continue;
+        }
     }
 }
 void SSHAppPanel::SetPathControlFontSize(int fontSize)

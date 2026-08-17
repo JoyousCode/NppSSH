@@ -447,6 +447,12 @@ bool IsRealPuttyGuiExe(const std::wstring& exePath)
         NppSSH_LogErrorAuto("IsRealPuttyGuiExe：检测为puttygen，拒绝选择");
         return false;
     }
+    // puttytel 终端工具，直接拒绝
+    if (lowerName.find(L"puttytel") != std::wstring::npos)
+    {
+        NppSSH_LogErrorAuto("IsRealPuttyGuiExe：检测为puttytel，拒绝选择");
+        return false;
+    }
 
     // 读到字段，包含putty子串直接放行
     if (lowerName.find(L"putty") != std::wstring::npos)
