@@ -60,8 +60,10 @@ public:
 	void SetBackgroundImage(const WCHAR* imgPath);// 设置面板背景图片
 	HBITMAP LoadImageByGdiPlus(const WCHAR* filePath);// GDI+加载任意格式图片
 
-    void ShowPuttyLoginWindow_Modal();          //点击连接Putty按钮
-	void CloseSoftWare();                       //点击销毁按钮，关闭所有PuTTY会话
+    //void ShowPuttyLoginWindow_Modal();          //点击连接Putty按钮
+	bool puttyLoginPathHandle();                  //点击连接Putty按钮
+    bool SSHAppPanel_PuttyLoginHandle(std::wstring host, std::wstring port, std::wstring user, std::wstring pass, std::wstring director);
+    void CloseSoftWare();                       //点击销毁按钮，关闭所有PuTTY会话
 
 private:
     std::vector<PuTTYSession*> _sessionList;// 所有PuTTY会话容器

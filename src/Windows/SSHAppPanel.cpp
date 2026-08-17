@@ -225,8 +225,19 @@ INT_PTR CALLBACK SSHAppPanel::run_dlgProc(UINT message, WPARAM wParam, LPARAM lP
             break;
         }
         else if (cmd == IDC_BTN_CONNECT_PUTTY) {
-            NppSSH_LogInfoAuto("用户点击面板连接按钮，显示登录对话框");
-            ShowPuttyLoginWindow_Modal();
+            if (puttyLoginPathHandle())
+            {
+                SSHLoginModal input{};
+                SSH_LoginModalWindowsModal(&input);
+                if (input.bOk)
+                {
+                    bool result = SSHAppPanel_PuttyLoginHandle(input.szHost, input.szPort, input.szUser, input.szPass, input.szDir);
+                    if (!result)
+                    {
+                        NppSSH_LogErrorAuto("连接失败");
+                    }
+                }
+            }
         }
         else if (cmd == IDC_BTN_CLOSE_SSH) {
             NppSSH_LogInfoAuto("用户点击面板关闭Putty按钮" + std::to_string(this->_panelSeqId));
@@ -453,7 +464,7 @@ void SSHAppPanel::SetButtonIconOnly(HWND btn, int iconId)
     ::UpdateWindow(btn);
     ::RedrawWindow(btn, NULL, NULL, RDW_FRAME | RDW_INVALIDATE | RDW_UPDATENOW);
 }
-// 加载自定义图标（可以替换为自己的图标 ID）
+// 加载自定义图标
 HICON SSHAppPanel::LoadCustomIcon(int iconId, int size)
 {
     // 校验基础参数
@@ -601,29 +612,163 @@ HBITMAP SSHAppPanel::LoadImageByGdiPlus(const WCHAR* filePath)
     delete pBitmap;
     return hBmp;
 }
-void SSHAppPanel::ShowPuttyLoginWindow_Modal()
-{
+//void SSHAppPanel::ShowPuttyLoginWindow_Modal()
+//{
+//    // 1. 取出Putty完整路径
+//    const std::wstring& puttyExePath = _strPuttyFullPath;
+//
+//    // 校验路径非空
+//    if (puttyExePath.empty())
+//    {
+//        ::MessageBoxW(_panelHwnd, L"未选择 putty.exe 程序路径！\n请点击按钮指定程序", L"NppSSH 提示", MB_OK | MB_ICONERROR);
+//        NppSSH_LogErrorAuto("启动PuTTY失败：putty路径为空");
+//        return;
+//    }
+//
+//    // 校验文件是否真实存在
+//    if (!::PathFileExistsW(puttyExePath.c_str()))
+//    {
+//        wchar_t errTip[1024] = { 0 };
+//        swprintf_s(errTip, L"指定路径不存在 putty.exe：\n\n%s", puttyExePath.c_str());
+//        ::MessageBoxW(_panelHwnd, errTip, L"NppSSH 错误提示", MB_OK | MB_ICONERROR);
+//        NppSSH_LogErrorAuto("启动PuTTY失败：文件不存在 -> " + WStringToLogStr(puttyExePath));
+//        return;
+//    }
+//    //SSH_LoginModalWindowsModal((LPARAM)this);
+//    // 2. 初始化进程启动参数
+//    STARTUPINFOW si = { 0 };
+//    PROCESS_INFORMATION pi = { 0 };
+//    si.cb = sizeof(STARTUPINFOW);
+//    si.dwFlags = STARTF_USESHOWWINDOW;
+//    si.wShowWindow = SW_SHOWNORMAL; // 正常窗口显示，和双击打开一致
+//
+//    // 命令行缓冲区
+//    std::wstring SSH_HOST = L"mky.3ds.com";
+//    std::wstring SSH_PORT = L"4922";
+//    std::wstring SSH_USER = L"plmadm";
+//    std::wstring SSH_PASS = L"plmadm1";
+//    std::wstring SSH_INITCD = L"/dsplm/develop/zhaoxuandong/";
+//    std::wstring ExceComd = L"HISTFILE=/dev/null;cd " + SSH_INITCD + L";exec bash -il;";
+//    //std::wstring ExceFile = L"putty_auto_cd.tmp";
+//    // 每次连接生成唯一临时文件名（面板句柄+随机区分多会话）
+//    WCHAR tmpNameBuf[128] = { 0 };
+//    static ULONG tmpSerial = 0;
+//    swprintf_s(tmpNameBuf, L"NppSSH_%p_%lu.tmp", _panelHwnd, tmpSerial++);
+//    std::wstring newTmpFile = tmpNameBuf;
+//    // 写入临时脚本
+//    if (!SSH_INITCD.empty())SSH_SettingsSaveConfigTmpFile(newTmpFile, ExceComd);
+//    std::wstring ExceLogin = L"\"" + puttyExePath + L"\" -ssh \"" + SSH_HOST + L"\" -P " + SSH_PORT + L" -l " + SSH_USER + L" -pw " + SSH_PASS;
+//    std::wstring ExcelFilePath = SSH_SettingsGetConfigFileExistPath(newTmpFile);
+//    if (!ExcelFilePath.empty())ExceLogin += L" -t -m \"" + ExcelFilePath + L"\"";
+//    NppSSH_LogInfoAuto("【当前执行的命令】" + WStringToLogStr(ExceLogin));
+//    // 3. 创建PuTTY独立进程
+//    BOOL bCreateOk = ::CreateProcessW(
+//        nullptr,                    // lpApplicationName：null 从命令行解析exe
+//        const_cast<wchar_t*>(ExceLogin.c_str()),                 // lpCommandLine：带引号程序路径
+//        nullptr,                    // 进程安全属性默认
+//        nullptr,                    // 线程安全属性默认
+//        FALSE,                      // 不继承句柄
+//        CREATE_NEW_PROCESS_GROUP | NORMAL_PRIORITY_CLASS, // 创建独立进程组
+//        nullptr,                    // 使用当前环境变量
+//        nullptr,                    // 使用程序所在目录作为工作目录
+//        &si,                        // 启动信息
+//        &pi                         // 返回进程/线程句柄
+//    );
+//
+//    if (!bCreateOk)
+//    {
+//        DWORD errCode = ::GetLastError();
+//        wchar_t errMsg[1024] = { 0 };
+//        swprintf_s(errMsg, L"启动 putty.exe 失败\n错误码：%d\n路径：%s", errCode, puttyExePath.c_str());
+//        ::MessageBoxW(_panelHwnd, errMsg, L"NppSSH 错误提示", MB_OK | MB_ICONERROR);
+//        char logErr[2048] = { 0 };
+//        sprintf_s(logErr, "CreateProcessW 启动PuTTY失败，Err=%d Path=%ws", errCode, puttyExePath.c_str());
+//        NppSSH_LogErrorAuto(std::string(logErr));
+//        if (!SSH_INITCD.empty())SSH_SettingsDeleteConfigFile(newTmpFile);
+//        return;
+//    }
+//
+//    CleanInvalidSession();
+//    // ===== 新建独立会话 =====
+//    PuTTYSession* pNewSess = new PuTTYSession(_panelSeqId);
+//    pNewSess->hProcess = pi.hProcess;
+//    pNewSess->tmpFile = newTmpFile;
+//    ::CloseHandle(pi.hThread);
+//
+//    // 启动该会话专属监控线程
+//    HANDLE hThread = CreateThread(NULL, 0, MonitorThreadProxy, pNewSess, 0, NULL);
+//    if (hThread != NULL) { pNewSess->hMonitorThread = hThread; }
+//
+//    // 加锁存入会话列表
+//    {
+//        std::lock_guard<std::mutex> lock(_sessionListMtx);
+//        _sessionList.push_back(pNewSess);
+//    }
+//
+//    // 打印调试日志
+//    NppSSH_LogInfoAuto("成功启动PuTTY进程，路径：" + WStringToLogStr(puttyExePath));
+//}
+bool SSHAppPanel::puttyLoginPathHandle() {
     // 1. 取出Putty完整路径
     const std::wstring& puttyExePath = _strPuttyFullPath;
 
     // 校验路径非空
     if (puttyExePath.empty())
     {
-        ::MessageBoxW(_panelHwnd, L"未选择 putty.exe 程序路径！\n请点击按钮指定程序", L"NppSSH 提示", MB_OK | MB_ICONERROR);
+        ::MessageBoxW(_panelHwnd, L"未选择 putty.exe 程序路径！\n请点击按钮指定PuTTY主程序", L"NppSSH 提示", MB_OK | MB_ICONERROR);
         NppSSH_LogErrorAuto("启动PuTTY失败：putty路径为空");
-        return;
+        return false;
+    }
+
+    // 校验后缀必须是.exe，大小写兼容，不限制exe文件名
+    bool bIsExeSuffix = false;
+    size_t pathLen = puttyExePath.size();
+    if (pathLen >= 4)
+    {
+        wchar_t c1 = towlower(puttyExePath[pathLen - 4]);
+        wchar_t c2 = towlower(puttyExePath[pathLen - 3]);
+        wchar_t c3 = towlower(puttyExePath[pathLen - 2]);
+        wchar_t c4 = towlower(puttyExePath[pathLen - 1]);
+        if (c1 == L'.' && c2 == L'e' && c3 == L'x' && c4 == L'e')
+        {
+            bIsExeSuffix = true;
+        }
+    }
+    if (!bIsExeSuffix)
+    {
+        wchar_t errTip[1024] = { 0 };
+        swprintf_s(errTip, L"指定程序必须为 .exe 可执行文件！\n\n当前路径：%s", puttyExePath.c_str());
+        ::MessageBoxW(_panelHwnd, errTip, L"NppSSH 错误提示", MB_OK | MB_ICONERROR);
+        NppSSH_LogErrorAuto("启动PuTTY失败：不是exe后缀 -> " + WStringToLogStr(puttyExePath));
+        return false;
     }
 
     // 校验文件是否真实存在
     if (!::PathFileExistsW(puttyExePath.c_str()))
     {
         wchar_t errTip[1024] = { 0 };
-        swprintf_s(errTip, L"指定路径不存在 putty.exe：\n\n%s", puttyExePath.c_str());
+        swprintf_s(errTip, L"指定文件不存在：\n\n%s", puttyExePath.c_str());
         ::MessageBoxW(_panelHwnd, errTip, L"NppSSH 错误提示", MB_OK | MB_ICONERROR);
         NppSSH_LogErrorAuto("启动PuTTY失败：文件不存在 -> " + WStringToLogStr(puttyExePath));
-        return;
+        return false;
     }
 
+    // PE版本校验：读不到版本资源直接放行；读到才拦截plink和其他exe
+    if (!IsRealPuttyGuiExe(puttyExePath))
+    {
+        wchar_t errTip[1024] = { 0 };
+        swprintf_s(errTip, L"该EXE不是合法PuTTY‑GUI程序，请选择PuTTY主程序。\n\n路径：%s", puttyExePath.c_str());
+        ::MessageBoxW(_panelHwnd, errTip, L"NppSSH 错误提示", MB_OK | MB_ICONERROR);
+        NppSSH_LogErrorAuto("启动PuTTY失败：不是合法PuTTY GUI程序 -> " + WStringToLogStr(puttyExePath));
+        return false;
+    }
+    return true;
+}
+
+bool SSHAppPanel::SSHAppPanel_PuttyLoginHandle(std::wstring host, std::wstring port, std::wstring user, std::wstring pass, std::wstring director)
+{
+    // 1. 取出Putty完整路径
+    const std::wstring& puttyExePath = _strPuttyFullPath;
     // 2. 初始化进程启动参数
     STARTUPINFOW si = { 0 };
     PROCESS_INFORMATION pi = { 0 };
@@ -632,13 +777,13 @@ void SSHAppPanel::ShowPuttyLoginWindow_Modal()
     si.wShowWindow = SW_SHOWNORMAL; // 正常窗口显示，和双击打开一致
 
     // 命令行缓冲区
-    std::wstring SSH_HOST = L"mky.3ds.com";
-    std::wstring SSH_PORT = L"4922";
-    std::wstring SSH_USER = L"plmadm";
-    std::wstring SSH_PASS = L"plmadm1";
-    std::wstring SSH_INITCD = L"/dsplm/develop/zhaoxuandong/";
+    std::wstring SSH_HOST = host;
+    std::wstring SSH_PORT = port;
+    std::wstring SSH_USER = user;
+    std::wstring SSH_PASS = pass;
+    std::wstring SSH_INITCD = director;
+
     std::wstring ExceComd = L"HISTFILE=/dev/null;cd " + SSH_INITCD + L";exec bash -il;";
-    //std::wstring ExceFile = L"putty_auto_cd.tmp";
     // 每次连接生成唯一临时文件名（面板句柄+随机区分多会话）
     WCHAR tmpNameBuf[128] = { 0 };
     static ULONG tmpSerial = 0;
@@ -646,14 +791,19 @@ void SSHAppPanel::ShowPuttyLoginWindow_Modal()
     std::wstring newTmpFile = tmpNameBuf;
     // 写入临时脚本
     if (!SSH_INITCD.empty())SSH_SettingsSaveConfigTmpFile(newTmpFile, ExceComd);
-    std::wstring ExceLogin = L"\"" + puttyExePath + L"\" -ssh \"" + SSH_HOST + L"\" -P " + SSH_PORT + L" -l " + SSH_USER + L" -pw " + SSH_PASS;
+    NppSSH_LogInfoAuto("【数据：】"+WStringToLogStr(SSH_HOST) 
+        + WStringToLogStr(SSH_PORT)
+        + WStringToLogStr(SSH_USER)
+        + WStringToLogStr(SSH_PASS));
+    std::wstring ExceLogin = L"\"" + puttyExePath + L"\" -ssh \"" + SSH_HOST + L"\" -P " + SSH_PORT + L" -l " + SSH_USER ;
+    if (!SSH_PASS.empty()) { ExceLogin += L" -pw " + SSH_PASS; }
     std::wstring ExcelFilePath = SSH_SettingsGetConfigFileExistPath(newTmpFile);
     if (!ExcelFilePath.empty())ExceLogin += L" -t -m \"" + ExcelFilePath + L"\"";
     NppSSH_LogInfoAuto("【当前执行的命令】" + WStringToLogStr(ExceLogin));
     // 3. 创建PuTTY独立进程
     BOOL bCreateOk = ::CreateProcessW(
         nullptr,                    // lpApplicationName：null 从命令行解析exe
-        const_cast<wchar_t*>(ExceLogin.c_str()),                 // lpCommandLine：带引号程序路径
+        ExceLogin.data(),                 // lpCommandLine：带引号程序路径
         nullptr,                    // 进程安全属性默认
         nullptr,                    // 线程安全属性默认
         FALSE,                      // 不继承句柄
@@ -674,7 +824,7 @@ void SSHAppPanel::ShowPuttyLoginWindow_Modal()
         sprintf_s(logErr, "CreateProcessW 启动PuTTY失败，Err=%d Path=%ws", errCode, puttyExePath.c_str());
         NppSSH_LogErrorAuto(std::string(logErr));
         if (!SSH_INITCD.empty())SSH_SettingsDeleteConfigFile(newTmpFile);
-        return;
+        return false;
     }
 
     CleanInvalidSession();
@@ -696,7 +846,10 @@ void SSHAppPanel::ShowPuttyLoginWindow_Modal()
 
     // 打印调试日志
     NppSSH_LogInfoAuto("成功启动PuTTY进程，路径：" + WStringToLogStr(puttyExePath));
+    
+    return true;
 }
+
 // 设置全局永久置顶
 //SetWindowPos(_hPuTTYWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
 void SSHAppPanel::CloseSoftWare() {

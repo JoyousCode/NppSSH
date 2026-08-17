@@ -88,6 +88,9 @@
 #define MSG_FIX_SELECT_TRAIL_NEWLINE (WM_USER + 2002)
 #define TIMER_ID_RESIZE_PTY (WM_USER + 2003)
 #define WM_USER_RESIZE_PTY (WM_USER + 2004)
+#define WM_DELETE_COMBO_ITEM (WM_USER + 2005)
+#define WM_CLEAR_SUPPRESS  (WM_USER + 2006)
+#define WM_SET_EDIT_CURSOR_END (WM_USER + 2007)
 
 class SSHBasePanel;
 class SSHTermPanel;
@@ -98,6 +101,15 @@ enum class PanelType {
     SSHAppPanel = 2,         // SSHAppPanel面板类型
 };
 
+typedef struct tagSSHLoginInput
+{
+    wchar_t szHost[256];
+    wchar_t szPort[32];
+    wchar_t szUser[256];
+    wchar_t szPass[256];
+    wchar_t szDir[256];
+    BOOL bOk;   // TRUE=用户点确定，FALSE=取消
+} SSHLoginModal;
 // 全局变量转发
 struct NppData;
 extern NppData& g_nppData;
@@ -128,6 +140,7 @@ void SSH_PanelVecBySeqIdExecFunc(int panelSeqId, Func&& func)
 }
 
 // 其他文件调用SSHSettings中的函数
+std::wstring SSH_SettingsGetPluginsConfigDir();//获取插件配置文件所在文件夹绝对路径(_T("%s\\plugins\\config"))
 std::wstring SSH_SettingsGetPluginsDir();//获取插件所在文件夹绝对路径(_T("%s\\plugins"))
 void SSH_SettingsSavePanelCount(int count);				// Ini文件保存面板数量
 int SSH_SettingsLoadPanelCount();						// Ini文件读取面板数量
@@ -144,10 +157,13 @@ void SSH_SettingsDeleteConfigFile(const std::wstring& ExceFile);// 直接删除�
 
 // 其他文件调用SSHTermPanel中的函数
 void SSH_PanelInitRecreateSSHTermPanel(int panelSeqId, int panelRealId);	// 自动重建面板
-void SSH_PanelInitRecreateSSHAppPanel(int panelSeqId, int panelrealId);
 //HWND SSH_PanelGetLoginPanelHwnd();									//获得每次登录面板创建的句柄
 HWND SSH_PanelGetPanelHwnd(int panelSeqId);							//根据面板ID获得面板句柄
 
+
+// 其他文件调用SSHAppPanel中的函数
+void SSH_PanelInitRecreateSSHAppPanel(int panelSeqId, int panelrealId);
+//bool SSH_AppPanelPuttyLoginHandle(int panelSeqId, const char* host, int port, const char* user, const char* pass, const char* director);
 
 // 其他文件调用SSHConnection中的函数
 bool SSH_ConnectionHandle(int panelSeqId,const char* host, int port, const char* user, const char* pass);	// 连接操作
@@ -185,3 +201,6 @@ std::string SSH_TerminalPanelPrompt(int panelSeqId);					// 获取终端命令�
 void SSH_TerminalBySeqIdRemove(int panelSeqId);							// 根据序列ID移除面板
 void SSH_TerminalBySeqIdReset(int panelSeqId);							// 重置面板（暂未使用）
 void SSH_TerminalResize(HWND hParent, int panelSeqId);					// 调整伪终端面板大小
+
+// 其他文件调用SSHLoginModal中的函数
+void SSH_LoginModalWindowsModal(SSHLoginModal* SSHLoginModal);

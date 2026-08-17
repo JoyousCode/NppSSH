@@ -8,6 +8,7 @@
 #include "SSHSettings.h"
 #include "SSHConnection.h"
 #include "SSHLog.h"
+#include "SSHLoginModal.h"
 
 static std::mutex g_SSHPanelMutex;
 static std::vector<SSHBasePanel*> g_SSHPanelVec;//key：序列，每创建一个面板唯一的序列
@@ -146,6 +147,9 @@ void SSH_HandAllFree() {
 
 
 /**************（实际定义在SSHSettings中）***************/
+std::wstring SSH_SettingsGetPluginsConfigDir() {
+    return SSHSettings_GetPluginsConfigDir();
+}
 std::wstring SSH_SettingsGetPluginsDir() {//获取插件所在文件夹绝对路径(_T("%s\\plugins"))
     return SSHSettings_GetPluginsDir();
 }
@@ -195,6 +199,16 @@ void SSH_PanelInitRecreateSSHTermPanel(int panelSeqId, int panelrealId) {//panel
     SSHTermPanel_InitRecreatePanel(pPanel);
     g_SSHPanelVec.push_back(pPanel);
 }
+
+//HWND SSH_PanelGetLoginPanelHwnd(int panelSeqId) {//暂未使用
+//    SSHTermPanel* pPanel = g_SSHPanelVec[panelSeqId];
+//    return pPanel->getLoginPanel();        //获得登录面板句柄
+//}
+HWND SSH_PanelGetPanelHwnd(int panelSeqId) {
+    return SSHPanel_GetPanelHwnd(panelSeqId);
+}
+
+/**************（实际定义在SSHAppPanle中）***************/
 void SSH_PanelInitRecreateSSHAppPanel(int panelSeqId, int panelrealId) {//panelSeqId索引从0开始，panelrealId面板默认标题从1开始
     NppSSH_LogInfoAuto("面板索引=" + std::to_string(panelSeqId) + "面板标题id=" + std::to_string(panelrealId));
     std::lock_guard<std::mutex> lock(g_SSHPanelMutex);
@@ -202,13 +216,6 @@ void SSH_PanelInitRecreateSSHAppPanel(int panelSeqId, int panelrealId) {//panelS
     SSHBasePanel* pPanel = new SSHAppPanel(panelSeqId, panelrealId);
     SSHAppPanel_InitRecreatePanel(pPanel);
     g_SSHPanelVec.push_back(pPanel);
-}
-//HWND SSH_PanelGetLoginPanelHwnd(int panelSeqId) {//暂未使用
-//    SSHTermPanel* pPanel = g_SSHPanelVec[panelSeqId];
-//    return pPanel->getLoginPanel();        //获得登录面板句柄
-//}
-HWND SSH_PanelGetPanelHwnd(int panelSeqId) {
-    return SSHPanel_GetPanelHwnd(panelSeqId);
 }
 
 
@@ -314,4 +321,10 @@ void SSH_TerminalBySeqIdReset(int panelSeqId) {
 }
 void SSH_TerminalResize(HWND hParent, int panelSeqId) {
     SSHTerminal_Resize(hParent, panelSeqId);
+}
+
+
+/**************（实际定义在SSHLoginModal中）***************/
+void SSH_LoginModalWindowsModal(SSHLoginModal* SSHLoginModal) {
+    SSHLoginModal_WindowsModal(SSHLoginModal);
 }

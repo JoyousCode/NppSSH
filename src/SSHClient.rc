@@ -25,7 +25,7 @@ BEGIN
 END
 
 //////////////////////////////////////////////////////////////////////////
-// SSH 登录对话框（修复关闭后 NPP 置底的关键弹窗）
+// SSH 登录对话框
 //////////////////////////////////////////////////////////////////////////
 IDD_SSH_LOGIN DIALOGEX 0, 0, 280, 140
 STYLE DS_SETFONT | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME
@@ -50,9 +50,48 @@ BEGIN
     EDITTEXT        IDC_PASS,  50, 84, 185, 12, ES_AUTOHSCROLL | ES_PASSWORD | WS_TABSTOP | ES_AUTOVSCROLL
     CONTROL         "", IDC_BTN_EYE, "BUTTON", WS_CHILD | WS_VISIBLE | BS_ICON, 235, 84, 15, 12
 
-    // 按钮区：左下测试 / 右下连接，等宽等高，完美贴合截图样式
+    // 按钮区
     PUSHBUTTON      "测试", IDC_BTN_TEST, 20, 110, 40, 15
     DEFPUSHBUTTON   "连接", IDC_BTN_CONNECT, 220, 110, 40, 15
+END
+
+//////////////////////////////////////////////////////////////////////////
+// Putty 登录对话框
+//////////////////////////////////////////////////////////////////////////
+IDD_SSH_Putty_LOGIN DIALOGEX 0, 0, 256, 174
+STYLE DS_SETFONT | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME
+EXSTYLE WS_EX_APPWINDOW
+CAPTION "Putty 登录"
+FONT 12, "Microsoft YaHei UI", 400, 0, 0x01
+BEGIN
+// 主机行（标签+输入框精准对齐，间距舒适）
+LTEXT           "主机:", -1, 46, 12, 20, 12, SS_CENTERIMAGE
+// COMBOBOX        IDC_HOST, 70, 12, 140, 60, CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP
+COMBOBOX        IDC_HOST, 70, 12, 140, 60, CBS_DROPDOWN | CBS_OWNERDRAWFIXED | CBS_HASSTRINGS | WS_VSCROLL | WS_TABSTOP
+
+// 端口行
+LTEXT           "端口:", -1, 46, 36, 20, 12, SS_CENTERIMAGE
+EDITTEXT        IDC_PORT, 70, 36, 140, 12, ES_AUTOHSCROLL | WS_TABSTOP
+
+// 用户行
+LTEXT           "用户:", -1, 46, 60, 20, 12, SS_CENTERIMAGE
+EDITTEXT        IDC_USER, 70, 60, 140, 12, ES_AUTOHSCROLL | WS_TABSTOP | ES_AUTOVSCROLL
+
+// 密码行
+LTEXT           "密码:", -1, 46, 84, 20, 12, SS_CENTERIMAGE
+EDITTEXT        IDC_PASS, 70, 84, 125, 12, ES_AUTOHSCROLL | ES_PASSWORD | WS_TABSTOP | ES_AUTOVSCROLL
+CONTROL         "", IDC_BTN_EYE, "BUTTON", WS_CHILD | WS_VISIBLE | BS_ICON, 195, 84, 15, 12
+
+// 初始远程目录行
+LTEXT           "初始远程目录:", -1, 20, 108, 46, 12, SS_CENTERIMAGE
+EDITTEXT        IDC_DIRECTOR, 70, 108, 140, 12, ES_AUTOHSCROLL | WS_TABSTOP | ES_AUTOVSCROLL
+
+CONTROL         "保存本次登录记录", IDC_CHK_SAVE_HIST, "BUTTON", BS_AUTOCHECKBOX | WS_CHILD | WS_VISIBLE | WS_TABSTOP, 145, 128, 65, 14
+
+
+// 按钮区
+PUSHBUTTON      "取消登录", IDC_BTN_CONNECT, 36, 148, 40, 15
+DEFPUSHBUTTON   "确认登录", IDC_BTN_SUBMIT, 180, 148, 40, 15
 END
 
 //////////////////////////////////////////////////////////////////////////

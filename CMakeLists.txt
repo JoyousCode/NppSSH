@@ -98,6 +98,8 @@ add_library(NppSSH SHARED
     src/Windows/SSHBasePanel.cpp
     src/Windows/SSHAppPanel.h
     src/Windows/SSHAppPanel.cpp
+    src/Windows/SSHLoginModal.h
+    src/Windows/SSHLoginModal.cpp
 )
 # 新增：指定 RC 文件为资源编译（Windows 特有）
 if(WIN32)
@@ -112,9 +114,11 @@ endif()
 target_include_directories(NppSSH PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${LIBSSH2_INC}
+    ${CMAKE_SOURCE_DIR}/src/res/json
 )
 target_link_libraries(NppSSH PRIVATE
     ${LIBSSH2_LIB}
+    comctl32.lib
     ws2_32.lib
     shlwapi.lib
     advapi32.lib
@@ -123,6 +127,7 @@ target_link_libraries(NppSSH PRIVATE
     gdiplus.lib
     user32.lib
     gdi32.lib
+    version.lib
 )
 target_compile_definitions(NppSSH PRIVATE
     WIN32_LEAN_AND_MEAN

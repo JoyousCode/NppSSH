@@ -286,26 +286,26 @@ void SSHTermPanel::initPanel() {
 // 窗口居中工具函数
 // hWndChild: 要居中的窗口
 // hWndParent: 父窗口（NPP主窗口）
-void CenterWindow(HWND hWndChild, HWND hWndParent)
-{
-    if (!hWndChild || !hWndParent) return;
-
-    RECT rcChild, rcParent;
-    GetWindowRect(hWndChild, &rcChild);
-    GetWindowRect(hWndParent, &rcParent);
-
-    int cx = (rcParent.right - rcParent.left) - (rcChild.right - rcChild.left);
-    int cy = (rcParent.bottom - rcParent.top) - (rcChild.bottom - rcChild.top);
-
-    SetWindowPos(
-        hWndChild,
-        NULL,
-        rcParent.left + cx / 2,
-        rcParent.top + cy / 2,
-        0, 0,
-        SWP_NOSIZE | SWP_NOZORDER
-    );
-}
+//void CenterWindow(HWND hWndChild, HWND hWndParent)
+//{
+//    if (!hWndChild || !hWndParent) return;
+//
+//    RECT rcChild, rcParent;
+//    GetWindowRect(hWndChild, &rcChild);
+//    GetWindowRect(hWndParent, &rcParent);
+//
+//    int cx = (rcParent.right - rcParent.left) - (rcChild.right - rcChild.left);
+//    int cy = (rcParent.bottom - rcParent.top) - (rcChild.bottom - rcChild.top);
+//
+//    SetWindowPos(
+//        hWndChild,
+//        NULL,
+//        rcParent.left + cx / 2,
+//        rcParent.top + cy / 2,
+//        0, 0,
+//        SWP_NOSIZE | SWP_NOZORDER
+//    );
+//}
 
 // 官方标准模态登录窗口（修复关闭后NPP被置底）
 void SSHTermPanel::ShowSSHLoginWindow_Modal()
