@@ -4,13 +4,19 @@
 
 // 配置文件名
 #define NPP_SSH_INI_NAME _T("NppSSH.ini")
-// INI中面板数量的键名
-#define NPP_SSH_PANEL_COUNT_KEY _T("PanelCount")
+
 // INI中默认节名
 #define NPP_SSH_INI_SECTION _T("General")
 #define NPP_SSH_INI_SECTIONTYPE _T("GeneralPanelType")
+#define NPP_SSH_INI_PUTTY_PATH _T("GeneralPuttyPath")
+// INI中面板数量的键名
+#define NPP_SSH_PANEL_COUNT_KEY _T("PanelCount")
 // 面板类型的键名前缀（拼接面板ID，如PanelType_1）
 #define NPP_SSH_PANEL_TYPE_KEY_PREFIX _T("PanelType_")
+// Putty路径的键名
+#define NPP_SSH_PUTTY_PATH_KEY _T("PuttyPath")
+
+
 
 // 存储面板ID与对应类型的结构体
 struct PanelIdTypeItem
@@ -58,4 +64,9 @@ void SSHSettings_SaveConfigTmpFile(const std::wstring& ExceFile, const std::wstr
 std::wstring SSHSettings_GetConfigFileExistPath(const std::wstring& ExceFile);
 // 直接删除配置目录指定文件（无判空、无返回值）
 void SSHSettings_DeleteConfigFile(const std::wstring& ExceFile);
+
+// 读取Putty可执行路径；优先读ini[NppSSH.ini][GeneralPuttyPath].PuttyPath；ini无则扫描系统PATH
+std::wstring SSHSettings_LoadPuttyExePath();
+// 保存Putty完整exe路径到ini [GeneralPuttyPath] PuttyPath=xxx
+bool SSHSettings_SavePuttyExePath(const std::wstring& puttyFullExe);
 

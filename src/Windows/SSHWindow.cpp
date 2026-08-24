@@ -188,6 +188,12 @@ std::wstring SSH_SettingsGetConfigFileExistPath(const std::wstring& ExceFile) {
 void SSH_SettingsDeleteConfigFile(const std::wstring& ExceFile) {
     SSHSettings_DeleteConfigFile(ExceFile);
 }
+std::wstring SSH_SettingsLoadPuttyExePath() {
+	return SSHSettings_LoadPuttyExePath();
+}
+bool SSH_SettingsSavePuttyExePath(const std::wstring& puttyFullExe) {
+	return SSHSettings_SavePuttyExePath(puttyFullExe);
+}
 
 
 /**************（实际定义在SSHTermPanel中）***************/

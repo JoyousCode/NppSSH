@@ -355,3 +355,111 @@ void SSHSettings_DeleteConfigFile(const std::wstring& ExceFile)
     // 直接调用删除API，文件不存在也不会报错
     DeleteFileW(fullFilePath.c_str());
 }
+
+
+//===== 实现 PuttyPath 持久化逻辑 =====
+std::wstring SSHSettings_LoadPuttyExePath()
+{
+    std::wstring iniFile = SSHSettings_GetIniFilePath();
+    WCHAR bufIni[MAX_PATH] = { 0 };
+
+    // 1. 优先读取INI [GeneralPuttyPath] PuttyPath
+    DWORD retRead = ::GetPrivateProfileStringW(
+        L"GeneralPuttyPath",
+        L"PuttyPath",
+        L"",
+        bufIni,
+        MAX_PATH,
+        iniFile.c_str()
+    );
+    std::wstring iniPuttyPath(bufIni);
+    if (!iniPuttyPath.empty())
+    {
+        // ini读出的值做一次校验，防止ini存了无效路径
+        //if (IsRealPuttyGuiExe(iniPuttyPath))
+        //{
+        //    NppSSH_LogInfoAuto("SSHSettings_LoadPuttyExePath：从INI读取有效Putty路径");
+        //    return iniPuttyPath;
+        //}
+        return iniPuttyPath;
+        NppSSH_LogInfoAuto("SSHSettings_LoadPuttyExePath：INI中PuttyPath无效，进入PATH扫描逻辑");
+    }
+
+    // 2. INI无有效配置，读取系统PATH环境变量
+    DWORD pathBufLen = ::GetEnvironmentVariableW(L"PATH", nullptr, 0);
+    if (pathBufLen == 0)
+    {
+        NppSSH_LogErrorAuto("SSHSettings_LoadPuttyExePath：读取系统PATH环境变量失败");
+        return L"";
+    }
+    std::wstring pathEnv;
+    pathEnv.resize(pathBufLen);
+    ::GetEnvironmentVariableW(L"PATH", &pathEnv[0], pathBufLen);
+
+    // PATH按分号;分割遍历
+    size_t pos = 0;
+    size_t prev = 0;
+    while ((pos = pathEnv.find(L';', prev)) != std::wstring::npos)
+    {
+        std::wstring dir = pathEnv.substr(prev, pos - prev);
+        prev = pos + 1;
+
+        if (dir.empty()) continue;
+
+        WCHAR candidate[MAX_PATH] = { 0 };
+        ::PathCombineW(candidate, dir.c_str(), L"putty.exe");
+
+        std::wstring exeCandidate(candidate);
+        if (::PathFileExistsW(exeCandidate.c_str()))
+        {
+            if (IsRealPuttyGuiExe(exeCandidate))
+            {
+                NppSSH_LogInfoAuto("SSHSettings_LoadPuttyExePath：系统PATH命中有效Putty:" + WStringToLogStr(exeCandidate));
+                return exeCandidate; // 第一条匹配直接返回，终止遍历PATH
+            }
+        }
+    }
+
+    //处理PATH最后一段（末尾没有;）
+    std::wstring dirLast = pathEnv.substr(prev);
+    if (!dirLast.empty())
+    {
+        WCHAR candidate[MAX_PATH] = { 0 };
+        ::PathCombineW(candidate, dirLast.c_str(), L"putty.exe");
+        std::wstring exeCandidate(candidate);
+        if (::PathFileExistsW(exeCandidate.c_str()))
+        {
+            if (IsRealPuttyGuiExe(exeCandidate))
+            {
+                NppSSH_LogInfoAuto("SSHSettings_LoadPuttyExePath：系统PATH末尾段命中有效Putty:" + WStringToLogStr(exeCandidate));
+                return exeCandidate;
+            }
+        }
+    }
+
+    NppSSH_LogInfoAuto("SSHSettings_LoadPuttyExePath：INI和PATH均未找到合法putty.exe，返回空");
+    return L"";
+}
+
+bool SSHSettings_SavePuttyExePath(const std::wstring& puttyFullExe)
+{
+    std::wstring iniFile = SSHSettings_GetIniFilePath();
+    if (puttyFullExe.empty())
+    {
+        NppSSH_LogErrorAuto("SSHSettings_SavePuttyExePath：入参puttyFullExe为空");
+        return false;
+    }
+    // WritePrivateProfileString：节不存在会自动创建；key存在直接覆盖；不触碰ini其他节和key
+    BOOL ok = ::WritePrivateProfileStringW(
+        NPP_SSH_INI_PUTTY_PATH,
+        NPP_SSH_PUTTY_PATH_KEY,
+        puttyFullExe.c_str(),
+        iniFile.c_str()
+    );
+    if (ok){
+        NppSSH_LogInfoAuto("SSHSettings_SavePuttyExePath：保存PuttyPath成功:" + WStringToLogStr(puttyFullExe));
+    }else{
+        NppSSH_LogErrorAuto("SSHSettings_SavePuttyExePath：WritePrivateProfileStringW失败");
+    }
+    return ok != FALSE;
+}

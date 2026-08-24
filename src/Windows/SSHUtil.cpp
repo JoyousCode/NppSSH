@@ -417,7 +417,7 @@ bool IsRealPuttyGuiExe(const std::wstring& exePath)
             logMsg += WStringToLogStr(std::wstring(szQueryPath));
             logMsg += " 读取OriginalFilename=";
             logMsg += WStringToLogStr(originalName);
-            NppSSH_LogErrorAuto(logMsg);
+            NppSSH_LogInfoAuto(logMsg);
             break;
         }
         {

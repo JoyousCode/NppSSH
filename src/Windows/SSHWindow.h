@@ -153,7 +153,8 @@ void SSH_SettingsByRealIdRemove(int panelRealId);		// 删除指定面板ID对应
 void SSH_SettingsSaveConfigTmpFile(const std::wstring& ExceFile, const std::wstring& ExceComd);// 保存配置目录临时文件
 std::wstring SSH_SettingsGetConfigFileExistPath(const std::wstring& ExceFile);// 查询配置目录文件，存在返回绝对路径，不存在返回空
 void SSH_SettingsDeleteConfigFile(const std::wstring& ExceFile);// 直接删除配置目录指定文件（无判空、无返回值）
-
+std::wstring SSH_SettingsLoadPuttyExePath();//读取Putty可执行路径；优先读ini[NppSSH.ini][GeneralPuttyPath].PuttyPath；ini无则扫描系统PATH
+bool SSH_SettingsSavePuttyExePath(const std::wstring& puttyFullExe);// 保存Putty完整exe路径到ini [GeneralPuttyPath] PuttyPath=xxx
 
 // 其他文件调用SSHTermPanel中的函数
 void SSH_PanelInitRecreateSSHTermPanel(int panelSeqId, int panelRealId);	// 自动重建面板
