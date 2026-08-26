@@ -11,8 +11,11 @@ SSHAppPanel::SSHAppPanel(int panelSeqId, int panelrealId)
     _strPuttyFullPath(L""),
     _hBtnPutty(nullptr),
     _hBtnDestroy(nullptr),
+    _hBtnWinTop(nullptr),
     _hIconPutty(nullptr),
     _hIconDestroy(nullptr),
+    _hIconWinTop(nullptr),
+    _winTopState(false),
     _hIconSelectFile(nullptr),
     _editLabelFontSize(18){
 
@@ -52,6 +55,11 @@ SSHAppPanel::~SSHAppPanel() {
     {
         ::DestroyIcon(_hIconDestroy);
         _hIconDestroy = nullptr;
+    }
+    if (_hIconWinTop)
+    {
+        ::DestroyIcon(_hIconWinTop);
+        _hIconWinTop = nullptr;
     }
     if (_hIconSelectFile)
     {
@@ -113,9 +121,10 @@ bool SSHAppPanel::isHandleHasActiveThread() {
         {
             for (PuTTYSession* pSess : _sessionList) {
                 // 强制PuTTY窗口前置，弹窗会显示在桌面顶层，用户可见
-                ::BringWindowToTop(pSess->hWnd);
                 ::SetForegroundWindow(pSess->hWnd);
-                NppSSH_LogInfoAuto("已将PuTTY窗口置顶");
+                ::BringWindowToTop(pSess->hWnd);
+                
+                //NppSSH_LogInfoAuto("已将PuTTY窗口置顶");
 
                 // 异步投递关闭消息，主线程立刻返回，不会卡死NPP
                 ::PostMessageW(pSess->hWnd, WM_CLOSE, 0, 0);
@@ -239,6 +248,31 @@ INT_PTR CALLBACK SSHAppPanel::run_dlgProc(UINT message, WPARAM wParam, LPARAM lP
         else if (cmd == IDC_BTN_CLOSE_SSH) {
             NppSSH_LogInfoAuto("用户点击面板关闭Putty按钮" + std::to_string(this->_panelSeqId));
             CloseSoftWare();
+        }
+        else if (cmd == IDC_BTN_PUTTYTOP_SSH) {
+            NppSSH_LogInfoAuto("用户点击面板置顶Putty按钮" + std::to_string(this->_panelSeqId));
+            _winTopState = !_winTopState;
+            //if (_isConnected) { }
+            if (_winTopState) { SetButtonIconOnly(_hBtnWinTop, IDI_ICON_CLOSEWINTOP); }
+            else{ SetButtonIconOnly(_hBtnWinTop, IDI_ICON_WINTOP); }
+            for (PuTTYSession* pSess : _sessionList) {
+                pSess->isWindowTop = _winTopState;
+                windowTopBtnHandle(pSess->hWnd, _winTopState);//重复操作
+            }
+            //for (auto it = _sessionList.rbegin(); it != _sessionList.rend(); ++it)
+            //{
+            //    PuTTYSession* pSess = *it;
+            //    pSess->isWindowTop = _winTopState;
+            //    windowTopBtnHandle(pSess->hWnd, _winTopState);
+            //}
+            //// 正向：从开头到末尾
+            //for (auto it = _sessionList.begin(); it != _sessionList.end(); ++it)
+            //{
+            //    PuTTYSession* pSess = *it;
+            //    pSess->isWindowTop = _winTopState;
+            //    windowTopBtnHandle(pSess->hWnd, _winTopState);
+            //}
+            
         }
         return DockingDlgInterface::run_dlgProc(message, wParam, lParam);
     }
@@ -426,6 +460,20 @@ void SSHAppPanel::createButtonBar() {
         NULL
     );
 
+    //窗口置顶按钮
+    _hBtnWinTop = ::CreateWindowW(
+        L"BUTTON",
+        L"", // 文字设为空
+        WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON | WS_BORDER,
+        marginLeft + staticW + editW + btnGap + btnInitSize + btnGap + btnInitSize + btnGap + btnInitSize + btnGap, // 左坐标 =  + 间距
+        btnTop,
+        btnInitSize, btnInitSize, // 初始大小
+        GetHwndSelf(),
+        (HMENU)IDC_BTN_PUTTYTOP_SSH,
+        g_hInst,
+        NULL
+    );
+
     SetPathControlFontSize(btnInitSize);
 
     // 将按钮设为纯图标模式（对接自定义图标）
@@ -449,6 +497,14 @@ void SSHAppPanel::createButtonBar() {
     }
     else {
         ::MessageBoxW(g_nppData._nppHandle, L"断开按钮创建失败", L"NppSSH 错误提示", MB_OK | MB_ICONWARNING);
+    }
+
+    if (_hBtnWinTop) {
+        SetButtonIconOnly(_hBtnWinTop, IDI_ICON_WINTOP);
+        //::EnableWindow(_hBtnWinTop, FALSE);// 初始状态：置顶按钮置灰
+    }
+    else {
+        ::MessageBoxW(g_nppData._nppHandle, L"置顶按钮创建失败", L"NppSSH 错误提示", MB_OK | MB_ICONWARNING);
     }
 }
 // 把按钮变成纯图标模式
@@ -515,6 +571,14 @@ HICON SSHAppPanel::LoadCustomIcon(int iconId, int size)
     else if (iconId == IDI_ICON_CLOSE) {
         if (_hIconDestroy) ::DestroyIcon(_hIconDestroy); // 释放旧图标
         _hIconDestroy = hIcon;
+    }
+    else if (iconId == IDI_ICON_WINTOP) {
+        if (_hIconWinTop) ::DestroyIcon(_hIconWinTop); // 释放旧图标
+        _hIconWinTop = hIcon;
+    }
+    else if (iconId == IDI_ICON_CLOSEWINTOP) {
+        if (_hIconWinTop) ::DestroyIcon(_hIconWinTop); // 释放旧图标
+        _hIconWinTop = hIcon;
     }
     else if (iconId == IDI_ICON_SELECT) {
         if (_hIconSelectFile) ::DestroyIcon(_hIconSelectFile); // 释放旧图标
@@ -793,6 +857,7 @@ bool SSHAppPanel::SSHAppPanel_PuttyLoginHandle(std::wstring host, std::wstring p
     PuTTYSession* pNewSess = new PuTTYSession(_panelSeqId);
     pNewSess->hProcess = pi.hProcess;
     pNewSess->tmpFile = newTmpFile;
+    pNewSess->isWindowTop = _winTopState;
     ::CloseHandle(pi.hThread);
 
     // 启动该会话专属监控线程
@@ -811,8 +876,6 @@ bool SSHAppPanel::SSHAppPanel_PuttyLoginHandle(std::wstring host, std::wstring p
     return true;
 }
 
-// 设置全局永久置顶
-//SetWindowPos(_hPuTTYWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
 void SSHAppPanel::CloseSoftWare() {
     std::lock_guard<std::mutex> lock(_sessionListMtx);
     if (_sessionList.empty())
@@ -839,9 +902,9 @@ void SSHAppPanel::CloseSoftWare() {
         if (pSess->hWnd != NULL)
         {
             // 强制PuTTY窗口前置，弹窗会显示在桌面顶层，用户可见
-            ::BringWindowToTop(pSess->hWnd);
             ::SetForegroundWindow(pSess->hWnd);
-            NppSSH_LogInfoAuto("已将PuTTY窗口置顶");
+            ::BringWindowToTop(pSess->hWnd);
+            //NppSSH_LogInfoAuto("已将PuTTY窗口置顶");
 
             // 异步投递关闭消息，主线程立刻返回，不会卡死NPP
             ::PostMessageW(pSess->hWnd, WM_CLOSE, 0, 0);
@@ -871,10 +934,7 @@ void SSHAppPanel::CloseSoftWare() {
     NppSSH_LogInfoAuto("全部PuTTY会话清理完毕");
 }
 
-
-
-
-bool PuTTYSession::FindPuTTYWindowByPid(DWORD pid, HWND& outHwnd)
+bool PuTTYSession::FindPuTTYWindowByPid(DWORD pid, HWND& outHwnd) const
 {
     outHwnd = NULL;
     struct EnumWinParam
@@ -940,8 +1000,8 @@ DWORD WINAPI PuTTYSession::PuTTYSessionMonitor()
         NppSSH_LogInfoAuto(pidLog);
 
         bool hasWnd = FindPuTTYWindowByPid(pid, this->hWnd);
-        if (hasWnd)
-        {
+        if (hasWnd){
+            if(isWindowTop)windowTopBtnHandle(this->hWnd, isWindowTop);
             NppSSH_LogInfoAuto("成功捕获PuTTY窗口，进入阶段2等待删除临时文件");
             break;
         }
@@ -997,6 +1057,35 @@ THREAD_CLEAN:
 }
 
 
+
+// 设置指定面板永久置顶
+void windowTopBtnHandle(HWND hWnd, bool isWinTop) {
+    if (isWinTop) {
+        ::SetForegroundWindow(hWnd);
+        ::SetWindowPos(
+            hWnd,
+            HWND_TOPMOST,
+            0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
+        );
+        // 强制PuTTY窗口前置，弹窗会显示在桌面顶层，用户可见
+        //::BringWindowToTop(pSess->hWnd);
+
+        NppSSH_LogInfoAuto("已将PuTTY窗口永久置顶");
+    }
+    else {
+        ::SetForegroundWindow(hWnd);
+        ::SetWindowPos(
+            hWnd,
+            HWND_NOTOPMOST,
+            0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
+        );
+
+        NppSSH_LogInfoAuto("已取消PuTTY窗口置顶");
+
+    }
+}
 
 
 // NPP启动重建面板具体实现

@@ -12,7 +12,8 @@ IDI_EYE_SHOW        ICON    "res/EyeShow.ico"
 IDI_ICON_PUTTY        ICON    "res/putty.ico"
 IDI_ICON_SELECT        ICON    "res/selectfile.ico"
 IDI_ICON_CLOSE        ICON    "res/close.ico"
-
+IDI_ICON_WINTOP        ICON    "res/top.ico"
+IDI_ICON_CLOSEWINTOP        ICON    "res/closetop.ico"
 //////////////////////////////////////////////////////////////////////////
 // Notepad++ 停靠面板（官方标准样式，无警告）
 //////////////////////////////////////////////////////////////////////////
