@@ -53,10 +53,12 @@ public:
     // 面板独有功能函数
     void initPanel();                           //初始化面板
     void createButtonBar();                     //初始化创建按钮控件
+    void createToolTip();                        //初始化创建工具提示
 	void SetButtonIconOnly(HWND btn, int iconId);//设置按钮图标
 	HICON LoadCustomIcon(int iconId, int size); //加载自定义图标
 	void OpenPuttyFileDialog();                 // 打开文件选择对话框
     void SetPathControlFontSize(int fontSize);  //初始化统一设置路径区域所有控件字体大小
+	void UpdateToolTipMessage(HWND _hHWND, const WCHAR* tipText);// 更新指定控件的工具提示
 
 	void SetBackgroundImage(const WCHAR* imgPath);// 设置面板背景图片
 	HBITMAP LoadImageByGdiPlus(const WCHAR* filePath);// GDI+加载任意格式图片
@@ -66,7 +68,7 @@ public:
     bool SSHAppPanel_PuttyLoginHandle(std::wstring host, std::wstring port, std::wstring user, std::wstring pass, std::wstring director);
     void CloseSoftWare();                       //点击销毁按钮，关闭所有PuTTY会话
 
-    
+	void UpdateWinTopBtnUI_FromMemState();// 根据内存状态更新窗口置顶按钮UI
 private:
     std::vector<PuTTYSession*> _sessionList;// 所有PuTTY会话容器
     std::mutex _sessionListMtx;             // 保护会话列表并发读写
@@ -84,6 +86,7 @@ private:
     HWND _hBtnDestroy;              // 销毁所有连接Putty窗口按钮句柄
     HWND _hBtnWinTop;               // 窗口置顶按钮句柄
 	bool _winTopState;              // 窗口置顶状态
+    HWND _hToolTip;                 // 工具提示控件
 
     HICON _hIconPutty;              // 连接Putty按钮图标句柄
     HICON _hIconDestroy;            // 销毁所有连接Putty窗口按钮图标句柄

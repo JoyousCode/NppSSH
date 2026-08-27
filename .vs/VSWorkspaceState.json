@@ -14,6 +14,7 @@
   "ExpandedNodes": [
     "",
     "\\out",
+    "\\out\\build",
     "\\src",
     "\\src\\res",
     "\\src\\res\\sshlib2_install_x64",

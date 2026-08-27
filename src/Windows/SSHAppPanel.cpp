@@ -12,6 +12,7 @@ SSHAppPanel::SSHAppPanel(int panelSeqId, int panelrealId)
     _hBtnPutty(nullptr),
     _hBtnDestroy(nullptr),
     _hBtnWinTop(nullptr),
+    _hToolTip(nullptr),
     _hIconPutty(nullptr),
     _hIconDestroy(nullptr),
     _hIconWinTop(nullptr),
@@ -46,6 +47,11 @@ SSHAppPanel::~SSHAppPanel() {
         }
         _sessionList.clear();
     }
+    if (_hToolTip != nullptr)
+    {
+		::DestroyWindow(_hToolTip);//因为是子窗口，所以需要手动直接销毁
+        _hToolTip = nullptr;
+    }
     if (_hIconPutty)
     {
         ::DestroyIcon(_hIconPutty);
@@ -66,6 +72,7 @@ SSHAppPanel::~SSHAppPanel() {
         ::DestroyIcon(_hIconSelectFile);
         _hIconSelectFile = nullptr;
     }
+    
     NppSSH_LogInfoAuto("执行【SSHAppPanel】析构函数");
 }
 DWORD WINAPI SSHAppPanel::MonitorThreadProxy(LPVOID lpParam)
@@ -123,8 +130,6 @@ bool SSHAppPanel::isHandleHasActiveThread() {
                 // 强制PuTTY窗口前置，弹窗会显示在桌面顶层，用户可见
                 ::SetForegroundWindow(pSess->hWnd);
                 ::BringWindowToTop(pSess->hWnd);
-                
-                //NppSSH_LogInfoAuto("已将PuTTY窗口置顶");
 
                 // 异步投递关闭消息，主线程立刻返回，不会卡死NPP
                 ::PostMessageW(pSess->hWnd, WM_CLOSE, 0, 0);
@@ -231,6 +236,7 @@ INT_PTR CALLBACK SSHAppPanel::run_dlgProc(UINT message, WPARAM wParam, LPARAM lP
             WCHAR buf[MAX_PATH] = { 0 };
             ::GetWindowTextW(_hEditPuttyPath, buf, MAX_PATH);
             _strPuttyFullPath = buf;
+            UpdateToolTipMessage(_hEditPuttyPath, _strPuttyFullPath.c_str());
             break;
         }
         else if (cmd == IDC_BTN_CONNECT_PUTTY) {
@@ -253,12 +259,11 @@ INT_PTR CALLBACK SSHAppPanel::run_dlgProc(UINT message, WPARAM wParam, LPARAM lP
             NppSSH_LogInfoAuto("用户点击面板置顶Putty按钮" + std::to_string(this->_panelSeqId));
             _winTopState = !_winTopState;
             //if (_isConnected) { }
-            if (_winTopState) { SetButtonIconOnly(_hBtnWinTop, IDI_ICON_CLOSEWINTOP); }
-            else{ SetButtonIconOnly(_hBtnWinTop, IDI_ICON_WINTOP); }
             for (PuTTYSession* pSess : _sessionList) {
                 pSess->isWindowTop = _winTopState;
-                windowTopBtnHandle(pSess->hWnd, _winTopState);//重复操作
+                windowTopBtnHandle(pSess->hWnd, _winTopState);
             }
+            UpdateWinTopBtnUI_FromMemState();
             //for (auto it = _sessionList.rbegin(); it != _sessionList.rend(); ++it)
             //{
             //    PuTTYSession* pSess = *it;
@@ -342,6 +347,7 @@ void SSHAppPanel::initPanel() {
     sprintf(bufSelf, "_panelHwnd(_hSelf)=0x%p", _panelHwnd);
     NppSSH_LogInfoAuto(bufSelf);
     createButtonBar();
+    createToolTip();
 
     bool isSubclass = GlobalSubclassTopWnd(); //挂载子类化
     _isConnected = false;
@@ -430,7 +436,6 @@ void SSHAppPanel::createButtonBar() {
         g_hInst,
         NULL
     );
-    //
 
     // 创建「putty连接」按钮（无文字）
     _hBtnPutty = ::CreateWindowW(
@@ -507,20 +512,69 @@ void SSHAppPanel::createButtonBar() {
         ::MessageBoxW(g_nppData._nppHandle, L"置顶按钮创建失败", L"NppSSH 错误提示", MB_OK | MB_ICONWARNING);
     }
 }
+
+void SSHAppPanel::createToolTip() {
+	// 创建工具提示控件
+	_hToolTip = ::CreateWindowExW(
+		WS_EX_TOPMOST,
+		TOOLTIPS_CLASS,
+		NULL,
+		WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX,
+		CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+		GetHwndSelf(),
+		NULL,
+		g_hInst,
+		NULL
+	);
+	if (_hToolTip == nullptr) {
+		::MessageBoxW(g_nppData._nppHandle, L"工具提示控件创建失败", L"NppSSH 错误提示", MB_OK | MB_ICONWARNING);
+		return;
+	}
+    // 设置悬浮延迟：500ms显示提示，100ms初始延迟
+    ::SendMessageW(_hToolTip, TTM_SETDELAYTIME, TTDT_INITIAL, (LPARAM)500);
+    ::SendMessageW(_hToolTip, TTM_SETMAXTIPWIDTH, 0, (LPARAM)450);//设置提示框最大宽度，长路径自动换行
+	// 设置工具提示文本
+	TOOLINFOW ti = { 0 };
+	ti.cbSize = sizeof(TOOLINFOW);
+	ti.uFlags = TTF_SUBCLASS | TTF_IDISHWND; // 子类化按钮，使用按钮句柄作为ID
+	ti.hwnd = GetHwndSelf();
+
+    ti.uId = (UINT_PTR)_hEditPuttyPath; // 关联Putty路径输入框
+    ti.lpszText = (LPWSTR) _strPuttyFullPath.c_str();;
+    ::SendMessageW(_hToolTip, TTM_ADDTOOL, 0, (LPARAM)&ti);
+
+	ti.uId = (UINT_PTR)_hBtnSelectFile; // 关联选择文件按钮
+	ti.lpszText = (LPWSTR)L"点击选择Putty可执行文件";
+	::SendMessageW(_hToolTip, TTM_ADDTOOL, 0, (LPARAM)&ti);
+
+	ti.uId = (UINT_PTR)_hBtnPutty; // 关联连接按钮
+	ti.lpszText = (LPWSTR)L"点击连接Putty";
+	::SendMessageW(_hToolTip, TTM_ADDTOOL, 0, (LPARAM)&ti);
+
+	ti.uId = (UINT_PTR)_hBtnDestroy; // 关联断开按钮
+	ti.lpszText = (LPWSTR)L"点击关闭所有Putty窗口";
+	::SendMessageW(_hToolTip, TTM_ADDTOOL, 0, (LPARAM)&ti);
+
+	ti.uId = (UINT_PTR)_hBtnWinTop; // 关联置顶按钮
+	ti.lpszText = (LPWSTR)L"点击置顶所有PuTTY窗口";
+	::SendMessageW(_hToolTip, TTM_ADDTOOL, 0, (LPARAM)&ti);
+
+    //::SendMessageW(_hToolTip, TTM_SETTITLEW, TTI_INFO_LARGE, (LPARAM)L"提示");
+}
+
 // 把按钮变成纯图标模式
 void SSHAppPanel::SetButtonIconOnly(HWND btn, int iconId)
 {
     if (btn == nullptr || !::IsWindow(btn))
     {
         ::MessageBoxW(g_nppData._nppHandle, L"按钮句柄无效", L"NppSSH 错误提示", MB_OK | MB_ICONWARNING);
-        return; // 窗口无效直接返回，避免崩溃
+        return;
     }
 
     // 获取工具栏图标尺寸
-    HICON hIcon = LoadCustomIcon(iconId, _iconSize);//_iconSize=24
+    HICON hIcon = LoadCustomIcon(iconId, _iconSize);
     if (hIcon == NULL) {
-        // 图标加载失败时用系统默认图标（避免报错）
-        hIcon = LoadIcon(NULL, IDI_APPLICATION);
+        hIcon = LoadIcon(NULL, IDI_APPLICATION);// 图标加载失败时用系统默认图标（避免报错）
         ::MessageBoxW(g_nppData._nppHandle, L"图标加载失败，使用默认图标", L"NppSSH 错误提示", MB_OK | MB_ICONWARNING);
         return;
     }
@@ -554,13 +608,13 @@ HICON SSHAppPanel::LoadCustomIcon(int iconId, int size)
         size, size,               // 图标大小
         LR_DEFAULTCOLOR  // 默认颜色 + 共享资源（避免内存泄漏）
     );
-    // 兜底：加载失败时返回系统默认图标
+    
     if (hIcon == nullptr)
     {
         wchar_t errMsg[256] = { 0 };
         swprintf_s(errMsg, L"图标ID:%d 加载失败，错误码:%d", iconId, ::GetLastError());
         ::MessageBoxW(g_nppData._nppHandle, errMsg, L"NppSSH 错误提示", MB_OK | MB_ICONWARNING);
-        hIcon = LoadIcon(NULL, IDI_APPLICATION);
+        hIcon = LoadIcon(NULL, IDI_APPLICATION);// 兜底：加载失败时返回系统默认图标
     }
 
     // 持久化到类成员，避免被系统回收
@@ -680,6 +734,17 @@ void SSHAppPanel::SetPathControlFontSize(int fontSize)
     }
 
     // 字体句柄交给窗口托管，无需手动释放，窗口销毁系统自动回收
+}
+
+void SSHAppPanel::UpdateToolTipMessage(HWND _hHWND, const WCHAR*  tipText) {
+    // 更新已有Tooltip信息（不销毁重建tooltip控件）
+    TOOLINFOW ti = { 0 };
+    ti.cbSize = sizeof(TOOLINFOW);
+    ti.uFlags = TTF_SUBCLASS | TTF_IDISHWND;
+    ti.hwnd = GetHwndSelf();
+    ti.uId = (UINT_PTR)_hHWND;
+    ti.lpszText = (LPWSTR)tipText;
+    ::SendMessageW(_hToolTip, TTM_SETTOOLINFO, 0, (LPARAM)&ti);
 }
 void SSHAppPanel::SetBackgroundImage(const WCHAR* imgPath)
 {
@@ -934,6 +999,31 @@ void SSHAppPanel::CloseSoftWare() {
     NppSSH_LogInfoAuto("全部PuTTY会话清理完毕");
 }
 
+void SSHAppPanel::UpdateWinTopBtnUI_FromMemState()
+{
+    if (!_hBtnWinTop || !::IsWindow(_hBtnWinTop) || !_hToolTip)
+        return;
+
+    // 根据内存变量决定图标与提示文本
+    int iconId{};
+    const WCHAR* tipText{};
+    if (_winTopState)
+    {
+        // true：已经置顶 → 显示【取消置顶】图标，提示文字：取消置顶所有PuTTY窗口
+        iconId = IDI_ICON_CLOSEWINTOP;
+        tipText = L"点击取消置顶所有PuTTY窗口";
+    }
+    else
+    {
+        // false：未置顶 → 显示【置顶】图标，提示文字：置顶所有PuTTY窗口
+        iconId = IDI_ICON_WINTOP;
+        tipText = L"点击置顶所有PuTTY窗口";
+    }
+
+    SetButtonIconOnly(_hBtnWinTop, iconId);// 更新按钮图标
+    UpdateToolTipMessage(_hBtnWinTop, tipText);// 更新按钮提示文字
+}
+
 bool PuTTYSession::FindPuTTYWindowByPid(DWORD pid, HWND& outHwnd) const
 {
     outHwnd = NULL;
@@ -1071,7 +1161,7 @@ void windowTopBtnHandle(HWND hWnd, bool isWinTop) {
         // 强制PuTTY窗口前置，弹窗会显示在桌面顶层，用户可见
         //::BringWindowToTop(pSess->hWnd);
 
-        NppSSH_LogInfoAuto("已将PuTTY窗口永久置顶");
+        //NppSSH_LogInfoAuto("已将PuTTY窗口永久置顶");
     }
     else {
         ::SetForegroundWindow(hWnd);
@@ -1082,7 +1172,7 @@ void windowTopBtnHandle(HWND hWnd, bool isWinTop) {
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
         );
 
-        NppSSH_LogInfoAuto("已取消PuTTY窗口置顶");
+        //NppSSH_LogInfoAuto("已取消PuTTY窗口置顶");
 
     }
 }
