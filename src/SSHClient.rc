@@ -115,13 +115,14 @@ BEGIN
     BEGIN
         BLOCK "080404B0"
         BEGIN
-            VALUE "CompanyName",      "NppSSH"
-            VALUE "FileDescription",  "NppSSH Terminal Plugin"
-            VALUE "FileVersion",      "0.0.1.0"
-            VALUE "InternalName",     "NppSSH"
-            VALUE "ProductName",      "NppSSH"
-            VALUE "ProductVersion",   "0.0.1.0"
-            VALUE "OriginalFilename", "NppSSH.dll"
+            VALUE "CompanyName",        "NppSSH"
+            VALUE "FileDescription",    "Notepad++ plugin for NppSSH Terminal Plugin"
+            VALUE "FileVersion",        "0.0.1.0"
+            VALUE "InternalName",       "NppSSH"
+            VALUE "LegalCopyright",     "Copyright 2026 by JoyousCode"
+            VALUE "OriginalFilename",   "NppSSH.dll"
+            VALUE "ProductName",        "NppSSH Terminal Plugin for Notepad++"
+            VALUE "ProductVersion",     "0.0.1.0"
         END
     END
     BLOCK "VarFileInfo"

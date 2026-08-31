@@ -105,6 +105,12 @@ int SSH_PanelVecGetInvalidSeqId() {
 bool SSH_PanelVecIsHasConnection() { // 检查活跃连接
     bool hasActiveConnection = false;
     for (auto* panel : g_SSHPanelVec) {
+        SSHAppPanel* appPanel = dynamic_cast<SSHAppPanel*>(panel);
+        if (appPanel != nullptr && appPanel->hasConnection()) {
+            NppSSH_LogInfoAuto(std::to_string(panel->Get_panelSeqId())+"【hasConnection】");
+            hasActiveConnection = true;
+            break;
+        }
         if (panel && panel->Get_isConnected()) {
             NppSSH_LogInfoAuto("【检查活跃连接】");
             hasActiveConnection = true;

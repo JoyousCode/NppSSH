@@ -12,13 +12,26 @@ struct PuTTYSession
     std::condition_variable cv;
     std::wstring tmpFile;
     bool isWindowTop;
+    bool isNeedDelete;
+    
 
     PuTTYSession(int _panelSeqId)
-		: hProcess(NULL), hWnd(NULL), stopFlag(false), hMonitorThread(nullptr), panelSeqId(_panelSeqId), tmpFile(L""), isWindowTop(false)
+		: hProcess(NULL), hWnd(NULL), stopFlag(true), hMonitorThread(nullptr), panelSeqId(_panelSeqId), tmpFile(L""), isWindowTop(false), isNeedDelete(false)
     {}
+    ~PuTTYSession()
+    {
+        // 只在句柄还没被置空的时候关闭
+        if (hMonitorThread != nullptr)
+        {
+            NppSSH_LogInfoAuto("PuTTYSession析构：关闭hMonitorThread");
+            CloseHandle(hMonitorThread);
+            hMonitorThread = nullptr;
+        }
+        CleanHandle(); // 进程句柄也在这里兜底释放
+    }
     DWORD WINAPI PuTTYSessionMonitor();
-    bool FindPuTTYWindowByPid(DWORD pid, HWND& outHwnd) const;
-    void StopMonitor(){// 终止监控线程
+    bool FindPuTTYWindowByPid(DWORD pid, HWND& outHwnd);
+    void StopMonitor(){// 终止监控线程（暂未使用，已废弃，在SSHAppPanel析构函数中安全停止）
         stopFlag.store(true, std::memory_order_release);
         cv.notify_all();//cv.notify_one();
         if (hMonitorThread != nullptr){
@@ -42,8 +55,9 @@ public:
     ~SSHAppPanel() override;
     // 面板独有工具封装
     static DWORD WINAPI MonitorThreadProxy(LPVOID lpParam);// 静态代理，仅作PuTTYSessionMonitor合法入口，不写业务逻辑
-    void CleanInvalidSession();                 // 清理vetor存储的无效会话
-    bool isHandleHasActiveThread();             // 检查句柄是否有活动线程
+	bool RemoveTerminatedSession(PuTTYSession* pSess);  // 移除已终止的会话
+    bool isHandleHasActiveThread();                     // 检查句柄是否有活动线程
+    bool hasConnection();                               // 检查是否有活动线程
 
     // 必须重写的函数
     INT_PTR CALLBACK run_dlgProc(UINT message, WPARAM wParam, LPARAM lParam) override;

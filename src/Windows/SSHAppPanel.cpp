@@ -22,31 +22,8 @@ SSHAppPanel::SSHAppPanel(int panelSeqId, int panelrealId)
 
 }
 SSHAppPanel::~SSHAppPanel() {
-    isHandleHasActiveThread();
-    // 关闭所有PuTTY会话
-    {
-        std::lock_guard<std::mutex> lock(_sessionListMtx);
-        for (PuTTYSession* pSess : _sessionList)
-        {
-            if (!pSess) continue;
-            pSess->StopMonitor();
-
-            DWORD exitCode = 0;
-            BOOL bGetExit = ::GetExitCodeProcess(pSess->hProcess, &exitCode);
-            if (bGetExit && exitCode == STILL_ACTIVE && pSess->hMonitorThread != nullptr && WaitForSingleObject(pSess->hMonitorThread, 0) == WAIT_TIMEOUT)
-            {
-               
-                pSess->CleanHandle();
-                continue;
-            }
-            // 5. 释放句柄
-            pSess->CleanHandle();
-            if (!SSH_SettingsGetConfigFileExistPath(pSess->tmpFile).empty())
-                SSH_SettingsDeleteConfigFile(pSess->tmpFile);
-            delete pSess;
-        }
-        _sessionList.clear();
-    }
+    isHandleHasActiveThread();// 关闭所有PuTTY会话
+    
     if (_hToolTip != nullptr)
     {
 		::DestroyWindow(_hToolTip);//因为是子窗口，所以需要手动直接销毁
@@ -90,54 +67,89 @@ DWORD WINAPI SSHAppPanel::MonitorThreadProxy(LPVOID lpParam)
         return 2;
     }
 }
-void SSHAppPanel::CleanInvalidSession()
-{
-    std::lock_guard<std::mutex> lock(_sessionListMtx);
-    std::vector<PuTTYSession*> validList;
 
-    for (PuTTYSession* pSess : _sessionList)
+bool SSHAppPanel::RemoveTerminatedSession(PuTTYSession* pSess)
+{
+    if (!pSess) return false;
+    std::lock_guard<std::mutex> lock(_sessionListMtx);
+    auto it = std::find(_sessionList.begin(), _sessionList.end(), pSess);
+    if (it != _sessionList.end())
     {
-        if (!pSess) continue;
-        DWORD exitCode = 0;
-        BOOL bGetExit = ::GetExitCodeProcess(pSess->hProcess, &exitCode);
-        // 进程存活、线程正常，保留
-        if (bGetExit && exitCode == STILL_ACTIVE && pSess->hMonitorThread != nullptr && WaitForSingleObject(pSess->hMonitorThread, 0) == WAIT_TIMEOUT)
-        {
-            validList.push_back(pSess);
-            continue;
-        }
-        // 失效会话：释放资源+销毁
-        pSess->StopMonitor();
-        pSess->CleanHandle();
-        if (!SSH_SettingsGetConfigFileExistPath(pSess->tmpFile).empty())
-            SSH_SettingsDeleteConfigFile(pSess->tmpFile);
-        delete pSess;
+        _sessionList.erase(it);
+        if (_sessionList.empty()) { this->Set_isConnected(false); }else{ this->Set_isConnected(true); }
+        NppSSH_LogInfoAuto("RemoveTerminatedSession：摘除会话 panelSeqId=" + std::to_string(pSess->panelSeqId));
+        return true;
     }
-    // 替换为仅存活跃会话的列表，彻底清除野指针
-    _sessionList.swap(validList);
+    return false;
 }
 bool SSHAppPanel::isHandleHasActiveThread() {
-    std::lock_guard<std::mutex> lock(_sessionListMtx);
-    if (_isConnected) {
-        int closeResult = ::MessageBoxW(_panelHwnd,
-            L"存在已绑定的Putty窗口，需要给所有Putty窗口发送关闭消息吗？",
-            L"NppSSH 提示",
-            MB_YESNO | MB_ICONWARNING);
-        // 用户取消：拦截关闭，不传递WM_CLOSE给原生窗口
-        if (closeResult == IDYES)
-        {
-            for (PuTTYSession* pSess : _sessionList) {
-                // 强制PuTTY窗口前置，弹窗会显示在桌面顶层，用户可见
+    //std::lock_guard<std::mutex> lock(_sessionListMtx);//加锁会和WaitForSingleObject死锁
+    for (PuTTYSession* pSess : _sessionList) {
+        if (!pSess) continue;
+        //DWORD exitCode = 0;
+        //BOOL bGetExit = ::GetExitCodeProcess(pSess->hProcess, &exitCode);
+        //(还没要求退出 || PuTTY进程已死掉) || (监控线程不是仍然活着)
+        //if (!bGetExit || exitCode != STILL_ACTIVE){
+        //if (!pSess->stopFlag.load(std::memory_order_acquire)) {
+        DWORD pid = GetProcessId(pSess->hProcess);
+        bool hasWnd = pSess->FindPuTTYWindowByPid(pid, pSess->hWnd);
+        if (hasWnd) {
+            std::wstring closeMsg = L"面板【NppSSH-" + std::to_wstring(_panelrealId) + L"】存在已绑定的Putty窗口，是否给当前面板所有Putty窗口发送关闭消息？";
+            int closeResult = ::MessageBoxW(_panelHwnd,
+                closeMsg.c_str(),
+                L"NppSSH 提示",
+                MB_YESNO | MB_ICONWARNING);
+            // 用户取消：拦截关闭，不传递WM_CLOSE给原生窗口
+            if (closeResult == IDYES)
+            {
                 ::SetForegroundWindow(pSess->hWnd);
                 ::BringWindowToTop(pSess->hWnd);
-
-                // 异步投递关闭消息，主线程立刻返回，不会卡死NPP
                 ::PostMessageW(pSess->hWnd, WM_CLOSE, 0, 0);
-                NppSSH_LogInfoAuto("异步投递WM_CLOSE消息至PuTTY窗口，不阻塞主线程");
+                NppSSH_LogInfoAuto("执行【SSHAppPanel】析构函数，异步投递WM_CLOSE消息至PuTTY窗口，不阻塞主线程");
             }
         }
+        if (!SSH_SettingsGetConfigFileExistPath(pSess->tmpFile).empty())
+        {
+            SSH_SettingsDeleteConfigFile(pSess->tmpFile);
+            NppSSH_LogInfoAuto("执行【SSHAppPanel】析构函数，会话临时脚本文件删除成功：" + WStringToLogStr(pSess->tmpFile));
+        }
+        if (pSess->hMonitorThread != nullptr) {
+            
+            NppSSH_LogInfoAuto("执行【SSHAppPanel】析构函数停止PuTTY监控线程");
+            //pSess->StopMonitor();NppSSH_LogInfoAuto("执行【SSHAppPanel】析构函数停止PuTTY监控线程");
+            pSess->stopFlag.store(true, std::memory_order_release);
+            pSess->cv.notify_all();
+            DWORD waitRet = ::WaitForSingleObject(pSess->hMonitorThread, 1500);// 有限等待，最多1500ms，让进程自己结束，避免残留
+            if (waitRet == WAIT_OBJECT_0)
+            {
+                NppSSH_LogInfoAuto("【SSHAppPanel】析构函数，监控线程正常退出");
+            }
+            else if (waitRet == WAIT_TIMEOUT)
+            {
+                // 超时兜底：线程卡死，强制杀死（尽量少走到这里）
+                NppSSH_LogInfoAuto("【SSHAppPanel】析构函数，监控线程等待超时，强制TerminateThread兜底");
+                ::TerminateThread(pSess->hMonitorThread, 0);
+            }
+            //CloseHandle(pSess->hMonitorThread);
+        }
     }
+    _sessionList.clear();
     return _isConnected;
+}
+
+bool SSHAppPanel::hasConnection() {
+    bool hasConnection = false;
+    std::lock_guard<std::mutex> lock(_sessionListMtx);
+    for (PuTTYSession* pSess : _sessionList) {
+        // 初始化时候窗口自己关闭，不要判断
+        // 初始化时候窗口没有自己关闭，只是没有加载到，要重试一次才能找到，并没有关闭，要判断到。
+        DWORD pid = GetProcessId(pSess->hProcess);
+        if (pSess->FindPuTTYWindowByPid(pid, pSess->hWnd)) { 
+            hasConnection = true;
+            break; 
+        }
+    }
+    return hasConnection;
 }
 INT_PTR CALLBACK SSHAppPanel::run_dlgProc(UINT message, WPARAM wParam, LPARAM lParam) {
 
@@ -256,9 +268,10 @@ INT_PTR CALLBACK SSHAppPanel::run_dlgProc(UINT message, WPARAM wParam, LPARAM lP
             CloseSoftWare();
         }
         else if (cmd == IDC_BTN_PUTTYTOP_SSH) {
-            NppSSH_LogInfoAuto("用户点击面板置顶Putty按钮" + std::to_string(this->_panelSeqId));
+            //NppSSH_LogInfoAuto("用户点击面板置顶Putty按钮" + std::to_string(this->_panelSeqId));
             _winTopState = !_winTopState;
             //if (_isConnected) { }
+            std::lock_guard<std::mutex> lock(_sessionListMtx);
             for (PuTTYSession* pSess : _sessionList) {
                 pSess->isWindowTop = _winTopState;
                 windowTopBtnHandle(pSess->hWnd, _winTopState);
@@ -917,7 +930,6 @@ bool SSHAppPanel::SSHAppPanel_PuttyLoginHandle(std::wstring host, std::wstring p
         return false;
     }
 
-    CleanInvalidSession();
     // ===== 新建独立会话 =====
     PuTTYSession* pNewSess = new PuTTYSession(_panelSeqId);
     pNewSess->hProcess = pi.hProcess;
@@ -949,54 +961,19 @@ void SSHAppPanel::CloseSoftWare() {
         NppSSH_LogInfoAuto("关闭所有会话：无活跃会话");
         return;
     }
-    std::vector<PuTTYSession*> validList;
-    for (PuTTYSession* pSess : _sessionList)
-    {
-        if (!pSess) continue;
-        //pSess->StopMonitor();
-        DWORD exitCode = 0;
-        BOOL bGetExit = ::GetExitCodeProcess(pSess->hProcess, &exitCode);
-        if (!bGetExit || exitCode != STILL_ACTIVE) {
-            ::MessageBoxW(_panelHwnd, L"PuTTY已自行关闭", L"NppSSH 提示", MB_OK | MB_ICONINFORMATION);
-            NppSSH_LogInfoAuto("PuTTY进程已提前退出，清理句柄");
-            continue;
-        }
-        // 存活会话保留
-        validList.push_back(pSess);
-        // 优雅关闭PuTTY主窗口（发送WM_CLOSE，等效手动点叉）
-        if (pSess->hWnd != NULL)
-        {
-            // 强制PuTTY窗口前置，弹窗会显示在桌面顶层，用户可见
-            ::SetForegroundWindow(pSess->hWnd);
+    for (PuTTYSession* pSess : _sessionList) {
+		if (!pSess) continue;
+        NppSSH_LogInfoAuto("pSess没跳过");
+        if (pSess->hWnd != NULL) {
+            //::MessageBoxW(_panelHwnd, L"发送WM_CLOSE消息", L"NppSSH 提示", MB_OK | MB_ICONINFORMATION);
+            ::SetForegroundWindow(pSess->hWnd);            // 强制PuTTY窗口前置，弹窗会显示在桌面顶层，用户可见
             ::BringWindowToTop(pSess->hWnd);
-            //NppSSH_LogInfoAuto("已将PuTTY窗口置顶");
-
-            // 异步投递关闭消息，主线程立刻返回，不会卡死NPP
-            ::PostMessageW(pSess->hWnd, WM_CLOSE, 0, 0);
+            ::PostMessageW(pSess->hWnd, WM_CLOSE, 0, 0);// 优雅关闭PuTTY主窗口（发送WM_CLOSE，等效手动点叉）
+            // ::TerminateProcess(pSess->hProcess, 0);//强制结束进程
             NppSSH_LogInfoAuto("异步投递WM_CLOSE消息至PuTTY窗口，不阻塞主线程");
         }
-        else
-        {
-            // 找不到窗口，弹出确认框，用户确认后才强制终止
-            int closeResult = ::MessageBoxW(_panelHwnd,
-                L"未找到PuTTY可视窗口，进程仍在后台运行。\n是否确认强制终止Putty进程？",
-                L"NppSSH 提示",
-                MB_YESNO | MB_ICONWARNING);
-
-            if (closeResult == IDYES)
-            {
-                ::TerminateProcess(pSess->hProcess, 0);
-                NppSSH_LogInfoAuto("用户确认强制终止PuTTY进程");
-            }
-            else
-            {
-                NppSSH_LogInfoAuto("用户取消强制终止，放弃关闭PuTTY");
-                continue; // 用户选NO，直接退出函数，不清理句柄
-            }
-        }
     }
-    _sessionList.swap(validList);
-    NppSSH_LogInfoAuto("全部PuTTY会话清理完毕");
+    NppSSH_LogInfoAuto("全部PuTTY会话发送关闭消息完毕");
 }
 
 void SSHAppPanel::UpdateWinTopBtnUI_FromMemState()
@@ -1024,7 +1001,7 @@ void SSHAppPanel::UpdateWinTopBtnUI_FromMemState()
     UpdateToolTipMessage(_hBtnWinTop, tipText);// 更新按钮提示文字
 }
 
-bool PuTTYSession::FindPuTTYWindowByPid(DWORD pid, HWND& outHwnd) const
+bool PuTTYSession::FindPuTTYWindowByPid(DWORD pid, HWND& outHwnd)
 {
     outHwnd = NULL;
     struct EnumWinParam
@@ -1055,22 +1032,16 @@ bool PuTTYSession::FindPuTTYWindowByPid(DWORD pid, HWND& outHwnd) const
     if (outHwnd != NULL) {
         pPanel->Set_isConnected(true);
     }
-    else {
-        pPanel->Set_isConnected(false);
-    }
     return outHwnd != NULL;
 }
 
-// 头文件声明 static DWORD WINAPI PuTTYSessionMonitor(LPVOID lp);
 DWORD WINAPI PuTTYSession::PuTTYSessionMonitor()
 {
-    //PuTTYSession* pSess = reinterpret_cast<PuTTYSession*>(lp);
-    NppSSH_LogInfoAuto("新建PuTTY会话监控线程启动");
-
+    stopFlag.store(false, std::memory_order_release);
     const int MAX_SEACH_FIND_WAIT_MS = 1000;
     const int MAX_DELECT_WAIT_MS = 2000;
-    int flag = 0;
-
+    
+    int initFindNum = 0;
     // 阶段1：循环查找窗口
     while (!this->stopFlag.load(std::memory_order_acquire))
     {
@@ -1079,74 +1050,82 @@ DWORD WINAPI PuTTYSession::PuTTYSessionMonitor()
             if (this->cv.wait_for(lock, std::chrono::milliseconds(MAX_SEACH_FIND_WAIT_MS),
                 [this]() { return this->stopFlag.load(std::memory_order_acquire); }))
             {
-                NppSSH_LogInfoAuto("会话监控：收到停止信号退出阶段1");
+                NppSSH_LogInfoAuto("【会话监控】：收到停止信号退出阶段1");
                 goto THREAD_CLEAN;
             }
         }
-        flag++;
+        initFindNum++;
         DWORD pid = GetProcessId(this->hProcess);
         char pidLog[128] = { 0 };
-        sprintf_s(pidLog, "会话PID=%lu 第%d次查找窗口", pid, flag);
+        sprintf_s(pidLog, "会话PID=%lu 第%d次查找窗口", pid, initFindNum);
         NppSSH_LogInfoAuto(pidLog);
 
-        bool hasWnd = FindPuTTYWindowByPid(pid, this->hWnd);
+        bool hasWnd = FindPuTTYWindowByPid(pid, this->hWnd);//前面等待期间直接停止，未能触发修改连接状态
         if (hasWnd){
             if(isWindowTop)windowTopBtnHandle(this->hWnd, isWindowTop);
-            NppSSH_LogInfoAuto("成功捕获PuTTY窗口，进入阶段2等待删除临时文件");
+            NppSSH_LogInfoAuto("【会话监控】：阶段1成功捕获PuTTY窗口");
+            break;
+        }
+        if (initFindNum >= 3) {
+            stopFlag.store(true, std::memory_order_release);
+            //兜底3次没有找到窗口，自动结束
+            NppSSH_LogInfoAuto("3次重试，失败捕获PuTTY窗口，进入阶段2等待删除临时文件");
             break;
         }
     }
-
     // 阶段2：等待后删除临时脚本
-    {
-        std::unique_lock<std::mutex> lock(this->mtx);
-        if (this->cv.wait_for(lock, std::chrono::milliseconds(MAX_DELECT_WAIT_MS),
-            [this]() { return this->stopFlag.load(std::memory_order_acquire); }))
-        {
-            NppSSH_LogInfoAuto("会话监控：阶段2收到停止信号");
-            if (!SSH_SettingsGetConfigFileExistPath(this->tmpFile).empty())
-                SSH_SettingsDeleteConfigFile(this->tmpFile);
-            goto THREAD_CLEAN;
-        }
-    }
     if (!SSH_SettingsGetConfigFileExistPath(this->tmpFile).empty())
     {
         SSH_SettingsDeleteConfigFile(this->tmpFile);
-        NppSSH_LogInfoAuto("会话临时脚本文件删除成功：" + WStringToLogStr(this->tmpFile));
+        NppSSH_LogInfoAuto("【会话监控】：阶段2,会话临时脚本文件删除成功：" + WStringToLogStr(this->tmpFile));
     }
 
     // 阶段3：持续监听窗口是否消失（进程关闭）
-    const int MAX_SEACH_WAIT_MS = 1;
+    const int MAX_SEACH_WAIT_MS = 100;//间隔检查一次，不能1s会出现误差
     int retry = 0;
     while (!this->stopFlag.load(std::memory_order_acquire))
     {
+        retry++;
+        DWORD pid = GetProcessId(this->hProcess);
+        bool hasWnd = FindPuTTYWindowByPid(pid, this->hWnd);
+        if (!hasWnd)
+        {
+            NppSSH_LogInfoAuto("PuTTY窗口消失，【会话监控】线程退出");
+            goto THREAD_CLEAN;
+        }
+        
         {
             std::unique_lock<std::mutex> lock(this->mtx);
-            if (this->cv.wait_for(lock, std::chrono::seconds(MAX_SEACH_WAIT_MS),
+            if (this->cv.wait_for(lock, std::chrono::milliseconds(MAX_SEACH_WAIT_MS),
                 [this]() { return this->stopFlag.load(std::memory_order_acquire); }))
             {
-                NppSSH_LogInfoAuto("会话监控：阶段3收到停止信号");
+                NppSSH_LogInfoAuto("【会话监控】：阶段3收到停止信号");
                 goto THREAD_CLEAN;
             }
         }
-        retry++;
-        DWORD pid = GetProcessId(this->hProcess);
-        FindPuTTYWindowByPid(pid, this->hWnd);
-        if (this->hWnd == NULL)
-        {
-            NppSSH_LogInfoAuto("PuTTY窗口消失，会话监控线程退出");
-            goto THREAD_CLEAN;
-        }
+        
     }
 THREAD_CLEAN:
-    //_isConnected = false;
-    this->CleanHandle();
-    this->stopFlag.store(true, std::memory_order_release);
-    NppSSH_LogInfoAuto("单个PuTTY会话监控线程正常结束");
+    //this->stopFlag.store(true, std::memory_order_release);
+    //if (!SSH_SettingsGetConfigFileExistPath(this->tmpFile).empty())
+    //{
+    //    SSH_SettingsDeleteConfigFile(this->tmpFile);
+    //    NppSSH_LogInfoAuto("会话临时脚本文件删除成功：" + WStringToLogStr(this->tmpFile));
+    //}
+    
+    NppSSH_LogInfoAuto("【会话监控】：单个PuTTY会话监控线程正常结束");
+    SSHAppPanel* pPanel = SSH_PanelVecBySeqIdGetSSHBtnPanel(panelSeqId);
+    if (pPanel != nullptr) {
+        isNeedDelete = pPanel->RemoveTerminatedSession(this);
+    }
+    if (isNeedDelete)
+    {
+        NppSSH_LogInfoAuto("【会话监控】：监控线程会话已终止，执行删除");
+        // 摘除完成，容器已经没有该指针，现在可以安全delete this
+        delete this;
+    }
     return 0;
 }
-
-
 
 // 设置指定面板永久置顶
 void windowTopBtnHandle(HWND hWnd, bool isWinTop) {
@@ -1158,10 +1137,6 @@ void windowTopBtnHandle(HWND hWnd, bool isWinTop) {
             0, 0, 0, 0,
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
         );
-        // 强制PuTTY窗口前置，弹窗会显示在桌面顶层，用户可见
-        //::BringWindowToTop(pSess->hWnd);
-
-        //NppSSH_LogInfoAuto("已将PuTTY窗口永久置顶");
     }
     else {
         ::SetForegroundWindow(hWnd);
@@ -1171,9 +1146,6 @@ void windowTopBtnHandle(HWND hWnd, bool isWinTop) {
             0, 0, 0, 0,
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
         );
-
-        //NppSSH_LogInfoAuto("已取消PuTTY窗口置顶");
-
     }
 }
 

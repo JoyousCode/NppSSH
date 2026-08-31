@@ -189,6 +189,7 @@ LRESULT CALLBACK SSHBasePanel::GlobalTopWndProc(HWND hWnd, UINT msg, WPARAM wPar
     case WM_CLOSE:
     {
         bool hasActiveConn = SSH_PanelVecIsHasConnection();
+        //bool hasActiveConn = false;
         if (hasActiveConn)
         {
             int closeResult = ::MessageBoxW(hWnd,
