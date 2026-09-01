@@ -20,7 +20,7 @@ std::wstring HwndToWString(HWND hWnd);
 
 void CenterWindow(HWND hWndChild, HWND hWndParent);
 std::wstring charToWString(const char* szSrc, UINT codepage = CP_UTF8);
-
+std::string CheckHwndParentChildRelation(HWND hRoot, HWND hTarget);//测试专用，查看句柄之间的关系
 
 // ========== 密码加密辅助函数（Windows CryptProtectData） ==========
 // 加密明文密码，输出base64宽字符串

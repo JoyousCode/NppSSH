@@ -1750,7 +1750,7 @@ bool SSHConnection::CreatePtyChannel() {
     libssh2_channel_free(channel);
     return false;
 }
-bool SSHConnection::Connect(const char* host, int port, const char* user, const char* pass) {
+bool SSHConnection::Connect(const char* host, int port, const char* user, const char* pass, const char* director) {
     //NppSSH_LogInfoAuto("开始进行连接==========1");
 
     if (m_connected.load(std::memory_order_acquire)) {
@@ -1953,8 +1953,27 @@ void SSHConnection::ConnectAsync(const char* host, int port, const char* user, c
     m_connecting.store(false, std::memory_order_release);
 }
 
-bool SSHConnection_Handle(int panelId, const char* host, int port, const char* user, const char* pass) {
+bool SSHConnection_Handle(int panelId, std::wstring host, std::wstring port, std::wstring user, std::wstring pass, std::wstring director) {
     NppSSH_LogInfoAuto("面板="+std::to_string(panelId) +",绑定连接信息");
+    std::string hostUtf8 = WStringToUTF8(host);
+    std::string userUtf8 = WStringToUTF8(user);
+    std::string passUtf8 = WStringToUTF8(pass);
+    std::string directorUtf8 = WStringToUTF8(director);
+    int nPort = -1;
+    try
+    {
+        std::string portUtf8 = WStringToUTF8(port);
+        if (!portUtf8.empty())
+        {
+            long val = std::stol(portUtf8);
+            if (val >= 1 && val <= 65535)
+                nPort = static_cast<int>(val);
+        }
+    }
+    catch (...)
+    {
+        nPort = -1;
+    }
     // 创建/覆盖面板ID对应的连接实例 
     SSHConnection* conn = nullptr;
     {
@@ -1981,7 +2000,7 @@ bool SSHConnection_Handle(int panelId, const char* host, int port, const char* u
     // 第二步：调用Connect（实例锁）
     bool connectResult = false;
     try {
-        connectResult = conn->Connect(host, port, user, pass); // Connect内部已加锁，无需外层锁
+        connectResult = conn->Connect(hostUtf8.c_str(), nPort, userUtf8.c_str(), passUtf8.c_str(), directorUtf8.c_str()); // Connect内部已加锁，无需外层锁
     }
     catch (const std::exception& e) {
         NppSSH_LogErrorAuto("调用Connect异常: " + std::string(e.what()));

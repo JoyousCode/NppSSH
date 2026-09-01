@@ -57,7 +57,7 @@ public:
     ~SSHConnection();
 
     // 核心功能：连接SSH服务器
-    bool Connect(const char* host, int port, const char* user, const char* pass);
+    bool Connect(const char* host, int port, const char* user, const char* pass, const char* director);
     void ConnectAsync(const char* host, int port, const char* user, const char* pass, std::promise<bool> promise);
 
     // 核心功能：断开连接
@@ -263,7 +263,7 @@ private:
 };
 
 // SSH连接操作具体声明
-bool SSHConnection_Handle(int panelId, const char* host, int port, const char* user, const char* pass);
+bool SSHConnection_Handle(int panelId, std::wstring host, std::wstring port, std::wstring user, std::wstring pass, std::wstring director);
 void SSHConnection_OnDisconn(int panelId);
 bool SSHConnection_IsConn(int panelId);
 void SSHConnection_ResetConn(int panelId);

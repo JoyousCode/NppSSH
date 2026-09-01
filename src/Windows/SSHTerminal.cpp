@@ -1421,7 +1421,8 @@ HWND SSHTerminal::InitTerminalEditBox(HWND hParent) {
     // 左边距
     const int LEFT = 5;
     // 上边距（避开按钮栏）
-    const int TOP = iconSize + 12;
+    //const int TOP = iconSize + 12;
+    const int TOP = 24 + 12;
     // 右边距
     const int RIGHT = 10;
     // 底部边距
@@ -1649,7 +1650,8 @@ void SSHTerminal::SizeSSHTerminal(HWND hParent) {//hParent=面板的_hSelf
     // 左边距
     const int LEFT = 5;
     // 上边距（避开按钮栏）
-    const int TOP = iconSize + 12;
+    //const int TOP = iconSize + 12;
+    const int TOP = 24 + 12;
     // 右边距
     const int RIGHT = 10;
     // 底部边距

@@ -1,52 +1,75 @@
 // SSHTermPanel.cpp（面板 + 注册表具体实现）
 #include "SSHTermPanel.h"
 
-static int s_iconSize;
-
 // 标记是否正在连接，避免重复操作
 static std::atomic<bool> s_isConnecting = false;
 
-int& SSHTermPanel_iconSize() { return s_iconSize; }//获取点击连接图标面板索引
-
+//_textColor(RGB(255, 255, 255)),
+//_bgColor(GetSysColor(COLOR_WINDOW)),
+//_fgColor(GetSysColor(COLOR_WINDOWTEXT)),
+//_hBgImage(nullptr),
+//_hStaticPuttyTip(nullptr),
+//_hEditPuttyPath(nullptr),
+//_hBtnSelectFile(nullptr),
+//_strPuttyFullPath(L""),
+//_hBtnPutty(nullptr),
+//_hBtnDestroy(nullptr),
+//_hBtnWinTop(nullptr),
+//_hToolTip(nullptr),
+//_hIconPutty(nullptr),
+//_hIconDestroy(nullptr),
+//_hIconWinTop(nullptr),
+//_winTopState(false),
+//_hIconSelectFile(nullptr),
+//_editLabelFontSize(18) {
 // 面板类构造函数
 SSHTermPanel::SSHTermPanel(int panelSeqId, int panelrealId)
     :
     SSHBasePanel(panelSeqId, panelrealId),
-    _hOutputEdit(NULL),
+    _textColor(RGB(255, 255, 255)),
+    _bgColor(GetSysColor(COLOR_WINDOW)),
+    _fgColor(GetSysColor(COLOR_WINDOWTEXT)),
+    _hBgImage(nullptr),
+    _hEditTerm(NULL),
     _hBtnConnectSSH(NULL),
     _hBtnDisconnectSSH(NULL),
+    _hLoginPanel(NULL),
     _hIconConnect(NULL) ,
     _hIconDisconnect(NULL) {
+
+
 }
 
 // 析构函数：释放图标资源，防止内存泄漏
 SSHTermPanel::~SSHTermPanel() {
-    if (_hIconConnect) ::DestroyIcon(_hIconConnect);
-    if (_hIconDisconnect) ::DestroyIcon(_hIconDisconnect);
-    if (_hTabIcon)  ::DestroyIcon(_hTabIcon);
+    if (_hIconConnect) {
+        ::DestroyIcon(_hIconConnect);
+        _hIconConnect = nullptr;
+    } 
+    if (_hIconDisconnect) {
+        ::DestroyIcon(_hIconDisconnect);
+        _hIconDisconnect = nullptr;
+    }
 }
-// 判断SSH是否连接
-//bool SSHTermPanel::isSSHConnected() const {
-//    return _isSSHConnected;
-//}
 
+void SSHTermPanel::disconnectSSH() {//_isSSHConnected= true表示登录成功
+    if (_isConnected) {      // 调用SSHConnection的断开逻辑
+        setSSHConnected(false); // 统一通过set方法更新状态
+    }
+}
 // 设置SSH是否连接
 void SSHTermPanel::setSSHConnected(bool state) {
-    // 加锁：防止快速断开/重连造成流程混乱、文本被覆盖
-    //if (s_isPanelChangingConnection)
-    //    return;
-    //s_isPanelChangingConnection = true;
     _isConnected = state;
     // 连接状态变化时更新按钮图标状态
     if (_hBtnConnectSSH) ::EnableWindow(_hBtnConnectSSH, !state);
     if (_hBtnDisconnectSSH) ::EnableWindow(_hBtnDisconnectSSH, state);
 
     // 同步更新输出框状态提示
-    if (_hOutputEdit && ::IsWindow(_hOutputEdit)) {
+    if (_hEditTerm && ::IsWindow(_hEditTerm)) {
         if (state) {
             //OnSSHConnected(this->_panelId);         //调用转发SSH连接设置当前面板连接资源
             //TODO 待优化连接成功后的命令执行
-            //::SetWindowTextW(_hOutputEdit, L"输出框状态提示SSH连接成功！/r/n可执行SSH命令...");
+            //::SetWindowTextW(_hEditTerm, L"输出框状态提示SSH连接成功！/r/n可执行SSH命令...");
             //SYSTEMTIME st;
             //GetLocalTime(&st);
             //char currentTime[128];
@@ -64,117 +87,18 @@ void SSHTermPanel::setSSHConnected(bool state) {
         else {
             NppSSH_LogInfoAuto("NppSSH_Disconnect===面板唯一索引=" + std::to_string(this->_panelSeqId));
             SSH_ConnectionOnDisconn(this->_panelSeqId);        //调用转发断开连接释放当前面板连接资源
-            
+
         }
         NppSSH_LogInfoAuto("setSSHConnected==========面板唯一索引======" + std::to_string(this->_panelSeqId));
         //MessageBoxW(g_nppData._nppHandle, (L"当前面板ID==" + std::to_wstring(this->_panelId)).c_str(), L"NppSSH", MB_OK | MB_TASKMODAL);
         //自动滚动到底部
-        DWORD len = ::GetWindowTextLengthW(_hOutputEdit);
-        ::SendMessageW(_hOutputEdit, EM_SETSEL, len, len);
-        ::SendMessageW(_hOutputEdit, EM_SCROLLCARET, 0, 0);
+        DWORD len = ::GetWindowTextLengthW(_hEditTerm);
+        ::SendMessageW(_hEditTerm, EM_SETSEL, len, len);
+        ::SendMessageW(_hEditTerm, EM_SCROLLCARET, 0, 0);
     }
     // 解锁
     //s_isPanelChangingConnection = false;
 }
-
-// 断开当前面板的SSH连接（无提示）
-void SSHTermPanel::disconnectSSH() {//_isSSHConnected= true表示登录成功
-    if (_isConnected) {      // 调用SSHConnection的断开逻辑
-        //NppSSH_Disconnect();    // 调用转发断开连接释放资源
-        //DisconnectPanel(this->_panelId);//通过面板ID断开连接
-        setSSHConnected(false); // 统一通过set方法更新状态
-    }
-}
-
-void SSHTermPanel::resetPanelToInit() {//关闭面板进行销毁时调用
-    disconnectSSH();
-    if (_hOutputEdit && ::IsWindow(_hOutputEdit)) {
-        ::SetWindowTextW(_hOutputEdit, L"✅ NppSSH面板已创建\r\n等待SSH连接...resetPanelToInit");
-        ::SetWindowTextW(_hOutputEdit, L"🔌 SSH已断开\r\n等待新的连接...resetPanelToInit");
-    }
-    // 重置面板时，启用连接SSH按钮（若之前置灰）
-    if (_hBtnConnectSSH) ::EnableWindow(_hBtnConnectSSH, TRUE);
-    if (_hBtnDisconnectSSH) ::EnableWindow(_hBtnDisconnectSSH, FALSE);
-
-    
-    if (_hOutputEdit) {
-        ::SendMessage(_hOutputEdit, EM_SETREADONLY, TRUE, 0);
-    }
-    NppSSH_LogInfoAuto("面板已重置，提示符状态清空");
-}
-
-
-// 加载自定义图标（可以替换为自己的图标 ID）
-HICON SSHTermPanel::LoadCustomIcon(int iconId, int size)
-{
-    // 校验基础参数
-    if (g_hInst == NULL || iconId <= 0 || size <= 0) {
-        ::MessageBoxW(g_nppData._nppHandle, L"图标加载参数无效", L"NppSSH错误", MB_OK | MB_ICONWARNING);
-        return LoadIcon(NULL, IDI_APPLICATION);
-    }
-
-    // 核心：加载图标（移除LR_LOADFROMFILE，使用资源加载）
-    HICON hIcon = (HICON)::LoadImage(
-        g_hInst,                  // 全局插件实例句柄（已初始化）
-        MAKEINTRESOURCE(iconId),  // 图标 ID（IDC_BTN_CONNECT_SSH/IDC_BTN_DISCONNECT_SSH）
-        IMAGE_ICON,               // 资源类型为图标
-        size, size,               // 图标大小
-        LR_DEFAULTCOLOR  // 默认颜色 + 共享资源（避免内存泄漏）
-    );
-    // 兜底：加载失败时返回系统默认图标
-    if (hIcon == nullptr)
-    {
-        wchar_t errMsg[256] = { 0 };
-        swprintf_s(errMsg, L"图标ID:%d 加载失败，错误码:%d", iconId, ::GetLastError());
-        ::MessageBoxW(g_nppData._nppHandle, errMsg, L"NppSSH错误", MB_OK | MB_ICONWARNING);
-        hIcon = LoadIcon(NULL, IDI_APPLICATION);
-    }
-
-    // 持久化到类成员，避免被系统回收
-    if (iconId == IDI_ICON_CONNECT) {
-        if (_hIconConnect) ::DestroyIcon(_hIconConnect); // 释放旧图标
-        _hIconConnect = hIcon;
-    }
-    else if (iconId == IDI_ICON_DISCONNECT) {
-        if (_hIconDisconnect) ::DestroyIcon(_hIconDisconnect); // 释放旧图标
-        _hIconDisconnect = hIcon;
-    }
-    return hIcon;
-    
-}
-// 把按钮变成纯图标模式
-void SSHTermPanel::SetButtonIconOnly(HWND btn, int iconId)
-{
-    if (btn == nullptr || !::IsWindow(btn))
-    {
-        ::MessageBoxW(g_nppData._nppHandle, L"按钮句柄无效", L"NppSSH错误", MB_OK | MB_ICONWARNING);
-        return; // 窗口无效直接返回，避免崩溃
-    }
-
-    // 获取工具栏图标尺寸
-    HICON hIcon = LoadCustomIcon(iconId, _iconSize);//_iconSize=24
-    if (hIcon == NULL) {
-        // 图标加载失败时用系统默认图标（避免报错）
-        hIcon = LoadIcon(NULL, IDI_APPLICATION);
-        ::MessageBoxW(g_nppData._nppHandle, L"图标加载失败，使用默认图标", L"NppSSH提示", MB_OK | MB_ICONWARNING);
-        return;
-    }
-
-    // 先移除所有原有样式，强制设置为纯图标
-    ::SetWindowLongPtrW(btn, GWL_STYLE, WS_VISIBLE | WS_CHILD | BS_ICON | WS_BORDER);
-    ::SetWindowPos(btn, NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED); // 通知样式变更
-    // 设置图标后，强制按钮持有句柄
-    // 设置图标+按钮尺寸（与工具栏完全一致：图标尺寸+4px边距，匹配NPP工具栏按钮）
-    int btnSize = _iconSize + 4;
-    ::SendMessage(btn, BM_SETIMAGE, (WPARAM)IMAGE_ICON, (LPARAM)hIcon);
-    ::SetWindowPos(btn, NULL, 0, 0, btnSize, btnSize, SWP_NOMOVE | SWP_NOZORDER);
-
-    // 双重刷新（确保样式和图标生效）
-    ::InvalidateRect(btn, NULL, TRUE);
-    ::UpdateWindow(btn);
-    ::RedrawWindow(btn, NULL, NULL, RDW_FRAME | RDW_INVALIDATE | RDW_UPDATENOW);
-}
-
 // 当用户修改 Npp 工具栏大小时自动更新
 void SSHTermPanel::UpdateToolbarIconSize()
 {
@@ -184,16 +108,270 @@ void SSHTermPanel::UpdateToolbarIconSize()
         // 读取当前是否启用（TRUE=正常，FALSE=灰色）
         BOOL isEnabled = IsWindowEnabled(_hBtnConnectSSH);
         SetButtonIconOnly(_hBtnConnectSSH, IDI_ICON_CONNECT);
-        // 恢复原来的状态
-        EnableWindow(_hBtnConnectSSH, isEnabled);
+        EnableWindow(_hBtnConnectSSH, isEnabled);// 恢复原来的状态
     }
     if (_hBtnDisconnectSSH && IsWindow(_hBtnDisconnectSSH)) {
         // 读取当前是否启用（TRUE=正常，FALSE=灰色）
         BOOL isEnabled = IsWindowEnabled(_hBtnDisconnectSSH);
         SetButtonIconOnly(_hBtnDisconnectSSH, IDI_ICON_DISCONNECT);
-        // 恢复原来的状态
-        EnableWindow(_hBtnDisconnectSSH, isEnabled);
+        EnableWindow(_hBtnDisconnectSSH, isEnabled);// 恢复原来的状态
     }
+}
+
+// 重写原生run_dlgProc：创建面板内UI，处理窗口消息（纯原生）
+INT_PTR CALLBACK SSHTermPanel::run_dlgProc(UINT message, WPARAM wParam, LPARAM lParam) {
+
+    // 把消息值转宽字符
+    wchar_t msgBuf[64] = { 0 };
+    swprintf_s(msgBuf, L"当前窗口消息值: 0x%04X", message);
+    bool isOk = WM_SETFONT || WM_INITDIALOG || WM_GETDLGCODE || WM_KILLFOCUS || WM_IME_SETCONTEXT || WM_SETFOCUS;
+    char buf[64] = { 0 };
+    sprintf(buf, "0x%04X", message);
+    std::string msgStr(buf);
+    if (!isOk) {
+        //MessageBoxW(GetHwndSelf(), msgBuf, L"NppSSH", MB_OK | MB_TASKMODAL);
+        NppSSH_LogInfoAuto("【拦截run_dlgProc】消息message===" + msgStr);
+    }
+    switch (message) {
+    case WM_ERASEBKGND:
+    {
+        HDC hdc = (HDC)wParam;
+        if (_hBgImage) {
+
+            RECT rcClient;
+            GetClientRect(GetHwndSelf(), &rcClient);
+            HDC hMemDC = CreateCompatibleDC(hdc);
+            HBITMAP hOldBmp = (HBITMAP)SelectObject(hMemDC, _hBgImage);
+
+            // 获取图片原始尺寸
+            BITMAP bmpInfo = { 0 };
+            GetObject(_hBgImage, sizeof(BITMAP), &bmpInfo);
+
+            // 拉伸图片铺满面板窗口
+            StretchBlt(
+                hdc, 0, 0, rcClient.right, rcClient.bottom,
+                hMemDC, 0, 0, bmpInfo.bmWidth, bmpInfo.bmHeight,
+                SRCCOPY
+            );
+
+            SelectObject(hMemDC, hOldBmp);
+            DeleteDC(hMemDC);
+            return TRUE;
+        }
+        RECT rc;
+        ::GetClientRect(GetHwndSelf(), &rc);
+        HBRUSH hBrush = ::CreateSolidBrush(_bgColor);
+        ::FillRect(hdc, &rc, hBrush);
+        ::DeleteObject(hBrush);
+        return TRUE;
+    }
+    case WM_CTLCOLORBTN:
+    case WM_CTLCOLOREDIT:
+    case WM_CTLCOLORSTATIC:
+    {
+        HDC hdc = (HDC)wParam;
+        ::SetTextColor(hdc, _fgColor);
+        ::SetBkMode(hdc, TRANSPARENT);
+        //WHITE_BRUSH    // 白色
+        //    BLACK_BRUSH    // 黑色
+        //    GRAY_BRUSH     // 灰色
+        //    LTGRAY_BRUSH   // 浅灰
+        //    NULL_BRUSH     // 透明空画刷（适配背景图必备）
+        //return (LRESULT)::GetStockObject(WHITE_BRUSH);
+        // 静态文字：返回空画刷，直接透明
+        if (message == WM_CTLCOLORSTATIC)
+        {
+            return (LRESULT)::GetStockObject(NULL_BRUSH);
+        }
+        else
+        {
+            return (LRESULT)::GetStockObject(WHITE_BRUSH);
+        }
+    }
+
+    case WM_INITDIALOG:
+    {
+        if (!GetHwndSelf()) {
+            NppSSH_LogErrorAuto("面板窗口句柄无效！");
+            ::MessageBox(NULL, TEXT("面板窗口句柄无效！"), TEXT("NppSSH错误提示"), MB_OK | MB_ICONERROR);
+            return FALSE;
+        }
+        return TRUE;
+    }
+    // 面板大小变化时，自动适配输出文本框（防止遮挡/空白）（最小化关闭/打开notepad++会自动触发）
+    case WM_SIZE:
+    {
+        UINT sizeType = (UINT)wParam;
+        int nClientW = LOWORD(lParam);
+        int nClientH = HIWORD(lParam);
+
+        if (sizeType == SIZE_MINIMIZED || nClientW <= 0 || nClientH <= 0)
+            break;
+        SetProp(_hEditTerm, L"NppSSH_PanelW", (HANDLE)(LONG_PTR)nClientW);
+        SetProp(_hEditTerm, L"NppSSH_PanelH", (HANDLE)(LONG_PTR)nClientH);
+
+        // 只负责重置定时器
+        SetTimer(GetHwndSelf(), TIMER_ID_RESIZE_PTY, 200, nullptr);
+        //NppSSH_LogInfoAuto("WM_SIZE 面板新尺寸 -> 宽度:" + std::to_string(nClientW)
+            //+ "  高度:" + std::to_string(nClientH));
+
+        if (GetHwndSelf() && ::IsWindow(GetHwndSelf()) && _hEditTerm && ::IsWindow(_hEditTerm))
+        {
+            //::MessageBoxW(g_nppData._nppHandle, L"SSH面板变化", L"NppSSH提示", MB_OK | MB_ICONINFORMATION);
+            SSH_TerminalResize(GetHwndSelf(), this->_panelSeqId);
+
+            //重绘【整个 SSH 面板】 + 面板里面所有的子控件（包括按钮、编辑框、滚动条等全部子窗口）RDW_ALLCHILDREN = 把面板里所有子控件全部刷新一遍
+            ::RedrawWindow(GetHwndSelf(), NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);// 刷新整个面板 + 所有子控件（解决最大化/还原/遮挡BUG）
+        }
+        return TRUE;
+    }
+    case WM_TIMER:
+    {
+        if (wParam == TIMER_ID_RESIZE_PTY)
+        {
+            KillTimer(GetHwndSelf(), TIMER_ID_RESIZE_PTY);
+            SendMessageW(_hEditTerm, WM_USER_RESIZE_PTY, 0, 0);
+        }
+        break;
+    }
+    // 处理按钮点击消息
+    case WM_COMMAND:
+    {
+        UINT cmd = LOWORD(wParam);
+        HWND hCtrl = (HWND)lParam;
+        if (cmd == IDC_BTN_CONNECT_SSH) {
+            NppSSH_LogInfoAuto("用户点击面板连接按钮，显示登录对话框");
+            //ShowSSHLoginWindow_Modal();
+            SSHLoginModal input{};
+            SSH_LoginModalWindowsModal(&input);
+            if (input.bOk) {
+                bool ok = SSH_ConnectionHandle(_panelSeqId, input.szHost, input.szPort, input.szUser, input.szPass, input.szDir);
+                if (ok) {
+                    MessageBoxW(_panelHwnd, L"SSH 连接成功 ✅", L"NppSSH", MB_OK | MB_TASKMODAL);
+                    setSSHConnected(true);//更新面板显示效果，绑定面板ID和session
+                }
+                else {
+                    MessageBoxW(_panelHwnd, L"SSH 连接失败 ✅", L"NppSSH", MB_OK | MB_TASKMODAL);
+                }
+                //bool result = SSHAppPanel_PuttyLoginHandle(input.szHost, input.szPort, input.szUser, input.szPass, input.szDir);
+            }
+        }
+        else if (cmd == IDC_BTN_DISCONNECT_SSH) {
+            NppSSH_LogInfoAuto("用户点击面板断开按钮" + std::to_string(this->_panelSeqId));
+            if (_isConnected) {
+                disconnectSSH(); // 断开连接
+            }
+        }
+        break;
+    }
+    // 响应NPP停靠管理器的浮动/停靠消息，更新面板状态
+    case WM_NOTIFY:
+    {
+        //std::string infoCheck = CheckHwndParentChildRelation(_panelHwnd,g_nppData._nppHandle);
+        //NppSSH_LogInfoAuto(infoCheck);
+        //char buf[64] = { 0 };
+        //sprintf(buf, "0x%04X", message);
+        //std::string msgStr(buf);
+        //NppSSH_LogInfoAuto("【run_dlgProc】消息message===" + msgStr);
+
+        LPNMHDR pnmh = reinterpret_cast<LPNMHDR>(lParam);
+        // 存储hwndFrom、idFrom、code日志
+        char bufNMHDR[128] = { 0 };
+        sprintf(bufNMHDR,
+            "hwndFrom=0x%p, idFrom=%llu, code=0x%04X(%u)",
+            pnmh->hwndFrom,
+            (unsigned long long)pnmh->idFrom,
+            pnmh->code,
+            pnmh->code
+        );
+        //NppSSH_LogInfoAuto("【NMHDR】" + std::string(bufNMHDR));
+        // 提前预存关闭确认结果，避免在case内部模态阻塞
+        int closeResult = IDNO;
+        bool isCloseNotify = false;
+        // 1.消息来源是面板：全部放行，交给编辑框子类处理
+        if (pnmh->hwndFrom == g_nppData._nppHandle && pnmh->code == DMN_CLOSE)
+        {
+            NppSSH_LogInfoAuto("面板【准备】关闭，当前连接状态：" + std::to_string(_isConnected) + "【触发关闭，执行断开】" + std::string(bufNMHDR));
+            const bool bHasActiveConn = this->Get_isConnected();
+
+            // 检查当前面板是否有活跃SSH连接
+            if (bHasActiveConn)
+            {
+                this->disconnectSSH();   // 断开连接
+                this->display(false);//准备销毁，先隐藏防止不完整的面板出现影响效果
+            }
+            SendMessageW(GetHwndSelf(), WM_CLOSE, wParam, lParam);
+        }
+
+        // 2.消息来源是Terminal富文本：全部放行，交给编辑框子类处理
+        if (pnmh->hwndFrom == this->_hEditTerm)
+        {
+            //NppSSH_LogInfoAuto("父转发Terminal通知 code:" + std::to_string(pnmh->code));
+            SendMessageW(_hEditTerm, WM_NOTIFY, wParam, lParam);
+        }
+        return TRUE;
+    }
+    // 面板关闭：原生NPP消息，自动清理资源，无内存泄漏
+    case WM_CLOSE:
+    {
+        NppSSH_LogInfoAuto("SSH_Panel面板【开始】关闭，当前连接状态：" + std::to_string(_isConnected));
+        // 从NPP原生停靠管理器移除面板
+        ::SendMessage(g_nppData._nppHandle, NPPM_MODELESSDIALOG, MODELESSDIALOGREMOVE, (LPARAM)getHSelf());
+        ::SendMessage(g_nppData._nppHandle, NPPM_DMMHIDE, 0, (LPARAM)getHSelf());
+        SSH_PanelVecBySeqIdRemove(_panelSeqId, _panelrealId);
+        return TRUE;
+    }
+
+    // 工具栏图标大小变化时更新按钮图标
+    case NPPN_TOOLBARICONSETCHANGED: // (暂时废除)
+    {
+        UpdateToolbarIconSize();
+        return TRUE;
+    }
+
+    // 其他所有消息，交给DockingDlgInterface原生处理（避免NPP异常）
+    default:
+        return DockingDlgInterface::run_dlgProc(message, wParam, lParam);
+    }
+    return DockingDlgInterface::run_dlgProc(message, wParam, lParam);
+}
+// 重写背景色
+void SSHTermPanel::setBackgroundColor(COLORREF color)
+{
+    _bgColor = color;
+    // 刷新面板，触发WM_ERASEBKGND、WM_PAINT重绘
+    ::InvalidateRect(GetHwndSelf(), nullptr, TRUE);
+}
+// 重写前景文字色
+void SSHTermPanel::setForegroundColor(COLORREF color)
+{
+    _fgColor = color;
+    ::InvalidateRect(GetHwndSelf(), nullptr, TRUE);
+}
+// 面板初始化：纯原生接口
+void SSHTermPanel::initPanel() {
+    bool isDockDataInitialized = initDockData();
+    if (!isDockDataInitialized && !::IsWindow(_panelHwnd)) {
+        NppSSH_LogInfoAuto("面板停靠数据初始化失败！");
+        return;
+    }
+    createTopButtonBar();               // 调用创建顶部按钮栏
+
+    // TODO：出现BUG，序列不是按照顺序的，需要将伪终端面板封装到面板类中 (待开发，直接在SSHTermPanel类中创建伪终端编辑器对象)
+    _hEditTerm = SSH_TerminalInitControlPanel(GetHwndSelf(), _panelSeqId);
+    if (!_hEditTerm) {
+        ::MessageBoxW(g_nppData._nppHandle, L"NPP插件环境_hEditTerm初始化失败！", L"NppSSH调试提示", MB_OK);
+    }
+    SSH_TerminalAppendTextHandle(_panelSeqId, "✅NppSSH面板已创建\r\n等待SSH连接...");
+
+    char bufSelf[64] = { 0 };
+    sprintf(bufSelf, "_panelHwnd(GetHwndSelf())=0x%p", _panelHwnd);
+    NppSSH_LogInfoAuto(bufSelf);
+    bool isSubclass = GlobalSubclassTopWnd(); //挂载子类化
+
+    // 日志记录（调试/排查）
+    NppSSH_LogInfoAuto("面板初始化完成 [序列ID: " + std::to_string(_panelSeqId) + "]");
+    NppSSH_LogInfoAuto("面板初始化完成 [标题ID: " + std::to_string(_panelrealId) + "]");
 }
 // 创建顶部按钮栏（去掉文字，直接设为图标）
 void SSHTermPanel::createTopButtonBar() {
@@ -245,7 +423,7 @@ void SSHTermPanel::createTopButtonBar() {
     else {
         ::MessageBoxW(g_nppData._nppHandle, L"连接按钮创建失败", L"NppSSH错误", MB_OK | MB_ICONWARNING);
     }
-    
+
     if (_hBtnDisconnectSSH) {
         SetButtonIconOnly(_hBtnDisconnectSSH, IDI_ICON_DISCONNECT);
         ::EnableWindow(_hBtnDisconnectSSH, FALSE);// 初始状态：断开按钮置灰
@@ -254,58 +432,128 @@ void SSHTermPanel::createTopButtonBar() {
         ::MessageBoxW(g_nppData._nppHandle, L"断开按钮创建失败", L"NppSSH错误", MB_OK | MB_ICONWARNING);
     }
 }
+// 把按钮变成纯图标模式
+void SSHTermPanel::SetButtonIconOnly(HWND btn, int iconId)
+{
+    if (btn == nullptr || !::IsWindow(btn))
+    {
+        ::MessageBoxW(g_nppData._nppHandle, L"按钮句柄无效", L"NppSSH错误", MB_OK | MB_ICONWARNING);
+        return; // 窗口无效直接返回，避免崩溃
+    }
 
-// 面板初始化：纯原生接口
-void SSHTermPanel::initPanel() {
-    bool isDockDataInitialized = initDockData();
-    if (!isDockDataInitialized && !::IsWindow(_panelHwnd)) {
-        NppSSH_LogInfoAuto("面板停靠数据初始化失败！");
+    // 获取工具栏图标尺寸
+    HICON hIcon = LoadCustomIcon(iconId, _iconSize);//_iconSize=24
+    if (hIcon == NULL) {
+        // 图标加载失败时用系统默认图标（避免报错）
+        hIcon = LoadIcon(NULL, IDI_APPLICATION);
+        ::MessageBoxW(g_nppData._nppHandle, L"图标加载失败，使用默认图标", L"NppSSH提示", MB_OK | MB_ICONWARNING);
         return;
     }
-    createTopButtonBar();               // 调用创建顶部按钮栏
-    
 
-    s_iconSize = _iconSize;
-    // TODO：出现BUG，序列不是按照顺序的，需要将伪终端面板封装到面板类中 (待开发，直接在SSHTermPanel类中创建伪终端编辑器对象)
-    //_hOutputEdit = SSH_TerminalInitControlPanel(GetHwndSelf(), _panelSeqId);
-    //if (!_hOutputEdit) {
-    //    ::MessageBoxW(g_nppData._nppHandle, L"NPP插件环境_hOutputEdit初始化失败！", L"NppSSH调试提示", MB_OK);
-    //}
-    //SSH_TerminalAppendTextHandle(_panelSeqId, "✅NppSSH面板已创建\r\n等待SSH连接...");
-    
-    char bufSelf[64] = { 0 };
-    sprintf(bufSelf, "_panelHwnd(GetHwndSelf())=0x%p", _panelHwnd);
-    NppSSH_LogInfoAuto(bufSelf);
-    bool isSubclass = GlobalSubclassTopWnd(); //挂载子类化
+    // 先移除所有原有样式，强制设置为纯图标
+    ::SetWindowLongPtrW(btn, GWL_STYLE, WS_VISIBLE | WS_CHILD | BS_ICON | WS_BORDER);
+    ::SetWindowPos(btn, NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED); // 通知样式变更
+    // 设置图标后，强制按钮持有句柄
+    // 设置图标+按钮尺寸（与工具栏完全一致：图标尺寸+4px边距，匹配NPP工具栏按钮）
+    int btnSize = _iconSize + 4;
+    ::SendMessage(btn, BM_SETIMAGE, (WPARAM)IMAGE_ICON, (LPARAM)hIcon);
+    ::SetWindowPos(btn, NULL, 0, 0, btnSize, btnSize, SWP_NOMOVE | SWP_NOZORDER);
 
-    // 日志记录（调试/排查）
-    NppSSH_LogInfoAuto("面板初始化完成 [序列ID: " + std::to_string(_panelSeqId) + "]");
-    NppSSH_LogInfoAuto("面板初始化完成 [标题ID: " + std::to_string(_panelrealId) + "]");
+    // 双重刷新（确保样式和图标生效）
+    ::InvalidateRect(btn, NULL, TRUE);
+    ::UpdateWindow(btn);
+    ::RedrawWindow(btn, NULL, NULL, RDW_FRAME | RDW_INVALIDATE | RDW_UPDATENOW);
 }
-/////////////////////////////////////////开始处理登录对话框/////////////////////////
-// 窗口居中工具函数
-// hWndChild: 要居中的窗口
-// hWndParent: 父窗口（NPP主窗口）
-//void CenterWindow(HWND hWndChild, HWND hWndParent)
-//{
-//    if (!hWndChild || !hWndParent) return;
-//
-//    RECT rcChild, rcParent;
-//    GetWindowRect(hWndChild, &rcChild);
-//    GetWindowRect(hWndParent, &rcParent);
-//
-//    int cx = (rcParent.right - rcParent.left) - (rcChild.right - rcChild.left);
-//    int cy = (rcParent.bottom - rcParent.top) - (rcChild.bottom - rcChild.top);
-//
-//    SetWindowPos(
-//        hWndChild,
-//        NULL,
-//        rcParent.left + cx / 2,
-//        rcParent.top + cy / 2,
-//        0, 0,
-//        SWP_NOSIZE | SWP_NOZORDER
-//    );
-//}
+
+// 加载自定义图标（可以替换为自己的图标 ID）
+HICON SSHTermPanel::LoadCustomIcon(int iconId, int size)
+{
+    // 校验基础参数
+    if (g_hInst == NULL || iconId <= 0 || size <= 0) {
+        ::MessageBoxW(g_nppData._nppHandle, L"图标加载参数无效", L"NppSSH错误", MB_OK | MB_ICONWARNING);
+        return LoadIcon(NULL, IDI_APPLICATION);
+    }
+
+    // 核心：加载图标（移除LR_LOADFROMFILE，使用资源加载）
+    HICON hIcon = (HICON)::LoadImage(
+        g_hInst,                  // 全局插件实例句柄（已初始化）
+        MAKEINTRESOURCE(iconId),  // 图标 ID（IDC_BTN_CONNECT_SSH/IDC_BTN_DISCONNECT_SSH）
+        IMAGE_ICON,               // 资源类型为图标
+        size, size,               // 图标大小
+        LR_DEFAULTCOLOR  // 默认颜色 + 共享资源（避免内存泄漏）
+    );
+    // 兜底：加载失败时返回系统默认图标
+    if (hIcon == nullptr)
+    {
+        wchar_t errMsg[256] = { 0 };
+        swprintf_s(errMsg, L"图标ID:%d 加载失败，错误码:%d", iconId, ::GetLastError());
+        ::MessageBoxW(g_nppData._nppHandle, errMsg, L"NppSSH错误", MB_OK | MB_ICONWARNING);
+        hIcon = LoadIcon(NULL, IDI_APPLICATION);
+    }
+
+    // 持久化到类成员，避免被系统回收
+    if (iconId == IDI_ICON_CONNECT) {
+        if (_hIconConnect) ::DestroyIcon(_hIconConnect); // 释放旧图标
+        _hIconConnect = hIcon;
+    }
+    else if (iconId == IDI_ICON_DISCONNECT) {
+        if (_hIconDisconnect) ::DestroyIcon(_hIconDisconnect); // 释放旧图标
+        _hIconDisconnect = hIcon;
+    }
+    return hIcon;
+    
+}
+void SSHTermPanel::SetBackgroundImage(const WCHAR* imgPath)
+{
+    // 释放旧图片
+    if (_hBgImage)
+    {
+        DeleteObject(_hBgImage);
+        _hBgImage = NULL;
+    }
+    // GDI+加载任意格式图片
+    _hBgImage = LoadImageByGdiPlus(imgPath);
+    InvalidateRect(GetHwndSelf(), nullptr, TRUE);
+}
+HBITMAP SSHTermPanel::LoadImageByGdiPlus(const WCHAR* filePath)
+{
+    if (!PathFileExistsW(filePath))
+    {
+        NppSSH_LogInfoAuto("图片文件不存在！");
+        return NULL;
+    }
+    Gdiplus::Bitmap* pBitmap = new Gdiplus::Bitmap(filePath);
+    Gdiplus::Status stat = pBitmap->GetLastStatus();
+    if (pBitmap == nullptr || pBitmap->GetLastStatus() != Gdiplus::Ok)
+    {
+        char err[128];
+        sprintf(err, "GDI加载失败，状态码:%d", stat);
+        NppSSH_LogInfoAuto(err);
+        delete pBitmap;
+        return NULL;
+    }
+
+    UINT width = pBitmap->GetWidth();
+    UINT height = pBitmap->GetHeight();
+    HBITMAP hBmp = NULL;
+    HDC hScreenDC = GetDC(NULL);
+
+    // 创建兼容32位位图（支持PNG透明通道）
+    hBmp = CreateCompatibleBitmap(hScreenDC, width, height);
+    HDC hMemDC = CreateCompatibleDC(hScreenDC);
+    HBITMAP hOld = (HBITMAP)SelectObject(hMemDC, hBmp);
+
+    // GDI+绘图到内存DC
+    Gdiplus::Graphics graphics(hMemDC);
+    graphics.DrawImage(pBitmap, 0, 0, width, height);
+
+    // 资源释放
+    SelectObject(hMemDC, hOld);
+    DeleteDC(hMemDC);
+    ReleaseDC(NULL, hScreenDC);
+    delete pBitmap;
+    return hBmp;
+}
 
 // 官方标准模态登录窗口（修复关闭后NPP被置底）
 void SSHTermPanel::ShowSSHLoginWindow_Modal()
@@ -438,7 +686,8 @@ INT_PTR CALLBACK SSHTermPanel::SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM wPa
                 }
                 s_isConnecting = true;
                 NppSSH_LogInfoAuto("用户点击连接按钮，开始调用SSHConnection_Connect");
-                bool ok = SSH_ConnectionHandle(pPanel->Get_panelSeqId(), SSHhost, atoi(port), user, pass);
+                //bool ok = SSH_ConnectionHandle(pPanel->Get_panelSeqId(), SSHhost, atoi(port), user, pass);
+                bool ok = true;
                 s_isConnecting = false;// 异步连接立即重置，避免卡死
                 if (ok) {
                     NppSSH_LogInfoAuto("SSH连接请求已发送，等待异步结果");
@@ -485,7 +734,7 @@ INT_PTR CALLBACK SSHTermPanel::SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM wPa
             RemovePropW(hWnd, L"isPasswordHide");
 
 
-            HWND hEdit = pPanel->GetOutputEditHandle();
+            HWND hEdit = pPanel->GethEditTermHandle();
             if (hEdit && IsWindow(hEdit))
             {
                 // 关键：必须用 PostMessage，不能用 SendMessage
@@ -521,300 +770,6 @@ INT_PTR CALLBACK SSHTermPanel::SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM wPa
     }
 
     return FALSE;
-}
-
-inline std::string CheckHwndParentChildRelation(HWND hRoot, HWND hTarget)
-{
-    if (hRoot == nullptr || hTarget == nullptr)
-        return "无效句柄";
-    if (hRoot == hTarget)
-    {
-        char buf[256]{};
-        sprintf(buf, "0x%p 与 0x%p 是同一个窗口", hRoot, hTarget);
-        return std::string(buf);
-    }
-
-    // 向上遍历父窗口，看 hTarget 是否是 hRoot 的祖先
-    int upCount = 0;
-    HWND hCur = GetParent(hRoot);
-    while (hCur != nullptr)
-    {
-        upCount++;
-        if (hCur == hTarget)
-        {
-            char buf[512]{};
-            sprintf(buf, "0x%p 查找%d次父级找到句柄 0x%p", hRoot, upCount, hTarget);
-            return std::string(buf);
-        }
-        hCur = GetParent(hCur);
-    }
-
-    // 向下递归遍历所有子窗口，统计层级
-    auto FindChildRecursive = [&](auto&& self, HWND parent, int level) -> int
-        {
-            HWND child = GetWindow(parent, GW_CHILD);
-            while (child != nullptr)
-            {
-                if (child == hTarget)
-                    return level;
-                int subLevel = self(self, child, level + 1);
-                if (subLevel != -1)
-                    return subLevel;
-                child = GetWindow(child, GW_HWNDNEXT);
-            }
-            return -1;
-        };
-    int childLevel = FindChildRecursive(FindChildRecursive, hRoot, 1);
-    if (childLevel != -1)
-    {
-        char buf[512]{};
-        sprintf(buf, "0x%p 查找%d次子级找到句柄 0x%p", hRoot, childLevel, hTarget);
-        return std::string(buf);
-    }
-
-    // 既不是父祖先，也不是子后代
-    char buf[512]{};
-    sprintf(buf, "0x%p 和 0x%p 无父子层级关系", hRoot, hTarget);
-    return std::string(buf);
-}
-
-HBITMAP SSHTermPanel::LoadImageByGdiPlus(const WCHAR* filePath)
-{
-    if (!PathFileExistsW(filePath))
-    {
-        NppSSH_LogInfoAuto("图片文件不存在！");
-        return NULL;
-    }
-    Gdiplus::Bitmap* pBitmap = new Gdiplus::Bitmap(filePath);
-    Gdiplus::Status stat = pBitmap->GetLastStatus();
-    if (pBitmap == nullptr || pBitmap->GetLastStatus() != Gdiplus::Ok)
-    {
-        char err[128];
-        sprintf(err, "GDI加载失败，状态码:%d", stat);
-        NppSSH_LogInfoAuto(err);
-        delete pBitmap;
-        return NULL;
-    }
-
-    UINT width = pBitmap->GetWidth();
-    UINT height = pBitmap->GetHeight();
-    HBITMAP hBmp = NULL;
-    HDC hScreenDC = GetDC(NULL);
-
-    // 创建兼容32位位图（支持PNG透明通道）
-    hBmp = CreateCompatibleBitmap(hScreenDC, width, height);
-    HDC hMemDC = CreateCompatibleDC(hScreenDC);
-    HBITMAP hOld = (HBITMAP)SelectObject(hMemDC, hBmp);
-
-    // GDI+绘图到内存DC
-    Gdiplus::Graphics graphics(hMemDC);
-    graphics.DrawImage(pBitmap, 0, 0, width, height);
-
-    // 资源释放
-    SelectObject(hMemDC, hOld);
-    DeleteDC(hMemDC);
-    ReleaseDC(NULL, hScreenDC);
-    delete pBitmap;
-    return hBmp;
-}
-
-/*
-* 面板处理开始
-*/
-// 重写原生run_dlgProc：创建面板内UI，处理窗口消息（纯原生）
-INT_PTR CALLBACK SSHTermPanel::run_dlgProc(UINT message, WPARAM wParam, LPARAM lParam) {
-    
-    // 把消息值转宽字符
-    wchar_t msgBuf[64] = { 0 };
-    swprintf_s(msgBuf, L"当前窗口消息值: 0x%04X", message);
-    bool isOk = WM_SETFONT || WM_INITDIALOG || WM_GETDLGCODE || WM_KILLFOCUS || WM_IME_SETCONTEXT || WM_SETFOCUS;
-    char buf[64] = { 0 };
-    sprintf(buf, "0x%04X", message);
-    std::string msgStr(buf);
-    if (!isOk) {
-        //MessageBoxW(GetHwndSelf(), msgBuf, L"NppSSH", MB_OK | MB_TASKMODAL);
-        NppSSH_LogInfoAuto("【拦截run_dlgProc】消息message===" + msgStr);
-    }
-    switch (message) { 
-    case WM_ERASEBKGND:
-    {
-        HDC hdc = (HDC)wParam;
-        if (m_hBgImage) {
-            
-            RECT rcClient;
-            GetClientRect(GetHwndSelf(), &rcClient);
-            HDC hMemDC = CreateCompatibleDC(hdc);
-            HBITMAP hOldBmp = (HBITMAP)SelectObject(hMemDC, m_hBgImage);
-
-            // 获取图片原始尺寸
-            BITMAP bmpInfo = { 0 };
-            GetObject(m_hBgImage, sizeof(BITMAP), &bmpInfo);
-
-            // 拉伸图片铺满面板窗口
-            StretchBlt(
-                hdc, 0, 0, rcClient.right, rcClient.bottom,
-                hMemDC, 0, 0, bmpInfo.bmWidth, bmpInfo.bmHeight,
-                SRCCOPY
-            );
-
-            SelectObject(hMemDC, hOldBmp);
-            DeleteDC(hMemDC);
-            return TRUE;
-        }
-        RECT rc;
-        ::GetClientRect(GetHwndSelf(), &rc);
-        HBRUSH hBrush = ::CreateSolidBrush(_bgColor);
-        ::FillRect(hdc, &rc, hBrush);
-        ::DeleteObject(hBrush);
-        return TRUE; 
-    }
-    case WM_CTLCOLORBTN:
-    case WM_CTLCOLOREDIT:
-    case WM_CTLCOLORSTATIC:
-    {
-        HDC hdc = (HDC)wParam;
-        ::SetTextColor(hdc, _fgColor);
-        ::SetBkMode(hdc, TRANSPARENT);
-        //WHITE_BRUSH    // 白色
-        //    BLACK_BRUSH    // 黑色
-        //    GRAY_BRUSH     // 灰色
-        //    LTGRAY_BRUSH   // 浅灰
-        //    NULL_BRUSH     // 透明空画刷（适配背景图必备）
-        return (LRESULT)::GetStockObject(WHITE_BRUSH);
-    }
-
-    case WM_INITDIALOG: 
-    {
-        if (!GetHwndSelf()) {
-            NppSSH_LogErrorAuto("面板窗口句柄无效！");
-            ::MessageBox(NULL, TEXT("面板窗口句柄无效！"), TEXT("NppSSH错误提示"), MB_OK | MB_ICONERROR);
-            return FALSE;
-        }
-        return TRUE;
-    }
-    // 面板大小变化时，自动适配输出文本框（防止遮挡/空白）（最小化关闭/打开notepad++会自动触发）
-    case WM_SIZE: 
-    {
-        UINT sizeType = (UINT)wParam;
-        int nClientW = LOWORD(lParam);
-        int nClientH = HIWORD(lParam);
-
-        if (sizeType == SIZE_MINIMIZED || nClientW <= 0 || nClientH <= 0)
-            break;
-        SetProp(_hOutputEdit, L"NppSSH_PanelW", (HANDLE)(LONG_PTR)nClientW);
-        SetProp(_hOutputEdit, L"NppSSH_PanelH", (HANDLE)(LONG_PTR)nClientH);
-
-        // 只负责重置定时器
-        SetTimer(GetHwndSelf(), TIMER_ID_RESIZE_PTY, 200, nullptr);
-        //NppSSH_LogInfoAuto("WM_SIZE 面板新尺寸 -> 宽度:" + std::to_string(nClientW)
-            //+ "  高度:" + std::to_string(nClientH));
-
-        if (GetHwndSelf() && ::IsWindow(GetHwndSelf()) && _hOutputEdit && ::IsWindow(_hOutputEdit))
-        {
-            //::MessageBoxW(g_nppData._nppHandle, L"SSH面板变化", L"NppSSH提示", MB_OK | MB_ICONINFORMATION);
-            SSH_TerminalResize(GetHwndSelf(), this->_panelSeqId);
-
-            //重绘【整个 SSH 面板】 + 面板里面所有的子控件（包括按钮、编辑框、滚动条等全部子窗口）RDW_ALLCHILDREN = 把面板里所有子控件全部刷新一遍
-            ::RedrawWindow(GetHwndSelf(), NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);// 刷新整个面板 + 所有子控件（解决最大化/还原/遮挡BUG）
-        }
-        return TRUE;
-    }
-    case WM_TIMER:
-    {
-        if (wParam == TIMER_ID_RESIZE_PTY)
-        {
-            KillTimer(GetHwndSelf(), TIMER_ID_RESIZE_PTY);
-            SendMessageW(_hOutputEdit,WM_USER_RESIZE_PTY,0,0);
-        }
-        break;
-    }
-    // 处理按钮点击消息
-    case WM_COMMAND: 
-    {
-        UINT cmd = LOWORD(wParam);
-        HWND hCtrl = (HWND)lParam;
-        if (cmd == IDC_BTN_CONNECT_SSH) {
-            NppSSH_LogInfoAuto("用户点击面板连接按钮，显示登录对话框");
-            ShowSSHLoginWindow_Modal();
-        }
-        else if (cmd == IDC_BTN_DISCONNECT_SSH) {
-            NppSSH_LogInfoAuto("用户点击面板断开按钮"+ std::to_string(this->_panelSeqId));
-            if (_isConnected) {
-                disconnectSSH(); // 断开连接
-            }
-        }
-        break;
-    }
-    // 响应NPP停靠管理器的浮动/停靠消息，更新面板状态
-    case WM_NOTIFY: 
-    {
-        //std::string infoCheck = CheckHwndParentChildRelation(_panelHwnd,g_nppData._nppHandle);
-        //NppSSH_LogInfoAuto(infoCheck);
-        //char buf[64] = { 0 };
-        //sprintf(buf, "0x%04X", message);
-        //std::string msgStr(buf);
-        //NppSSH_LogInfoAuto("【run_dlgProc】消息message===" + msgStr);
-
-        LPNMHDR pnmh = reinterpret_cast<LPNMHDR>(lParam);
-        // 存储hwndFrom、idFrom、code日志
-        char bufNMHDR[128] = { 0 };
-        sprintf(bufNMHDR,
-            "hwndFrom=0x%p, idFrom=%llu, code=0x%04X(%u)",
-            pnmh->hwndFrom,
-            (unsigned long long)pnmh->idFrom,
-            pnmh->code,
-            pnmh->code
-        );
-        //NppSSH_LogInfoAuto("【NMHDR】" + std::string(bufNMHDR));
-        // 提前预存关闭确认结果，避免在case内部模态阻塞
-        int closeResult = IDNO;
-        bool isCloseNotify = false;
-        // 1.消息来源是面板：全部放行，交给编辑框子类处理
-        if (pnmh->hwndFrom == g_nppData._nppHandle && pnmh->code == DMN_CLOSE)
-        {
-            NppSSH_LogInfoAuto("面板【准备】关闭，当前连接状态：" + std::to_string(_isConnected)+ "【触发关闭，执行断开】" + std::string(bufNMHDR));
-            const bool bHasActiveConn = this->Get_isConnected();
-
-            // 检查当前面板是否有活跃SSH连接
-            if (bHasActiveConn)
-            {
-                this->disconnectSSH();   // 断开连接
-                this->display(false);//准备销毁，先隐藏防止不完整的面板出现影响效果
-            }
-            SendMessageW(GetHwndSelf(), WM_CLOSE, wParam, lParam);
-        }
-
-        // 2.消息来源是Terminal富文本：全部放行，交给编辑框子类处理
-        if (pnmh->hwndFrom == this->_hOutputEdit)
-        {
-            //NppSSH_LogInfoAuto("父转发Terminal通知 code:" + std::to_string(pnmh->code));
-            SendMessageW(_hOutputEdit, WM_NOTIFY, wParam, lParam);
-        }
-        return TRUE;
-    }
-    // 面板关闭：原生NPP消息，自动清理资源，无内存泄漏
-    case WM_CLOSE: 
-    {
-        NppSSH_LogInfoAuto("SSH_Panel面板【开始】关闭，当前连接状态：" + std::to_string(_isConnected));
-        //SSH_TerminalBySeqIdRemove(_panelSeqId);
-        // 从NPP原生停靠管理器移除面板
-        ::SendMessage(g_nppData._nppHandle, NPPM_MODELESSDIALOG, MODELESSDIALOGREMOVE, (LPARAM)getHSelf());
-        ::SendMessage(g_nppData._nppHandle, NPPM_DMMHIDE, 0, (LPARAM)getHSelf());
-        SSH_PanelVecBySeqIdRemove(_panelSeqId, _panelrealId);
-        return TRUE;
-    }
-    
-    // 工具栏图标大小变化时更新按钮图标
-    case NPPN_TOOLBARICONSETCHANGED: 
-    {
-        UpdateToolbarIconSize();
-        return TRUE;
-    }
-
-    // 其他所有消息，交给DockingDlgInterface原生处理（避免NPP异常）
-    default:
-        return DockingDlgInterface::run_dlgProc(message, wParam, lParam);
-    }
 }
 
 // NPP启动重建面板具体实现

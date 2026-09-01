@@ -167,7 +167,7 @@ void SSH_PanelInitRecreateSSHAppPanel(int panelSeqId, int panelrealId);
 //bool SSH_AppPanelPuttyLoginHandle(int panelSeqId, const char* host, int port, const char* user, const char* pass, const char* director);
 
 // 其他文件调用SSHConnection中的函数
-bool SSH_ConnectionHandle(int panelSeqId,const char* host, int port, const char* user, const char* pass);	// 连接操作
+bool SSH_ConnectionHandle(int panelSeqId, std::wstring host, std::wstring port, std::wstring user, std::wstring pass, std::wstring director);	// 连接操作
 void SSH_ConnectionOnDisconn(int panelSeqId);				// 断开SSH连接
 bool SSH_ConnectionIsConn(int panelSeqId);					// 判断是否连接
 void SSH_ConnectionResetConn(int panelSeqId);				// 重置连接状态（暂未使用）

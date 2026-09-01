@@ -6,99 +6,65 @@ class SSHTermPanel : public SSHBasePanel {
 public:
     SSHTermPanel(int panelSeqId, int panelrealId);
     ~SSHTermPanel() override;
-    // 窗口句柄获取（原有）
-    HWND getHSelf() const { return  GetHwndSelf(); } // 需确保_hSelf已声明
-    // 焦点状态设置
-    void SetFocused(bool focused) { _isFocused = focused; };
-   
-    HWND GetOutputEditHandle() const { return _hOutputEdit; }
-    int getIconSize() { return _iconSize; }
 
-    //bool isSSHConnected() const;
-    void setSSHConnected(bool state);
-    void disconnectSSH();// 断开当前面板的SSH连接
-    void initPanel();// 面板初始化（纯原生接口，无多余字段）
-    //INT_PTR CALLBACK run_dlgProc(UINT message, WPARAM wParam, LPARAM lParam) override;
-    void resetPanelToInit();//面板重置为初始状态（仅清空连接，不销毁）
-    void UpdateToolbarIconSize();
-    HICON LoadCustomIcon(int iconId, int size);
-    void SetButtonIconOnly(HWND btn, int iconId);
-    void OnConnect(HWND hWnd, SSHTermPanel* pPanel);
+    // 面板独有工具封装
+    void disconnectSSH();               // 断开当前面板的SSH连接
+    void setSSHConnected(bool state);   // 设置SSH是否连接
+    HWND GethEditTermHandle() const { return _hEditTerm; }
+    void UpdateToolbarIconSize();       //暂未使用
+    
+    // 必须重写的函数
+    INT_PTR CALLBACK run_dlgProc(UINT message, WPARAM wParam, LPARAM lParam) override;
+    void setBackgroundColor(COLORREF color) override;// 重写背景色
+    void setForegroundColor(COLORREF color) override;// 重写前景文字色
+
+    // 面板独有功能函数
+    void initPanel();                           //初始化面板
+    void createTopButtonBar();                  //初始化创建按钮控件
+    //void createToolTip();                        //初始化创建工具提示(待开发)
+    void SetButtonIconOnly(HWND btn, int iconId);//设置按钮图标
+    HICON LoadCustomIcon(int iconId, int size);//加载自定义图标
+
+    void SetBackgroundImage(const WCHAR* imgPath);// 设置面板背景图片
+    HBITMAP LoadImageByGdiPlus(const WCHAR* filePath);// GDI+加载任意格式图片
     
     // 官方标准模态登录窗口（修复NPP置底）
-    void ShowSSHLoginWindow_Modal();
+    void ShowSSHLoginWindow_Modal();//已经废除
     void setLoginPanel(HWND hLoginPanel) {
         _hLoginPanel = hLoginPanel;
     }
-    HWND getLoginPanel() {
-        return _hLoginPanel;
-    }
-    // 重写背景色
-    void setBackgroundColor(COLORREF color) override
-    {
-        _bgColor = color;
-        // 刷新面板，触发WM_ERASEBKGND、WM_PAINT重绘
-        ::InvalidateRect(GetHwndSelf(), nullptr, TRUE);
-    }
-    // 重写前景文字色
-    void setForegroundColor(COLORREF color) override
-    {
-        _fgColor = color;
-        ::InvalidateRect(GetHwndSelf(), nullptr, TRUE);
-    }
+    //HWND getLoginPanel() {//暂未使用
+    //    return _hLoginPanel;
+    //}
     // 加载位图函数，写在类内，调用时用 this->LoadBackgroundImage
-    HBITMAP LoadBackgroundImage(const wchar_t* filePath)
-    {
-        return (HBITMAP)::LoadImage(
-            NULL,
-            filePath,
-            IMAGE_BITMAP,
-            0, 0,
-            LR_LOADFROMFILE | LR_CREATEDIBSECTION
-        );
-    }
-    HBITMAP LoadImageByGdiPlus(const WCHAR* filePath);
-    // 加载背景图，传入图片完整路径
-    void SetBackgroundImage(const WCHAR* imgPath)
-    {
-        // 释放旧图片
-        if (m_hBgImage)
-        {
-            DeleteObject(m_hBgImage);
-            m_hBgImage = NULL;
-        }
-        // GDI+加载任意格式图片
-        m_hBgImage = LoadImageByGdiPlus(imgPath);
-        InvalidateRect(GetHwndSelf(), nullptr, TRUE);
-    }
-protected://只能被子类用
-    HBITMAP m_hBgImage;
-    COLORREF m_textColor = RGB(255, 255, 255); // 文字白色适配图片
-    COLORREF _bgColor = GetSysColor(COLOR_WINDOW);
-    COLORREF _fgColor = GetSysColor(COLOR_WINDOWTEXT);
-    INT_PTR CALLBACK run_dlgProc(UINT message, WPARAM wParam, LPARAM lParam) override;
-    // 官方对话框过程
-    static INT_PTR CALLBACK SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
-private:
-    void createTopButtonBar();// 创建面板顶部按钮栏
+    //HBITMAP LoadBackgroundImage(const wchar_t* filePath)
+    //{
+    //    return (HBITMAP)::LoadImage(
+    //        NULL,
+    //        filePath,
+    //        IMAGE_BITMAP,
+    //        0, 0,
+    //        LR_LOADFROMFILE | LR_CREATEDIBSECTION
+    //    );
+    //}
 
-    tTbData _dockData;      // 原生停靠数据结构体（需声明）
+private:
+    // 官方对话框过程
+    static INT_PTR CALLBACK SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);//已经废除
+
+    COLORREF _textColor = RGB(255, 255, 255);           // 字体颜色
+    COLORREF _bgColor = GetSysColor(COLOR_WINDOW);      // 背景颜色
+    COLORREF _fgColor = GetSysColor(COLOR_WINDOWTEXT);  // 前景颜色
+    HBITMAP _hBgImage;                                  // 背景图片句柄
     
-    HWND _hOutputEdit;      // 输出编辑框句柄,面板内输出文本框
-    bool _isFocused;        // 标记当前面板是否获焦
+    HWND _hEditTerm;        // 输出编辑框句柄,面板内输出文本框
     HWND _hBtnConnectSSH;   // 连接SSH按钮句柄
     HWND _hBtnDisconnectSSH;// 断开SSH按钮句柄
-    
-    HWND _hLoginPanel;      //登录面板句柄
+    HWND _hLoginPanel;      //登录面板句柄(已废除)
 
     HICON _hIconConnect;    // 持久化连接图标句柄
     HICON _hIconDisconnect; // 持久化断开图标句柄
 
 };
 
-// NPP启动重建面板具体实现
-void SSHTermPanel_InitRecreatePanel(SSHBasePanel* pNewPanel);
-
-// 获取面板索引进行转发
-
-int& SSHTermPanel_iconSize();
+void SSHTermPanel_InitRecreatePanel(SSHBasePanel* pNewPanel);// NPP启动重建面板

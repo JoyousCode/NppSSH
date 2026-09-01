@@ -164,10 +164,23 @@ std::string IntToHexStr(DWORD val) {
 std::string WStringToUTF8(const std::wstring& wstr)
 {
     if (wstr.empty()) return "";
-    int size_needed = WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), NULL, 0, NULL, NULL);
-    std::string strTo(size_needed, 0);
-    WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), &strTo[0], size_needed, NULL, NULL);
-    return strTo;
+    try
+    {
+        int size_needed = WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), NULL, 0, NULL, NULL);
+        if (size_needed <= 0)
+            return "";
+        std::string strTo(size_needed, 0);
+        int ret = WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), &strTo[0], size_needed, NULL, NULL);
+        if (ret <= 0)
+            return "";
+        return strTo;
+    }
+    catch (...)
+    {
+        NppSSH_LogErrorAuto("【工具函数】宽字符转换普通字符失败");
+        return "";
+    }
+
 }
 
 std::wstring HwndToWString(HWND hWnd)
@@ -211,6 +224,61 @@ std::wstring charToWString(const char* szSrc, UINT codepage)
     // 第二步：执行转换
     MultiByteToWideChar(codepage, 0, szSrc, -1, &wResult[0], nWideLen);
     return wResult;
+}
+
+std::string CheckHwndParentChildRelation(HWND hRoot, HWND hTarget)
+{
+    if (hRoot == nullptr || hTarget == nullptr)
+        return "无效句柄";
+    if (hRoot == hTarget)
+    {
+        char buf[256]{};
+        sprintf(buf, "0x%p 与 0x%p 是同一个窗口", hRoot, hTarget);
+        return std::string(buf);
+    }
+
+    // 向上遍历父窗口，看 hTarget 是否是 hRoot 的祖先
+    int upCount = 0;
+    HWND hCur = GetParent(hRoot);
+    while (hCur != nullptr)
+    {
+        upCount++;
+        if (hCur == hTarget)
+        {
+            char buf[512]{};
+            sprintf(buf, "0x%p 查找%d次父级找到句柄 0x%p", hRoot, upCount, hTarget);
+            return std::string(buf);
+        }
+        hCur = GetParent(hCur);
+    }
+
+    // 向下递归遍历所有子窗口，统计层级
+    auto FindChildRecursive = [&](auto&& self, HWND parent, int level) -> int
+        {
+            HWND child = GetWindow(parent, GW_CHILD);
+            while (child != nullptr)
+            {
+                if (child == hTarget)
+                    return level;
+                int subLevel = self(self, child, level + 1);
+                if (subLevel != -1)
+                    return subLevel;
+                child = GetWindow(child, GW_HWNDNEXT);
+            }
+            return -1;
+        };
+    int childLevel = FindChildRecursive(FindChildRecursive, hRoot, 1);
+    if (childLevel != -1)
+    {
+        char buf[512]{};
+        sprintf(buf, "0x%p 查找%d次子级找到句柄 0x%p", hRoot, childLevel, hTarget);
+        return std::string(buf);
+    }
+
+    // 既不是父祖先，也不是子后代
+    char buf[512]{};
+    sprintf(buf, "0x%p 和 0x%p 无父子层级关系", hRoot, hTarget);
+    return std::string(buf);
 }
 
 

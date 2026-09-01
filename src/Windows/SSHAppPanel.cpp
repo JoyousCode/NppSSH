@@ -336,8 +336,6 @@ INT_PTR CALLBACK SSHAppPanel::run_dlgProc(UINT message, WPARAM wParam, LPARAM lP
     }
     return DockingDlgInterface::run_dlgProc(message, wParam, lParam);
 }
-
-
 // 重写背景色
 void SSHAppPanel::setBackgroundColor(COLORREF color) {
     _bgColor = color;

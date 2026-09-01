@@ -17,7 +17,7 @@ static std::vector<SSHBasePanel*> g_SSHPanelVec;//key：序列，每创建一个
 // 全局变量转发（实际定义在SSHTermPanel中）
 NppData& g_nppData = G_NppSSH_nppData();
 HINSTANCE& g_hInst = G_NppSSH_hInst();
-int& iconSize = SSHTermPanel_iconSize();
+//int& iconSize = SSHTermPanel_iconSize();
 bool isSubclassTopWnd = true;
 
 
@@ -232,8 +232,8 @@ void SSH_PanelInitRecreateSSHAppPanel(int panelSeqId, int panelrealId) {//panelS
 
 
 /**************（实际定义在SSHConnection中）***************/
-bool SSH_ConnectionHandle(int panelSeqId,const char* host, int port, const char* user, const char* pass) {
-    return SSHConnection_Handle(panelSeqId,host, port, user, pass);   // SSH连接操作转发
+bool SSH_ConnectionHandle(int panelSeqId, std::wstring host, std::wstring port, std::wstring user, std::wstring pass, std::wstring director) {
+    return SSHConnection_Handle(panelSeqId,host, port, user, pass, director);   // SSH连接操作转发
 }
 void SSH_ConnectionOnDisconn(int panelSeqId) {
     SSHConnection_OnDisconn(panelSeqId);

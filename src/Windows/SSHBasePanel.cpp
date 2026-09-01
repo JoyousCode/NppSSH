@@ -39,7 +39,6 @@ void SSHBasePanel::setForegroundColor(COLORREF color) {
 
 }
 
-
 INT_PTR CALLBACK SSHBasePanel::run_dlgProc(UINT message, WPARAM wParam, LPARAM lParam) { return DockingDlgInterface::run_dlgProc(message, wParam, lParam); };
 // 面板初始化：纯原生接口
 bool SSHBasePanel::initDockData() {
