@@ -28,17 +28,20 @@ namespace SSHConst {
 }
 
 // 全局管理：面板索引 -> SSHConnection实例（改用智能指针）
-extern std::unordered_map<int, std::shared_ptr<SSHConnection>> g_panelConnections;
+extern std::unordered_map<uintptr_t, std::shared_ptr<SSHConnection>> g_panelConnections;
 extern std::mutex g_panelConnMutex; // 保护全局面板映射的锁
 // 检查指定面板ID是否存在于全局连接映射中（线程安全）
-// IsPanelIdExists(panelId) → 判断面板是否存在
-// GetSSHConnectionByPanelId(panelId) → 获取实例指针
-inline bool IsPanelIdExists(int panelId) {
+// IsPanelIdExists(hWnd) → 判断面板是否存在
+// GetSSHConnectionByPanelId(hWnd) → 获取实例指针
+inline bool IsHWndExists(HWND hWnd) {
+    if (hWnd == nullptr)
+        return false;
     std::lock_guard<std::mutex> lock(g_panelConnMutex);
-    return g_panelConnections.find(panelId) != g_panelConnections.end();
+    auto key = reinterpret_cast<uintptr_t>(hWnd);
+    return g_panelConnections.find(key) != g_panelConnections.end();
 }
 //工具函数，通过 this或者实例对象 指针查找对应的 面板ID（key）
-int SSHConnection_GetPanelId(SSHConnection* self);
+HWND SSHConnection_GetPanelId(SSHConnection* self);
 // SSH连接类（封装单个面板的连接数据与逻辑）
 class SSHConnection {
 public:
@@ -143,7 +146,7 @@ public:
     void SetPanelHwnd(HWND panelHwnd) {m_panelHwnd = panelHwnd;}
 
     //获取连接状态
-    bool Getconnected() {return m_connected.load();}
+    bool Getconnected() {return m_connected.load(std::memory_order_acquire);}
 
     //后台持续读（官方poll）
     void StartShellReader();
@@ -263,13 +266,14 @@ private:
 };
 
 // SSH连接操作具体声明
-bool SSHConnection_Handle(int panelId, std::wstring host, std::wstring port, std::wstring user, std::wstring pass, std::wstring director);
-void SSHConnection_OnDisconn(int panelId);
-bool SSHConnection_IsConn(int panelId);
-void SSHConnection_ResetConn(int panelId);
-bool SSHConnection_ExecuteCommand(int panelIndex, const std::string& cmd);
-std::string SSHConnection_PanelPrompt(int panelIndex);
-void SSHConnection_PtySize(int panelId, int cols, int rows);
+bool SSHConnection_Handle(HWND hWnd, std::wstring host, std::wstring port, std::wstring user, std::wstring pass, std::wstring director);
+void SSHConnection_DisconnectInner(HWND hWnd);    // 内部断开连接（不清理全局映射，供Disconnect调用）
+void SSHConnection_OnDisconn(HWND hWnd);          // 彻底断开连接（释放资源并从全局映射中移除）
+bool SSHConnection_IsConn(HWND hWnd);
+void SSHConnection_ResetConn(HWND hWnd);
+bool SSHConnection_ExecuteCommand(HWND hWnd, const std::string& cmd);
+std::string SSHConnection_PanelPrompt(HWND hWnd);
+void SSHConnection_PtySize(HWND hWnd, int cols, int rows);
 void SSHConnection_ClearAllSSHConnections();
 
 // 工具函数声明
@@ -284,4 +288,4 @@ inline std::string TrimTrailingNewlines(std::string str);   // 辅助函数：�
 inline std::string TrimTrailingWhitespace(std::string str); // 工具函数：去除字符串末尾所有空白（空格、\t、\n、\r）
 inline bool EndsWithSemicolonAfterTrim(const std::string& cmd); // 工具函数：判断命令【去除末尾空白后】是否以 ; 结尾
 // 工具函数：根据 panelId 安全获取 SSHConnection 实例（线程安全）
-SSHConnection* GetSSHConnectionByPanelId(int panelId);
+std::shared_ptr<SSHConnection> GetSSHConnectionByHWnd(HWND hWnd);

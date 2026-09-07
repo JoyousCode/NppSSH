@@ -96,6 +96,7 @@ class SSHBasePanel;
 class SSHTermPanel;
 class SSHAppPanel;
 class SSHTerminal;
+class SSHTermHandle;
 enum class PanelType {
     SSHTermPanel = 1,        // SSHTermPanel面板类型
     SSHAppPanel = 2,         // SSHAppPanel面板类型
@@ -167,13 +168,14 @@ void SSH_PanelInitRecreateSSHAppPanel(int panelSeqId, int panelrealId);
 //bool SSH_AppPanelPuttyLoginHandle(int panelSeqId, const char* host, int port, const char* user, const char* pass, const char* director);
 
 // 其他文件调用SSHConnection中的函数
-bool SSH_ConnectionHandle(int panelSeqId, std::wstring host, std::wstring port, std::wstring user, std::wstring pass, std::wstring director);	// 连接操作
-void SSH_ConnectionOnDisconn(int panelSeqId);				// 断开SSH连接
-bool SSH_ConnectionIsConn(int panelSeqId);					// 判断是否连接
-void SSH_ConnectionResetConn(int panelSeqId);				// 重置连接状态（暂未使用）
-bool SSH_ConnectionExecuteCommand(int panelSeqId, const std::string& cmd); // 执行SSH命令
-std::string SSH_ConnectionPanelPrompt(int panelSeqId);		// 获取命令提示词
-void SSH_ConnectionPtySize(int panelSeqId, int cols, int rows);// 设置申请的Pty大小
+bool SSH_ConnectionHandle(HWND hWnd, std::wstring host, std::wstring port, std::wstring user, std::wstring pass, std::wstring director);	// 连接操作
+void SSH_ConnectionDisconnectInner(HWND hWnd);            // 内部断开连接
+void SSH_ConnectionOnDisconn(HWND hWnd);				// map移除数据
+bool SSH_ConnectionIsConn(HWND hWnd);					// 判断是否连接
+void SSH_ConnectionResetConn(HWND hWnd);				// 重置连接状态（暂未使用）
+bool SSH_ConnectionExecuteCommand(HWND hWnd, const std::string& cmd); // 执行SSH命令
+std::string SSH_ConnectionPanelPrompt(HWND hWnd);		// 获取命令提示词
+void SSH_ConnectionPtySize(HWND hWnd, int cols, int rows);// 设置申请的Pty大小
 
 
 // 其他文件调用SSHLog中的函数
@@ -189,19 +191,25 @@ void NppSSH_LogError(const std::string& event, const std::string& content);  // 
 #define NppSSH_LogWarnAuto(content) NppSSH_LogWarn(__FUNCTION__, content)
 #define NppSSH_LogErrorAuto(content) NppSSH_LogError(__FUNCTION__, content)
 
+// 其他文件调用SSHTermHandle中的函数
+std::string SSH_TerminalPanelPrompt(HWND hwnd);
+void SSH_TermHandleSetPanelPrompt(HWND hwnd, const std::string prompt);
+void SSH_TermHandleAppendTextHandle(HWND hwnd, const std::string& text);
+void SSH_TermHandleSetCommandRunning(HWND hwnd, bool isCommandRunning);
+void SSH_TermHandleExecuteClear(HWND hwnd);                        //清屏命令
 
 // 其他文件调用SSHTerminal中的函数
-HWND SSH_TerminalInitControlPanel(HWND hParent, int panelSeqId);		// 初始化伪终端面板
-void SSH_TerminalDisconnectHandle(int panelSeqId);						// 断开伪终端面板
-void SSH_TerminalAppendTextHandle(int panelSeqId, const std::string& text);// 输出文本到伪终端，isPrompt设置追加后是否追加提示词
-void SSH_TerminalSetPanelPrompt(int panelSeqId, const std::string prompt);// 设置伪终端面板命令提示词
-void SSH_TerminalSetCommandRunning(int panelSeqId, bool isCommandRunning);// 设置伪终端命令执行中
-void SSH_TerminalSetEnglishType(int panelSeqId);						// 第一次连接成功后默认是中文模式，修改为英文模式
-void SSH_TerminalExecuteClear(int panelSeqId);							// 清空伪终端面板内容
-std::string SSH_TerminalPanelPrompt(int panelSeqId);					// 获取终端命令提示符
-void SSH_TerminalBySeqIdRemove(int panelSeqId);							// 根据序列ID移除面板
-void SSH_TerminalBySeqIdReset(int panelSeqId);							// 重置面板（暂未使用）
-void SSH_TerminalResize(HWND hParent, int panelSeqId);					// 调整伪终端面板大小
+//HWND SSH_TerminalInitControlPanel(HWND hParent, int panelSeqId);		// 初始化伪终端面板
+//void SSH_TerminalDisconnectHandle(int panelSeqId);						// 断开伪终端面板
+//void SSH_TerminalAppendTextHandle(int panelSeqId, const std::string& text);// 输出文本到伪终端，isPrompt设置追加后是否追加提示词
+//void SSH_TerminalSetPanelPrompt(int panelSeqId, const std::string prompt);// 设置伪终端面板命令提示词
+//void SSH_TerminalSetCommandRunning(int panelSeqId, bool isCommandRunning);// 设置伪终端命令执行中
+//void SSH_TerminalSetEnglishType(int panelSeqId);						// 第一次连接成功后默认是中文模式，修改为英文模式
+//void SSH_TerminalExecuteClear(int panelSeqId);							// 清空伪终端面板内容
+//std::string SSH_TerminalPanelPrompt(int panelSeqId);					// 获取终端命令提示符
+//void SSH_TerminalBySeqIdRemove(int panelSeqId);							// 根据序列ID移除面板
+//void SSH_TerminalBySeqIdReset(int panelSeqId);							// 重置面板（暂未使用）
+//void SSH_TerminalResize(HWND hParent, int panelSeqId);					// 调整伪终端面板大小
 
 // 其他文件调用SSHLoginModal中的函数
 void SSH_LoginModalWindowsModal(SSHLoginModal* SSHLoginModal);

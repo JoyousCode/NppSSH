@@ -17,6 +17,7 @@ std::wstring GBKToWstring(const std::string& str);
 std::string IntToHexStr(DWORD val);
 std::string WStringToUTF8(const std::wstring& wstr);
 std::wstring HwndToWString(HWND hWnd);
+std::string HwndToString(HWND hWnd);
 
 void CenterWindow(HWND hWndChild, HWND hWndParent);
 std::wstring charToWString(const char* szSrc, UINT codepage = CP_UTF8);
@@ -33,3 +34,9 @@ bool IsValidIPv4(const std::wstring& s, bool& allNumberSeg);
 bool IsValidIPv6(const std::wstring& s);
 bool IsHostNameLoose(const std::wstring& s);
 bool IsRealPuttyGuiExe(const std::wstring& exePath);
+
+// 输入法中英文切换（真正安全、无循环）
+void imm_chineseType(HWND hEdit);
+
+std::wstring CleanAnsiEscapeSequences(const std::wstring& input);
+std::string CleanAnsiEscapeSequences(const std::string& input);

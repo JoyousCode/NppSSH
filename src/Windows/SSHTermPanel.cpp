@@ -26,6 +26,7 @@ static std::atomic<bool> s_isConnecting = false;
 SSHTermPanel::SSHTermPanel(int panelSeqId, int panelrealId)
     :
     SSHBasePanel(panelSeqId, panelrealId),
+    _SSHTerminal(NULL),
     _textColor(RGB(255, 255, 255)),
     _bgColor(GetSysColor(COLOR_WINDOW)),
     _fgColor(GetSysColor(COLOR_WINDOWTEXT)),
@@ -42,6 +43,7 @@ SSHTermPanel::SSHTermPanel(int panelSeqId, int panelrealId)
 
 // 析构函数：释放图标资源，防止内存泄漏
 SSHTermPanel::~SSHTermPanel() {
+	if (_SSHTerminal) delete _SSHTerminal;
     if (_hIconConnect) {
         ::DestroyIcon(_hIconConnect);
         _hIconConnect = nullptr;
@@ -50,6 +52,7 @@ SSHTermPanel::~SSHTermPanel() {
         ::DestroyIcon(_hIconDisconnect);
         _hIconDisconnect = nullptr;
     }
+    NppSSH_LogInfoAuto("执行【SSHTermPanel】析构函数");
 }
 
 void SSHTermPanel::disconnectSSH() {//_isSSHConnected= true表示登录成功
@@ -86,7 +89,7 @@ void SSHTermPanel::setSSHConnected(bool state) {
         }
         else {
             NppSSH_LogInfoAuto("NppSSH_Disconnect===面板唯一索引=" + std::to_string(this->_panelSeqId));
-            SSH_ConnectionOnDisconn(this->_panelSeqId);        //调用转发断开连接释放当前面板连接资源
+            SSH_ConnectionDisconnectInner(this->_panelHwnd);        //调用转发断开连接释放当前面板连接资源
 
         }
         NppSSH_LogInfoAuto("setSSHConnected==========面板唯一索引======" + std::to_string(this->_panelSeqId));
@@ -218,8 +221,7 @@ INT_PTR CALLBACK SSHTermPanel::run_dlgProc(UINT message, WPARAM wParam, LPARAM l
         if (GetHwndSelf() && ::IsWindow(GetHwndSelf()) && _hEditTerm && ::IsWindow(_hEditTerm))
         {
             //::MessageBoxW(g_nppData._nppHandle, L"SSH面板变化", L"NppSSH提示", MB_OK | MB_ICONINFORMATION);
-            SSH_TerminalResize(GetHwndSelf(), this->_panelSeqId);
-
+            _SSHTerminal->SizeSSHTermHandle(GetHwndSelf());
             //重绘【整个 SSH 面板】 + 面板里面所有的子控件（包括按钮、编辑框、滚动条等全部子窗口）RDW_ALLCHILDREN = 把面板里所有子控件全部刷新一遍
             ::RedrawWindow(GetHwndSelf(), NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);// 刷新整个面板 + 所有子控件（解决最大化/还原/遮挡BUG）
         }
@@ -245,7 +247,7 @@ INT_PTR CALLBACK SSHTermPanel::run_dlgProc(UINT message, WPARAM wParam, LPARAM l
             SSHLoginModal input{};
             SSH_LoginModalWindowsModal(&input);
             if (input.bOk) {
-                bool ok = SSH_ConnectionHandle(_panelSeqId, input.szHost, input.szPort, input.szUser, input.szPass, input.szDir);
+                bool ok = SSH_ConnectionHandle(_panelHwnd, input.szHost, input.szPort, input.szUser, input.szPass, input.szDir);
                 if (ok) {
                     MessageBoxW(_panelHwnd, L"SSH 连接成功 ✅", L"NppSSH", MB_OK | MB_TASKMODAL);
                     setSSHConnected(true);//更新面板显示效果，绑定面板ID和session
@@ -297,7 +299,7 @@ INT_PTR CALLBACK SSHTermPanel::run_dlgProc(UINT message, WPARAM wParam, LPARAM l
             // 检查当前面板是否有活跃SSH连接
             if (bHasActiveConn)
             {
-                this->disconnectSSH();   // 断开连接
+                //this->disconnectSSH();   // 断开连接
                 this->display(false);//准备销毁，先隐藏防止不完整的面板出现影响效果
             }
             SendMessageW(GetHwndSelf(), WM_CLOSE, wParam, lParam);
@@ -318,6 +320,7 @@ INT_PTR CALLBACK SSHTermPanel::run_dlgProc(UINT message, WPARAM wParam, LPARAM l
         // 从NPP原生停靠管理器移除面板
         ::SendMessage(g_nppData._nppHandle, NPPM_MODELESSDIALOG, MODELESSDIALOGREMOVE, (LPARAM)getHSelf());
         ::SendMessage(g_nppData._nppHandle, NPPM_DMMHIDE, 0, (LPARAM)getHSelf());
+        SSH_ConnectionOnDisconn(_panelHwnd);//map移除数据
         SSH_PanelVecBySeqIdRemove(_panelSeqId, _panelrealId);
         return TRUE;
     }
@@ -358,11 +361,14 @@ void SSHTermPanel::initPanel() {
     createTopButtonBar();               // 调用创建顶部按钮栏
 
     // TODO：出现BUG，序列不是按照顺序的，需要将伪终端面板封装到面板类中 (待开发，直接在SSHTermPanel类中创建伪终端编辑器对象)
-    _hEditTerm = SSH_TerminalInitControlPanel(GetHwndSelf(), _panelSeqId);
-    if (!_hEditTerm) {
+    _SSHTerminal = new SSHTermHandle();
+    if (!_SSHTerminal) {
         ::MessageBoxW(g_nppData._nppHandle, L"NPP插件环境_hEditTerm初始化失败！", L"NppSSH调试提示", MB_OK);
+        return;
     }
-    SSH_TerminalAppendTextHandle(_panelSeqId, "✅NppSSH面板已创建\r\n等待SSH连接...");
+    _SSHTerminal->Set_panelSeqId(_panelSeqId);
+    _hEditTerm = _SSHTerminal->InitTerminalEditBox(GetHwndSelf());
+    _SSHTerminal->AppendOutputText("✅NppSSH面板已创建\r\n等待SSH连接...");
 
     char bufSelf[64] = { 0 };
     sprintf(bufSelf, "_panelHwnd(GetHwndSelf())=0x%p", _panelHwnd);
@@ -630,7 +636,7 @@ INT_PTR CALLBACK SSHTermPanel::SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM wPa
         {
             // 取消连接时重置状态
             if (s_isConnecting) {
-                SSH_ConnectionOnDisconn(pPanel->Get_panelSeqId());
+                SSH_ConnectionOnDisconn(pPanel->Get_panelHwnd());
                 s_isConnecting = false;
                 NppSSH_LogInfoAuto("用户取消连接，已断开SSH");
             }
@@ -694,7 +700,7 @@ INT_PTR CALLBACK SSHTermPanel::SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM wPa
                     MessageBoxW(hWnd, L"SSH 连接成功 ✅", L"NppSSH", MB_OK | MB_TASKMODAL);
                     if (LOWORD(wParam) == IDC_BTN_TEST) {
                         //无论成功还是失败都断开连接，防止占用远程资源
-                        SSH_ConnectionOnDisconn(pPanel->Get_panelSeqId());
+                        SSH_ConnectionOnDisconn(pPanel->Get_panelHwnd());
                     }
                     else {
                         EndDialog(hWnd, IDOK); // 官方标准关闭
@@ -739,8 +745,10 @@ INT_PTR CALLBACK SSHTermPanel::SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM wPa
             {
                 // 关键：必须用 PostMessage，不能用 SendMessage
                 //PostMessageW(hEdit, WM_USER + 1001, 0, 0);
-                SSH_TerminalSetEnglishType(pPanel->Get_panelSeqId());//强制将微软拼音的输入模式改为英文模式
-
+                //SSH_TerminalSetEnglishType(pPanel->Get_panelSeqId());//强制将微软拼音的输入模式改为英文模式
+                SSHTermHandle* SSHTerm = pPanel->_SSHTerminal;
+                SSHTerm->SetCmd("");
+                imm_chineseType(pPanel->_hEditTerm);
 
                 HWND panelHwnd = hWnd;
                 RECT rc;

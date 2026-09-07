@@ -190,6 +190,13 @@ std::wstring HwndToWString(HWND hWnd)
     return std::wstring(buf);
 }
 
+std::string HwndToString(HWND hWnd)
+{
+    wchar_t buf[64]{};
+    swprintf(buf, L"0x%p", hWnd);
+    return WStringToUTF8(std::wstring(buf));
+}
+
 void CenterWindow(HWND hWndChild, HWND hWndParent)
 {
     if (!hWndChild || !hWndParent) return;
@@ -531,4 +538,196 @@ bool IsRealPuttyGuiExe(const std::wstring& exePath)
     // 读到字段，但是不包含putty，拦截
     NppSSH_LogErrorAuto("IsRealPuttyGuiExe：OriginalFilename不含putty，判定为其他第三方exe，拒绝");
     return false;
+}
+
+// 输入法中英文切换（真正安全、无循环）
+// bForceEnglish: true=强制英文(修复时用) | false=手动切换(Shift用)
+void imm_chineseType(HWND hEdit)
+{
+    if (!hEdit) {
+        NppSSH_LogInfoAuto("【IME错误】句柄无效");
+        return;
+    }
+
+    NppSSH_LogInfoAuto("【IME调用】强制微软拼音→英文，hWnd=" + PtrToHexStr(hEdit));
+
+    // 1. 设置焦点（调用imm_chineseType函数前已经设置，暂时废弃）
+    HWND hFocus = ::GetFocus();
+    bool isEditFocused = (hFocus != hEdit);
+    if (isEditFocused) {
+        SetFocus(hEdit); // 仅恢复缓存的焦点状态
+        NppSSH_LogInfoAuto("【设置焦点3333333333333333】");
+
+    }
+    //SetFocus(hEdit);
+    //Sleep(10); // 极短等待，让系统同步
+
+    // 2. 跨线程输入同步
+    DWORD currTid = GetCurrentThreadId();
+    DWORD editTid = GetWindowThreadProcessId(hEdit, NULL);
+    AttachThreadInput(editTid, currTid, TRUE);
+
+    // 3. 获取 IME 上下文 系统自带的IME（不再手动创建！）
+    HIMC hImc = ImmGetContext(hEdit);
+    if (!hImc) {
+        hImc = ImmCreateContext();
+        ImmAssociateContext(hEdit, hImc);
+        NppSSH_LogInfoAuto("【IME】创建新上下文");
+    }
+
+    // 读取原始状态
+    DWORD conv = 0, sentence = 0;
+    ImmGetConversionStatus(hImc, &conv, &sentence);
+    NppSSH_LogInfoAuto("【IME修改前】conv=0x" + IntToHexStr(conv));
+
+    // 【微软拼音 官方正确英文模式】
+    conv = IME_CMODE_ALPHANUMERIC; // 0x0004 → 纯英文
+    sentence = IME_SMODE_NONE;
+
+    // 先打开IME，再设置英文！
+    ImmSetOpenStatus(hImc, TRUE);       // 必须打开
+    ImmSetConversionStatus(hImc, conv, sentence);
+    ImmSetOpenStatus(hImc, FALSE);      // 关闭中文输入
+
+    // 验证结果
+    DWORD newConv = 0;
+    ImmGetConversionStatus(hImc, &newConv, &sentence);
+    NppSSH_LogInfoAuto("【IME修改后】conv=0x" + IntToHexStr(newConv));
+
+    // 绑定生效
+    ImmAssociateContext(hEdit, hImc);
+    ImmReleaseContext(hEdit, hImc);
+    AttachThreadInput(editTid, currTid, FALSE);
+
+    // 强制刷新任务栏
+    //PostMessage(HWND_BROADCAST, WM_INPUTLANGCHANGE, 0, 0);
+    PostMessage(hEdit, WM_IME_NOTIFY, IMN_SETOPENSTATUS, 0);
+
+    NppSSH_LogInfoAuto("【✅ 最终成功】微软拼音已锁定 英文模式");
+}
+
+
+// 清理ANSI转义序列（解决乱码核心）
+std::wstring CleanAnsiEscapeSequences(const std::wstring& input) {
+    std::wstring out;
+
+    enum class State {
+        Normal,
+        Escape,      // 读到 \x1B
+        CSI,         // 读到 \x1B[
+        OSC          // 读到 \x1B]
+    };
+
+    State state = State::Normal;
+
+    for (wchar_t c : input) {
+        // 过滤非法控制字符（0x80是常见乱码源，0x00-0x1F除\r\n\t外全部过滤）
+        if ((c >= 0x00 && c <= 0x1F && c != L'\r' && c != L'\n' && c != L'\t') || c == 0x80 || c == 0x6F5F) {
+            continue;
+        }
+
+        switch (state) {
+        case State::Normal:
+            if (c == L'\x1B') {
+                state = State::Escape;
+            }
+            else {
+                out += c; // 正常字符保留
+            }
+            break;
+
+        case State::Escape:
+            if (c == L'[') {
+                state = State::CSI;
+            }
+            else if (c == L']') {
+                state = State::OSC;
+            }
+            else {
+                state = State::Normal; // 未知ESC后缀，切回普通状态
+            }
+            break;
+
+        case State::CSI:
+            // 大小写字母/问号(?)结束CSI序列（补充处理0x1B[?1034h这类序列）
+            if ((c >= L'A' && c <= L'Z') || (c >= L'a' && c <= L'z') || c == L'?') {
+                state = State::Normal;
+            }
+            break;
+
+        case State::OSC:
+            // \a / \r / \n / BEL 终止OSC序列（补充BEL字符0x07）
+            if (c == L'\a' || c == L'\r' || c == L'\n' || c == L'\x07') {
+                state = State::Normal;
+            }
+            break;
+        }
+    }
+
+    return out;
+}
+
+std::string CleanAnsiEscapeSequences(const std::string& input) {
+    std::string out;
+
+    enum class State {
+        Normal,
+        Escape,      // 读到 \x1B
+        CSI,         // 读到 \x1B[
+        OSC          // 读到 \x1B]
+    };
+
+    State state = State::Normal;
+
+    for (unsigned char c : input) {
+        switch (state) {
+        case State::Normal:
+            if (c == '\x1B') {
+                // 进入转义序列
+                state = State::Escape;
+            }
+            else if (c < 0x20 && c != '\r' && c != '\n' && c != '\t') {
+                // 过滤除 \r\n\t 以外的控制字符
+                continue;
+            }
+            else {
+                // 正常字符保留
+                out += c;
+            }
+            break;
+
+        case State::Escape:
+            if (c == '[') {
+                // CSI 序列：\x1B[...]
+                state = State::CSI;
+            }
+            else if (c == ']') {
+                // OSC 序列：\x1B[...\a
+                state = State::OSC;
+            }
+            else {
+                // 未知转义，退出
+                state = State::Normal;
+            }
+            break;
+
+        case State::CSI:
+            // 遇到字母结束CSI
+            if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
+                state = State::Normal;
+            }
+            // 全程吞掉，不输出
+            break;
+
+        case State::OSC:
+            // 遇到 \a 结束OSC
+            if (c == '\a' || c == '\r' || c == '\n') {
+                state = State::Normal;
+            }
+            // 全程吞掉，不输出
+            break;
+        }
+    }
+
+    return out;
 }

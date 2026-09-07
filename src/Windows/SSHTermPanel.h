@@ -1,6 +1,7 @@
 // SSHTermPanel.h（面板 + INI操作核心逻辑）
 #pragma once
 #include "SSHBasePanel.h"
+#include "SSHTermHandle.h"
 // 可停靠面板类（具体实现）
 class SSHTermPanel : public SSHBasePanel {
 public:
@@ -28,11 +29,18 @@ public:
     void SetBackgroundImage(const WCHAR* imgPath);// 设置面板背景图片
     HBITMAP LoadImageByGdiPlus(const WCHAR* filePath);// GDI+加载任意格式图片
     
+    //调用面板处理SSHTermHandle
+    SSHTermHandle* Get_SSHTerminal() {return _SSHTerminal;}
+    HWND Get_hEditTerm() { return _hEditTerm; }
+
+
     // 官方标准模态登录窗口（修复NPP置底）
     void ShowSSHLoginWindow_Modal();//已经废除
     void setLoginPanel(HWND hLoginPanel) {
         _hLoginPanel = hLoginPanel;
     }
+
+
     //HWND getLoginPanel() {//暂未使用
     //    return _hLoginPanel;
     //}
@@ -51,6 +59,8 @@ public:
 private:
     // 官方对话框过程
     static INT_PTR CALLBACK SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);//已经废除
+
+    SSHTermHandle* _SSHTerminal; // 终端对象指针
 
     COLORREF _textColor = RGB(255, 255, 255);           // 字体颜色
     COLORREF _bgColor = GetSysColor(COLOR_WINDOW);      // 背景颜色

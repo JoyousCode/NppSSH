@@ -100,6 +100,8 @@ add_library(NppSSH SHARED
     src/Windows/SSHAppPanel.cpp
     src/Windows/SSHLoginModal.h
     src/Windows/SSHLoginModal.cpp
+    src/Windows/SSHTermHandle.h
+    src/Windows/SSHTermHandle.cpp
 )
 # 新增：指定 RC 文件为资源编译（Windows 特有）
 if(WIN32)

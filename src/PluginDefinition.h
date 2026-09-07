@@ -44,7 +44,7 @@ const TCHAR NPP_PLUGIN_NAME[] = TEXT("NppSSH");
 //
 // Here define the number of your plugin commands
 //
-const int nbFunc = 5;
+const int nbFunc = 4;
 
 
 //
@@ -82,7 +82,6 @@ void InitGDIPlus();
 void UninitGDIPlus();
 void hello();
 void helloDlg();
-void onNppSSH();
 void onNppSSHTermPanel();
 void onNppSSHAppPanel();
 

@@ -3,9 +3,10 @@
 
 // 全局变量（改用智能指针管理）
 //std::unordered_map<int, std::unique_ptr<SSHConnection>> g_panelConnections;
-std::unordered_map<int, std::shared_ptr<SSHConnection>> g_panelConnections;
+//std::unordered_map<int, std::shared_ptr<SSHConnection>> g_panelConnections;
+//std::unordered_map<HWND, std::shared_ptr<SSHConnection>> g_panelConnections;
 std::mutex g_panelConnMutex;
-
+std::unordered_map<uintptr_t, std::shared_ptr<SSHConnection>> g_panelConnections;
 
 static NppData s_nppData;
 static HINSTANCE s_hInst;
@@ -166,33 +167,38 @@ inline bool EndsWithSemicolonAfterTrim(const std::string& cmd) {
     return !trimmed.empty() && trimmed.back() == ';';
 }
 // 工具函数：根据 panelId 获取连接实例（线程安全）
-SSHConnection* GetSSHConnectionByPanelId(int panelId) {
+std::shared_ptr<SSHConnection> GetSSHConnectionByHWnd(HWND hWnd) {
     // 先判断是否存在（复用你已有的工具函数）
-    if (!IsPanelIdExists(panelId)) {
+    if (!IsHWndExists(hWnd)) {
         return nullptr;
     }
 
     // 加锁安全获取实例指针
-    SSHConnection* conn = nullptr;
-    {
-        std::lock_guard<std::mutex> mapLock(g_panelConnMutex);
-        auto it = g_panelConnections.find(panelId);
-        if (it != g_panelConnections.end()) {
-            conn = it->second.get();
-        }
-    }
-
-    return conn;
+    std::lock_guard<std::mutex> lock(g_panelConnMutex);
+    auto key = reinterpret_cast<uintptr_t>(hWnd);
+    auto it = g_panelConnections.find(key);
+    if (it == g_panelConnections.end())
+        return nullptr;
+    return it->second;
 }
 //工具函数，通过 this或者实例对象 指针查找对应的 面板ID（key）
-int SSHConnection_GetPanelId(SSHConnection* self) {
+HWND SSHConnection_GetPanelId(SSHConnection* self) {
+    if (self == nullptr)
+    {
+        return nullptr;
+    }
     std::lock_guard<std::mutex> lock(g_panelConnMutex);
-    for (auto& pair : g_panelConnections) {
-        if (pair.second.get() == self) {
-            return pair.first; // 返回正确面板ID
+    for (auto& pair : g_panelConnections)
+    {
+        // pair.first: uintptr_t 存储的hwnd
+        if (pair.second.get() == self)
+        {
+            uintptr_t hwndKey = pair.first;
+            NppSSH_LogInfoAuto("找到对应窗口HWND=" + IntToStr(hwndKey));
+            return reinterpret_cast<HWND>(hwndKey);
         }
     }
-    return -1;
+    return nullptr;
 }
 // 工具函数：提取字符串最后一行，待处理，要适配ANSI清屏指令,目前遍历是否包含L'J'
 std::string SSHConnection::extractLastLine(const std::string& str) {
@@ -752,9 +758,9 @@ void SSHConnection::StartHeartbeat() {
 
 // 断开连接
 void SSHConnection::Disconnect() {
-    int panelId = SSHConnection_GetPanelId(this);
-    SSH_TerminalExecuteClear(panelId);
-    SSH_TerminalAppendTextHandle(panelId, "✅ SSH已断开\n等待新的连接...");
+    HWND hwnd = SSHConnection_GetPanelId(this);
+    SSH_TermHandleExecuteClear(hwnd);
+    SSH_TermHandleSetPanelPrompt(hwnd, "✅ SSH已断开\n等待新的连接...");
     StopShellReader();
     ReleaseResources();
     m_connected.store(false, std::memory_order_release);
@@ -849,7 +855,7 @@ void SSHConnection::ShellReaderLoop() {
     NppSSH_LogInfoAuto("==============================================");
 
     char buf[SSHConst::BUF_SIZE_LARGE];
-    int panelId = SSHConnection_GetPanelId(this);
+    HWND hwnd = SSHConnection_GetPanelId(this);
 
     const int MAX_IDLE_MS = 10;
     int retry = 0;// 重试次数
@@ -893,9 +899,9 @@ void SSHConnection::ShellReaderLoop() {
                 m_currentCommand.clear();
             }
 
-            if (panelId >= 0) {
-                SSH_TerminalAppendTextHandle(panelId, chunk);
-                SSH_TerminalSetCommandRunning(panelId, true);
+            if (hwnd) {
+                SSH_TermHandleAppendTextHandle(hwnd, chunk);
+                SSH_TermHandleSetCommandRunning(hwnd, true);
             }
 
             retry = 0; // 有输出就重置重试
@@ -904,11 +910,11 @@ void SSHConnection::ShellReaderLoop() {
             if (!lastLine.empty()) {
                 std::lock_guard<std::mutex> lock(m_mutex);
                 m_prompt = lastLine;
-                if (panelId >= 0)//拿到提示符直接结束命令状态
+                if (hwnd)//拿到提示符直接结束命令状态
                 {
                     NppSSH_LogInfoAuto("【发送执行结束信号】" + chunk);
-                    SSH_TerminalSetPanelPrompt(panelId, m_prompt);
-                    SSH_TerminalSetCommandRunning(panelId, false);
+                    SSH_TermHandleSetPanelPrompt(hwnd, m_prompt);
+                    SSH_TermHandleSetCommandRunning(hwnd, false);
                 }
                 exitReason = ShellExitReason::PromptReceived;
                 goto exit_read_loop;
@@ -961,37 +967,37 @@ void SSHConnection::ShellReaderLoop() {
         exitReason = ShellExitReason::StoppedByUser;
     }
 
-    if (panelId >= 0) {
-        std::string panelPrompt = SSH_TerminalPanelPrompt(panelId);
+    if (hwnd) {
+        std::string panelPrompt = SSH_TerminalPanelPrompt(hwnd);
         switch (exitReason) {
         case ShellExitReason::PromptReceived:
             // 正常结束，不追加干扰信息
             break;
 
         case ShellExitReason::StoppedByUser:
-            SSH_TerminalAppendTextHandle(panelId,
+            SSH_TermHandleAppendTextHandle(hwnd,
                 "\r\n[!] 输出已被中断（Ctrl+C / 服务器停止）\r\n"+ panelPrompt);
             break;
 
         case ShellExitReason::SocketDead:
-            SSH_TerminalAppendTextHandle(panelId,
+            SSH_TermHandleAppendTextHandle(hwnd,
                 "\r\n[!] 连接已断开（服务器关机或网络异常）\r\n" + panelPrompt);
             break;
 
         case ShellExitReason::RetryExhausted:
-            SSH_TerminalAppendTextHandle(panelId,
+            SSH_TermHandleAppendTextHandle(hwnd,
                 "\r\n[!] 命令执行超时，未检测到命令提示符\r\n" + panelPrompt);
             break;
 
         case ShellExitReason::Unknown:
         default:
-            SSH_TerminalAppendTextHandle(panelId,
+            SSH_TermHandleAppendTextHandle(hwnd,
                 "\r\n[!] 命令执行异常（未知原因）\r\n" + panelPrompt);
             break;
         }
         if (exitReason != ShellExitReason::PromptReceived) {
-            SSH_TerminalSetPanelPrompt(panelId, panelPrompt);
-            SSH_TerminalSetCommandRunning(panelId, false);
+            SSH_TermHandleSetPanelPrompt(hwnd, panelPrompt);
+            SSH_TermHandleSetCommandRunning(hwnd, false);
         }
         
     }
@@ -1483,7 +1489,7 @@ void SSHConnection::ReadLoginBanner(LIBSSH2_SESSION* session) {
         NppSSH_LogInfoAuto("【没有伪终端】");
         return;
     }
-    int panelId = SSHConnection_GetPanelId(this);
+    HWND hwnd = SSHConnection_GetPanelId(this);
     // 读取Banner
     std::string loginBanner = "\n";
     const char* banner = libssh2_session_banner_get(session);
@@ -1528,11 +1534,11 @@ void SSHConnection::ReadLoginBanner(LIBSSH2_SESSION* session) {
     //loginBanner = out;
 
 
-    if (panelId >= 0) {
-        SSH_TerminalAppendTextHandle(panelId, loginBanner);
+    if (hwnd) {
+        SSH_TermHandleAppendTextHandle(hwnd, loginBanner);
         NppSSH_LogInfoAuto("【欢迎语获取退出】调用SSHTerminal_PanelPrompt函数赋值私有成员变量 _prompt = " + m_prompt);
-        SSH_TerminalSetPanelPrompt(panelId, m_prompt);
-        SSH_TerminalSetCommandRunning(panelId, false);
+        SSH_TermHandleSetPanelPrompt(hwnd, m_prompt);
+        SSH_TermHandleSetCommandRunning(hwnd, false);
     }
 }
 
@@ -1757,6 +1763,10 @@ bool SSHConnection::Connect(const char* host, int port, const char* user, const 
         NppSSH_LogInfoAuto("面板已处于连接状态，无需重复连接");
         return true;
     }
+    //else {
+    //    NppSSH_LogInfoAuto("测试崩溃连接");
+    //    return false;
+    //}
 
     try {
         // 创建promise/future，用于获取异步连接结果
@@ -1764,7 +1774,7 @@ bool SSHConnection::Connect(const char* host, int port, const char* user, const 
         std::future<bool> connFuture = connPromise.get_future();
 
         // 调用异步连接函数（传入promise）
-        //NppSSH_LogInfoAuto("调用ConnectAsync进入异步连接核心逻辑");
+        NppSSH_LogInfoAuto("调用ConnectAsync进入异步连接核心逻辑");
         ConnectAsync(host, port, user, pass, std::move(connPromise));
         std::future_status status = connFuture.wait_for(std::chrono::seconds(SSHConst::MAX_MAIN_THREAD_WAIT_MS)); // 30秒超时
         if (status == std::future_status::ready) {
@@ -1953,8 +1963,14 @@ void SSHConnection::ConnectAsync(const char* host, int port, const char* user, c
     m_connecting.store(false, std::memory_order_release);
 }
 
-bool SSHConnection_Handle(int panelId, std::wstring host, std::wstring port, std::wstring user, std::wstring pass, std::wstring director) {
-    NppSSH_LogInfoAuto("面板="+std::to_string(panelId) +",绑定连接信息");
+bool SSHConnection_Handle(HWND hWnd, std::wstring host, std::wstring port, std::wstring user, std::wstring pass, std::wstring director) {
+    NppSSH_LogInfoAuto("面板="+ HwndToString(hWnd) +",绑定连接信息");
+    if (hWnd == nullptr)
+    {
+        NppSSH_LogErrorAuto("SSHConnection_Handle hWnd为NULL，拒绝创建连接");
+        return false;
+    }
+    uintptr_t hwndKey = reinterpret_cast<uintptr_t>(hWnd);
     std::string hostUtf8 = WStringToUTF8(host);
     std::string userUtf8 = WStringToUTF8(user);
     std::string passUtf8 = WStringToUTF8(pass);
@@ -1975,24 +1991,24 @@ bool SSHConnection_Handle(int panelId, std::wstring host, std::wstring port, std
         nPort = -1;
     }
     // 创建/覆盖面板ID对应的连接实例 
-    SSHConnection* conn = nullptr;
+    std::shared_ptr<SSHConnection> newConn = std::make_shared<SSHConnection>();
     {
         std::lock_guard<std::mutex> mapLock(g_panelConnMutex);
+        NppSSH_LogInfoAuto("面板=" + HwndToString(hWnd) + ",之前");
+
         // 无论是否存在，直接创建新实例覆盖（存在则旧实例被智能指针自动析构）
-        auto newConn = std::make_shared<SSHConnection>();
-        g_panelConnections[panelId] = std::move(newConn);
-        // 获取新实例指针
-        conn = g_panelConnections[panelId].get();
+        g_panelConnections.insert_or_assign(hwndKey, std::move(newConn));
+        //g_panelConnections.emplace(hwndKey, newConn);//创建，存在自动跳过创建
+        NppSSH_LogInfoAuto("面板=" + HwndToString(hWnd) + ",之后");
+
     }
 
     // 空指针防御
-    if (!conn) {
-        NppSSH_LogErrorAuto("创建/覆盖SSHConnection实例失败，panelId=" + std::to_string(panelId));
-        // 失败时清理当前面板ID数据
-        if (IsPanelIdExists(panelId)) {
-            std::lock_guard<std::mutex> mapLock(g_panelConnMutex);
-            g_panelConnections.erase(panelId);
-        }
+    std::shared_ptr<SSHConnection> spConn = GetSSHConnectionByHWnd(hWnd);
+    if (!spConn) {
+        NppSSH_LogErrorAuto("创建/覆盖SSHConnection实例失败，hWnd=" + HwndToString(hWnd));
+        std::lock_guard<std::mutex> mapLock(g_panelConnMutex);
+        g_panelConnections.erase(hwndKey);
         return false;
     }
 
@@ -2000,7 +2016,7 @@ bool SSHConnection_Handle(int panelId, std::wstring host, std::wstring port, std
     // 第二步：调用Connect（实例锁）
     bool connectResult = false;
     try {
-        connectResult = conn->Connect(hostUtf8.c_str(), nPort, userUtf8.c_str(), passUtf8.c_str(), directorUtf8.c_str()); // Connect内部已加锁，无需外层锁
+        connectResult = spConn->Connect(hostUtf8.c_str(), nPort, userUtf8.c_str(), passUtf8.c_str(), directorUtf8.c_str()); // Connect内部已加锁，无需外层锁
     }
     catch (const std::exception& e) {
         NppSSH_LogErrorAuto("调用Connect异常: " + std::string(e.what()));
@@ -2013,52 +2029,103 @@ bool SSHConnection_Handle(int panelId, std::wstring host, std::wstring port, std
 
     // 连接失败时兜底清理数据 
     if (!connectResult) {
-        NppSSH_LogInfoAuto("面板" + std::to_string(panelId) + "连接失败，清理对应数据");
+        NppSSH_LogInfoAuto("面板" + HwndToString(hWnd) + "连接失败，清理对应数据");
         // 检查面板ID是否存在，存在则删除整条数据（无需调用Disconnect，直接清除）
-        if (IsPanelIdExists(panelId)) {
+        if (IsHWndExists(hWnd)) {
             std::lock_guard<std::mutex> mapLock(g_panelConnMutex);
-            g_panelConnections.erase(panelId);
+            g_panelConnections.erase(hwndKey);
         }
     }
     else {
-        conn ->SetPanelHwnd(SSH_PanelGetPanelHwnd(panelId));
+        spConn->SetPanelHwnd(hWnd);
     }
     return connectResult;
 }
-// 断开连接 + 彻底删除面板数据
-void SSHConnection_OnDisconn(int panelId) {
+
+void SSHConnection_DisconnectInner(HWND hWnd)
+{
+    NppSSH_LogInfoAuto("开始执行软断开");
     // 第一步：使用工具函数判断面板ID是否存在
-    if (!IsPanelIdExists(panelId)) {
-        NppSSH_LogInfoAuto("面板" + std::to_string(panelId) + "不存在，无需断开");
+    if (!IsHWndExists(hWnd))
+    {
+        NppSSH_LogInfoAuto("面板" + HwndToString(hWnd) + "不存在，无需软断开");
         return;
     }
 
     // 第二步：加锁操作 map（安全获取实例）
-    SSHConnection* conn = GetSSHConnectionByPanelId(panelId);
-
+    NppSSH_LogInfoAuto("安全获取实例");
+    std::shared_ptr<SSHConnection> conn = GetSSHConnectionByHWnd(hWnd);
+    NppSSH_LogInfoAuto("执行软断开");
     // 第三步：存在实例并且已经连接，则执行内部断开逻辑
-    if (conn && conn->Getconnected()) {
+    if (conn)
+    {
         std::lock_guard<std::mutex> connLock(conn->GetMutex());
-        NppSSH_LogInfoAuto("面板" + std::to_string(panelId) + "准备执行内部断开");
+        NppSSH_LogInfoAuto("面板" + HwndToString(hWnd) + "执行软断开，仅释放ssh资源，保留map条目");
         conn->Disconnect();
     }
+}
+void SSHConnection_OnDisconn(HWND hWnd)
+{
+    // 第一步：使用工具函数判断面板ID是否存在
+    if (!IsHWndExists(hWnd))
+    {
+        NppSSH_LogInfoAuto("面板" + HwndToString(hWnd) + "不存在，无需断开");
+        return;
+    }
 
-    // 第四步：彻底从 map 中删除整条 key-value 数据（最关键）
+    // 第二步：执行软断开，释放ssh资源，map条目暂时保留
+    SSHConnection_DisconnectInner(hWnd);
+    uintptr_t hwndKey = reinterpret_cast<uintptr_t>(hWnd);
+    // 第三步：彻底销毁，从map移除key‑value
     {
         std::lock_guard<std::mutex> mapLock(g_panelConnMutex);
-        g_panelConnections.erase(panelId);
-        NppSSH_LogInfoAuto("面板" + std::to_string(panelId) + "已从全局map中彻底移除");
+        g_panelConnections.erase(hwndKey);
+        NppSSH_LogInfoAuto("面板" + HwndToString(hWnd) + "已从全局map中彻底移除");
     }
 }
+//// 断开连接 + 彻底删除面板数据
+//void SSHConnection_OnDisconn(int panelId) {
+//    // 第一步：使用工具函数判断面板ID是否存在
+//    if (!IsHWndExists(panelId)) {
+//        NppSSH_LogInfoAuto("面板" + std::to_string(panelId) + "不存在，无需断开");
+//        return;
+//    }
+//
+//    // 第二步：加锁操作 map（安全获取实例）
+//    std::shared_ptr<SSHConnection> conn = GetSSHConnectionByHWnd(panelId);
+//
+//    // 第三步：存在实例并且已经连接，则执行内部断开逻辑
+//    if (conn && conn->Getconnected()) {
+//        std::lock_guard<std::mutex> connLock(conn->GetMutex());
+//        NppSSH_LogInfoAuto("面板" + std::to_string(panelId) + "准备执行内部断开");
+//        conn->Disconnect();
+//    }
+//
+//    // 第四步：彻底从 map 中删除整条 key-value 数据（最关键）
+//    {
+//        std::lock_guard<std::mutex> mapLock(g_panelConnMutex);
+//        g_panelConnections.erase(panelId);
+//        NppSSH_LogInfoAuto("面板" + std::to_string(panelId) + "已从全局map中彻底移除");
+//    }
+//}
+/*
+* 1、断开面板连接操作，会根据序列id释放连接资源，并移除map中的key-value数据，但是位置还在map中，出现空洞
+* 2、关闭面板时候，如果连接状态会进行断开面板连接操作
+* 3、面板不是按照1、2、3、4...顺序创建的，中间可能夹杂其他面板，断开或者关闭面板都会都在访问数据不对，出现崩溃。
+* 4、仅仅断开连接不需要前移，只有彻底删除面板数据才需要前移（方案只解决了1、2，而3未解决）
+* 5、关闭面板操作，断开面板操作，中间夹杂其他面板序列id。三种情况出现崩溃。
+* 
+*/
+
 // 判断是否连接（外部接口）
-bool SSHConnection_IsConn(int panelId) {
+bool SSHConnection_IsConn(HWND hWnd) {
     // 第一步：使用工具函数判断面板ID是否存在
-    if (!IsPanelIdExists(panelId)) {
+    if (!IsHWndExists(hWnd)) {
         return false;
     }
 
     // 第二步：加锁安全获取连接实例
-    SSHConnection* conn = GetSSHConnectionByPanelId(panelId);
+    std::shared_ptr<SSHConnection> conn = GetSSHConnectionByHWnd(hWnd);
 
     // 第三步：实例存在，直接调用类内部的 IsConnected()
     if (conn) {
@@ -2069,14 +2136,14 @@ bool SSHConnection_IsConn(int panelId) {
     return false;
 }
 
-void SSHConnection_ResetConn(int panelId) {
-    // 第一步：使用工具函数判断 panelId 是否存在，不存在直接返回
-    if (!IsPanelIdExists(panelId)) {
+void SSHConnection_ResetConn(HWND hWnd) {
+    // 第一步：使用工具函数判断 hWnd 是否存在，不存在直接返回
+    if (!IsHWndExists(hWnd)) {
         return;
     }
 
     // 第二步：使用工具函数获取连接实例
-    SSHConnection* conn = GetSSHConnectionByPanelId(panelId);
+    std::shared_ptr<SSHConnection> conn = GetSSHConnectionByHWnd(hWnd);
 
     // 第三步：实例存在则调用重置方法
     if (conn) {
@@ -2085,19 +2152,19 @@ void SSHConnection_ResetConn(int panelId) {
     }
 }
 
-bool SSHConnection_ExecuteCommand(int panelIndex, const std::string& cmd) {
-    if (GetCurrentThreadId() == GetWindowThreadProcessId(SSH_PanelGetPanelHwnd(panelIndex), nullptr)) {
+bool SSHConnection_ExecuteCommand(HWND hWnd, const std::string& cmd) {
+    if (GetCurrentThreadId() == GetWindowThreadProcessId(hWnd, nullptr)) {
         NppSSH_LogErrorAuto("【FATAL】UI 线程禁止执行 SSH 命令！");
         return false;
     }
     // 1. 工具函数：判断面板ID是否存在
-    if (!IsPanelIdExists(panelIndex)) {
+    if (!IsHWndExists(hWnd)) {
         NppSSH_LogErrorAuto("命令执行失败，当前面板连接异常");
         return false;
     }
 
     // 2. 工具函数：获取连接实例
-    SSHConnection* conn = GetSSHConnectionByPanelId(panelIndex);
+    std::shared_ptr<SSHConnection> conn = GetSSHConnectionByHWnd(hWnd);
 
     // 3. 实例为空 → 返回异常
     if (!conn) {
@@ -2115,15 +2182,15 @@ bool SSHConnection_ExecuteCommand(int panelIndex, const std::string& cmd) {
     return conn->ExecuteCommand(cmd);
 }
 
-std::string SSHConnection_PanelPrompt(int panelIndex) {
+std::string SSHConnection_PanelPrompt(HWND hWnd) {
     // 1. 工具函数判断面板是否存在
-    if (!IsPanelIdExists(panelIndex)) {
+    if (!IsHWndExists(hWnd)) {
         NppSSH_LogInfoAuto("当前未连接，不能获取提示符");
         return "";
     }
 
     // 2. 工具函数获取实例
-    SSHConnection* conn = GetSSHConnectionByPanelId(panelIndex);
+    std::shared_ptr<SSHConnection> conn = GetSSHConnectionByHWnd(hWnd);
 
     // 3. 实例不存在 → 返回默认提示符
     if (!conn) {
@@ -2142,15 +2209,15 @@ std::string SSHConnection_PanelPrompt(int panelIndex) {
     return conn->GetPrompt();
 }
 
-void SSHConnection_PtySize(int panelIndex, int cols, int rows) {
+void SSHConnection_PtySize(HWND hWnd, int cols, int rows) {
     // 1. 工具函数判断面板是否存在
-    if (!IsPanelIdExists(panelIndex)) {
+    if (!IsHWndExists(hWnd)) {
         NppSSH_LogInfoAuto("当前未连接，不能设置大小");
         return;
     }
 
     // 2. 工具函数获取实例
-    SSHConnection* conn = GetSSHConnectionByPanelId(panelIndex);
+    std::shared_ptr<SSHConnection> conn = GetSSHConnectionByHWnd(hWnd);
 
     // 3. 实例不存在 → 返回默认提示符
     if (!conn) {
@@ -2177,23 +2244,32 @@ void SSHConnection::SetPTYSize(int cols,int rows) {
 void SSHConnection_ClearAllSSHConnections()
 {
     // 先拷贝一份key列表，避免遍历过程中容器被修改导致迭代器失效
-    std::vector<int> allPanelIds;
-    allPanelIds.reserve(g_panelConnections.size());
+    //std::vector<int> allPanelIds;
+    std::vector<uintptr_t> allHwndKeys;
+    allHwndKeys.reserve(g_panelConnections.size());
     for (const auto& pair : g_panelConnections)
     {
-        allPanelIds.push_back(pair.first);
+        allHwndKeys.push_back(pair.first);
     }
     // 逐个断开连接
-    for (int panelId : allPanelIds)
+    for (uintptr_t hwndKey : allHwndKeys)
     {
-        auto it = g_panelConnections.find(panelId);
-        if (it == g_panelConnections.end())
-            continue;
-        auto& spConn = it->second;
+        HWND hWnd = reinterpret_cast<HWND>(hwndKey);
+        // 先判断是否还存在且已连接
+        std::shared_ptr<SSHConnection> spConn;
+        {
+            std::lock_guard<std::mutex> lock(g_panelConnMutex);
+            auto it = g_panelConnections.find(hwndKey);
+            if (it == g_panelConnections.end())
+                continue;
+            spConn = it->second;
+        }
         if (spConn && spConn->IsConnected())
         {
-            SSHConnection_OnDisconn(panelId);
+            SSHConnection_OnDisconn(hWnd);
         }
     }
     g_panelConnections.clear();
 }
+// HWND hWnd = reinterpret_cast<HWND>(hwndKey);
+// uintptr_t hwndKey = reinterpret_cast<uintptr_t>(hWnd);

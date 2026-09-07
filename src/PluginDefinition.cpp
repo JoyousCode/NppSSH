@@ -101,9 +101,8 @@ void commandMenuInit()
     //            );
     setCommand(0, TEXT("Hello Notepad++"), hello, NULL, false);
     setCommand(1, TEXT("Hello (with dialog)"), helloDlg, NULL, false);
-    setCommand(2, TEXT("测试连接状态"), onNppSSH, NULL, false);
-    setCommand(3, TEXT("创建终端面板"), onNppSSHTermPanel, &SSHTermPanel_OpenPanelShortcut, false);
-    setCommand(4, TEXT("创建软件面板"), onNppSSHAppPanel, &SSHAppPanel_OpenPanelShortcut, false);
+    setCommand(2, TEXT("创建终端面板"), onNppSSHTermPanel, &SSHTermPanel_OpenPanelShortcut, false);
+    setCommand(3, TEXT("创建软件面板"), onNppSSHAppPanel, &SSHAppPanel_OpenPanelShortcut, false);
 }
 
 //
@@ -157,15 +156,6 @@ void hello()
 void helloDlg()
 {
     ::MessageBox(NULL, TEXT("Hello, Notepad++!"), TEXT("Notepad++ Plugin Template"), MB_OK);
-}
-
-void onNppSSH()
-{
-    bool ok = SSH_ConnectionIsConn(1);
-    if (ok)
-        ::MessageBoxW(NULL, L"SSH 连接成功 ✅", L"NppSSH提示", MB_OK);
-    else
-        ::MessageBoxW(NULL, L"SSH 连接失败 ❌", L"NppSSH提示", MB_OK);
 }
 
 void onNppSSHTermPanel()

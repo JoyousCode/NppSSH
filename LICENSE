@@ -19,3 +19,50 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+
+2026-09-03 08:49:38 level: [info] event: [SSHTermPanel::run_dlgProc] msg ==> [ 面板【准备】关闭，当前连接状态：1【触发关闭，执行断开】hwndFrom=0x0000000000030C96, idFrom=0, code=0x041B(1051) ]
+2026-09-03 08:49:38 level: [info] event: [SSHTermPanel::setSSHConnected] msg ==> [ NppSSH_Disconnect===面板唯一索引=0 ]
+2026-09-03 08:49:38 level: [info] event: [SSHConnection_OnDisconn] msg ==> [ 面板0准备执行内部断开 ]
+2026-09-03 08:49:38 level: [info] event: [SSHTermHandle::SetPrompt] msg ==> [ 【提示符更新】主动修复输入状态，新提示符：✅ SSH已断开
+等待新的连接... ]
+2026-09-03 08:49:38 level: [info] event: [SSHConnection::StopShellReader] msg ==> [ 【OK】ShellReader 线程已停止，最终提示符：[[root@localhost ~]# ] ]
+2026-09-03 08:49:38 level: [info] event: [SSHConnection::ReleaseResources] msg ==> [ 释放资源............. ]
+2026-09-03 08:49:38 level: [info] event: [SSHConnection::StopShellReader] msg ==> [ 【OK】ShellReader 线程已停止，最终提示符：[[root@localhost ~]# ] ]
+2026-09-03 08:49:38 level: [info] event: [SSHConnection::ReleaseResources] msg ==> [ 释放资源.............直接分离心跳线程（不等待） ]
+2026-09-03 08:49:38 level: [info] event: [SSHConnection::ReleaseResources] msg ==> [ 释放资源.............释放shell通道 ]
+2026-09-03 08:49:38 level: [info] event: [SSHConnection::HeartbeatThreadFunc] msg ==> [ 等待期间收到停止信号，退出心跳线程 ]
+2026-09-03 08:49:38 level: [info] event: [SSHConnection::HeartbeatThreadFunc] msg ==> [ 模拟点击面板的断开按钮 ]
+2026-09-03 08:49:38 level: [info] event: [SSHConnection::ReleaseResources] msg ==> [ 释放资源.............释放SSH会话 ]
+2026-09-03 08:49:38 level: [info] event: [SSHConnection::ReleaseResources] msg ==> [ 释放资源.............关闭Socket ]
+2026-09-03 08:49:38 level: [info] event: [SSHConnection::ReleaseResources] msg ==> [ 释放资源.............重置状态 ]
+2026-09-03 08:49:38 level: [info] event: [SSHConnection::~SSHConnection] msg ==> [ 析构函数 ]
+2026-09-03 08:49:38 level: [info] event: [SSHConnection_OnDisconn] msg ==> [ 面板0已从全局map中彻底移除 ]
+2026-09-03 08:49:38 level: [info] event: [SSHTermPanel::setSSHConnected] msg ==> [ setSSHConnected==========面板唯一索引======0 ]
+2026-09-03 08:49:38 level: [info] event: [SSHTermPanel::run_dlgProc] msg ==> [ SSH_Panel面板【开始】关闭，当前连接状态：0 ]
+2026-09-03 08:49:38 level: [info] event: [SSHTermPanel::~SSHTermPanel] msg ==> [ 执行【SSHTermPanel】析构函数 ]
+2026-09-03 08:49:38 level: [info] event: [SSHBasePanel::~SSHBasePanel] msg ==> [ 执行SSHBasePanel析构函数2 ]
+2026-09-03 08:49:38 level: [info] event: [SSHBasePanel::GlobalUnsubclassTopWnd] msg ==> [ 面板析构：恢复顶层窗口原始WndProc ]
+2026-09-03 08:49:38 level: [info] event: [SSHBasePanel::GlobalUnsubclassTopWnd] msg ==> [ 面板析构：移除窗口Prop绑定5 ]
+2026-09-03 08:49:38 level: [info] event: [SSHConnection::HeartbeatThreadFunc] msg ==> [ 心跳线程正常退出 ]
+
+
+
+2026-09-03 08:42:01 level: [info] event: [SSHConnection_OnDisconn] msg ==> [ 面板0准备执行内部断开 ]
+2026-09-03 08:42:01 level: [info] event: [SSHTermHandle::SetPrompt] msg ==> [ 【提示符更新】主动修复输入状态，新提示符：✅ SSH已断开
+等待新的连接... ]
+2026-09-03 08:42:01 level: [info] event: [SSHConnection::StopShellReader] msg ==> [ 【OK】ShellReader 线程已停止，最终提示符：[[root@localhost ~]# ] ]
+2026-09-03 08:42:01 level: [info] event: [SSHConnection::ReleaseResources] msg ==> [ 释放资源............. ]
+2026-09-03 08:42:01 level: [info] event: [SSHConnection::StopShellReader] msg ==> [ 【OK】ShellReader 线程已停止，最终提示符：[[root@localhost ~]# ] ]
+2026-09-03 08:42:01 level: [info] event: [SSHConnection::ReleaseResources] msg ==> [ 释放资源.............直接分离心跳线程（不等待） ]
+2026-09-03 08:42:01 level: [info] event: [SSHConnection::HeartbeatThreadFunc] msg ==> [ 等待期间收到停止信号，退出心跳线程 ]
+2026-09-03 08:42:01 level: [info] event: [SSHConnection::ReleaseResources] msg ==> [ 释放资源.............释放shell通道 ]
+2026-09-03 08:42:01 level: [info] event: [SSHConnection::HeartbeatThreadFunc] msg ==> [ 模拟点击面板的断开按钮 ]
+2026-09-03 08:42:01 level: [info] event: [SSHConnection::ReleaseResources] msg ==> [ 释放资源.............释放SSH会话 ]
+2026-09-03 08:42:01 level: [info] event: [SSHConnection::ReleaseResources] msg ==> [ 释放资源.............关闭Socket ]
+2026-09-03 08:42:01 level: [info] event: [SSHConnection::ReleaseResources] msg ==> [ 释放资源.............重置状态 ]
+2026-09-03 08:42:01 level: [info] event: [SSHConnection::~SSHConnection] msg ==> [ 析构函数 ]
+2026-09-03 08:42:01 level: [info] event: [SSHConnection_OnDisconn] msg ==> [ 面板0已从全局map中彻底移除 ]
+2026-09-03 08:42:01 level: [info] event: [SSHTermPanel::setSSHConnected] msg ==> [ setSSHConnected==========面板唯一索引======0 ]
+2026-09-03 08:42:01 level: [info] event: [SSHTermPanel::run_dlgProc] msg ==> [ 用户点击面板断开按钮0 ]
+2026-09-03 08:42:01 level: [info] event: [SSHConnection::HeartbeatThreadFunc] msg ==> [ 心跳线程正常退出 ]
