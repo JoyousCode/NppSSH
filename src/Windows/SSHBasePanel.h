@@ -6,6 +6,7 @@ class SSHBasePanel : public DockingDlgInterface{
     //Getting/Setting 自动生成Getting/Setting方法
     GEN_GET_SET_ONLY(int, _panelrealId);
     GEN_GET_SET_ONLY(HWND, _panelHwnd);
+    GEN_GET_SET_ONLY(HWND, _hLoginPanel);
     GEN_GET_SET_ONLY(int, _isConnected);
     GEN_GET_SET_ONLY(WNDPROC, _oldTopPanelWndProc);
     GEN_GET_SET_Protected(int, _panelSeqId);
@@ -39,6 +40,7 @@ protected://只能被子类用
     tTbData _dockData;      // 原生停靠数据结构体（需声明）
     HICON _hTabIcon;       // 持久化标签图标句柄
     HWND _panelHwnd;       // 持久化面板句柄
+	HWND _hLoginPanel;    // 登录面板句柄
     HWND _hTopPanelHwnd;       //notepad++软件句柄
     WNDPROC _oldTopPanelWndProc = nullptr; // 传统子类化保存旧过程
     wchar_t _titleParentBuf[64];// 存储绑定当前面板实例到窗口属性

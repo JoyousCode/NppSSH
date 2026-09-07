@@ -34,7 +34,6 @@ SSHTermPanel::SSHTermPanel(int panelSeqId, int panelrealId)
     _hEditTerm(NULL),
     _hBtnConnectSSH(NULL),
     _hBtnDisconnectSSH(NULL),
-    _hLoginPanel(NULL),
     _hIconConnect(NULL) ,
     _hIconDisconnect(NULL) {
 
@@ -136,6 +135,39 @@ INT_PTR CALLBACK SSHTermPanel::run_dlgProc(UINT message, WPARAM wParam, LPARAM l
         NppSSH_LogInfoAuto("【拦截run_dlgProc】消息message===" + msgStr);
     }
     switch (message) {
+    case WM_SSHLOGIN_BTNMSG:
+    {
+        NppSSH_LogInfoAuto("收到SSH登录按钮消息");
+        SSHLoginModal* pInput = reinterpret_cast<SSHLoginModal*>(lParam);
+        if (!pInput)
+        {
+            NppSSH_LogInfoAuto("没有接收到登录信息");
+            return TRUE;
+        }
+        std::wstring testmsg = pInput->bTestMsg ? L"测试连接" : L"连接";
+		
+        bool ok = SSH_ConnectionHandle(_panelHwnd, pInput->szHost,
+            pInput->szPort, pInput->szUser, pInput->szPass, pInput->szDir);
+        if (ok) {
+            std::wstring msg = L"SSH " + testmsg + L"成功 ✅";
+            MessageBoxW(_panelHwnd, msg.c_str(), L"NppSSH", MB_OK | MB_TASKMODAL);
+            if (pInput->bTestMsg) {
+                SSH_ConnectionOnDisconn(_panelHwnd);
+                PostMessage(_hLoginPanel, WM_SSH_BTNRECOVER, 0, 0);
+            }
+            else {
+                setSSHConnected(true);
+                PostMessage(_hLoginPanel, WM_CLOSE, 0, 0);
+            }
+        }
+        else {
+            std::wstring msg = L"SSH " + testmsg + L"失败 ❌";
+            MessageBoxW(_panelHwnd, msg.c_str(), L"NppSSH", MB_OK | MB_TASKMODAL);
+            PostMessage(_hLoginPanel, WM_SSH_BTNRECOVER, 0, 0);
+            if (!pInput->bTestMsg) PostMessage(_hLoginPanel, WM_CLOSE, 0, 0);
+        }
+        return TRUE;
+    }
     case WM_ERASEBKGND:
     {
         HDC hdc = (HDC)wParam;
@@ -244,19 +276,25 @@ INT_PTR CALLBACK SSHTermPanel::run_dlgProc(UINT message, WPARAM wParam, LPARAM l
         if (cmd == IDC_BTN_CONNECT_SSH) {
             NppSSH_LogInfoAuto("用户点击面板连接按钮，显示登录对话框");
             //ShowSSHLoginWindow_Modal();
-            SSHLoginModal input{};
-            SSH_LoginModalWindowsModal(&input);
-            if (input.bOk) {
-                bool ok = SSH_ConnectionHandle(_panelHwnd, input.szHost, input.szPort, input.szUser, input.szPass, input.szDir);
-                if (ok) {
-                    MessageBoxW(_panelHwnd, L"SSH 连接成功 ✅", L"NppSSH", MB_OK | MB_TASKMODAL);
-                    setSSHConnected(true);//更新面板显示效果，绑定面板ID和session
-                }
-                else {
-                    MessageBoxW(_panelHwnd, L"SSH 连接失败 ✅", L"NppSSH", MB_OK | MB_TASKMODAL);
-                }
+            SSHLoginModal* input = new SSHLoginModal();
+            input->bTestBtn = TRUE;
+            input->hPanelHwnd = _panelHwnd;
+            _hLoginPanel = SSH_LoginModalWindowsModal(input);
+            if (_hLoginPanel == nullptr) {
+                NppSSH_LogInfoAuto("创建失败需要手动释放");
+                delete input; } // 创建失败需要手动释放
+
+            //if (input->bOk) {
+                //bool ok = SSH_ConnectionHandle(_panelHwnd, input.szHost, input.szPort, input.szUser, input.szPass, input.szDir);
+                //if (ok) {
+                //    MessageBoxW(_panelHwnd, L"SSH 连接成功 ✅", L"NppSSH", MB_OK | MB_TASKMODAL);
+                //    setSSHConnected(true);//更新面板显示效果，绑定面板ID和session
+                //}
+                //else {
+                //    MessageBoxW(_panelHwnd, L"SSH 连接失败 ✅", L"NppSSH", MB_OK | MB_TASKMODAL);
+                //}
                 //bool result = SSHAppPanel_PuttyLoginHandle(input.szHost, input.szPort, input.szUser, input.szPass, input.szDir);
-            }
+            //}
         }
         else if (cmd == IDC_BTN_DISCONNECT_SSH) {
             NppSSH_LogInfoAuto("用户点击面板断开按钮" + std::to_string(this->_panelSeqId));

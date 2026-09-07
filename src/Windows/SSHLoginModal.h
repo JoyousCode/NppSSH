@@ -22,7 +22,7 @@ void SSHLogin_SaveHistoryJson(const SSHLoginHistoryItem& item);
 // 删除单条历史记录，按结构体删除一条数据
 void SSHLogin_DeleteHistoryByItem(const SSHLoginHistoryItem* pItem);
 
-void SSHLoginModal_WindowsModal(SSHLoginModal* pOut);
+HWND SSHLoginModal_WindowsModal(SSHLoginModal* pOut);
 
 INT_PTR CALLBACK SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 bool isEmptyInputToSSHLoginModal(SSHLoginModal* loginPanel, const char* host, const char* port, const char* user, const char* pass, const char* director);

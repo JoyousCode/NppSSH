@@ -165,6 +165,25 @@ INT_PTR CALLBACK SSHAppPanel::run_dlgProc(UINT message, WPARAM wParam, LPARAM lP
         NppSSH_LogInfoAuto("【拦截run_dlgProc】消息message===" + msgStr);
     }
     switch (message) {
+    case WM_SSHLOGIN_BTNMSG:
+    {
+        NppSSH_LogInfoAuto("收到登录按钮消息");
+        SSHLoginModal* pInput = reinterpret_cast<SSHLoginModal*>(lParam);
+        if (!pInput)
+        {
+            return TRUE;
+        }
+        bool result = SSHAppPanel_PuttyLoginHandle(pInput->szHost,
+            pInput->szPort, pInput->szUser, pInput->szPass, pInput->szDir);
+        if (result) { SSH_SettingsSavePuttyExePath(_strPuttyFullPath); }
+        else {
+            PostMessage(_hLoginPanel, WM_SSH_BTNRECOVER, 0, 0);
+            std::wstring msg = L"SSH 失败 ❌";
+            MessageBoxW(_panelHwnd, msg.c_str(), L"NppSSH", MB_OK | MB_TASKMODAL);
+        }
+        PostMessage(_hLoginPanel, WM_CLOSE, 0, 0);
+        return TRUE;
+    }
     case WM_ERASEBKGND:
     {
         HDC hdc = (HDC)wParam;
@@ -254,13 +273,11 @@ INT_PTR CALLBACK SSHAppPanel::run_dlgProc(UINT message, WPARAM wParam, LPARAM lP
         else if (cmd == IDC_BTN_CONNECT_PUTTY) {
             if (puttyLoginPathHandle())
             {
-                SSHLoginModal input{};
-                SSH_LoginModalWindowsModal(&input);
-                if (input.bOk)
-                {
-                    bool result = SSHAppPanel_PuttyLoginHandle(input.szHost, input.szPort, input.szUser, input.szPass, input.szDir);
-                    if (result) SSH_SettingsSavePuttyExePath(_strPuttyFullPath);
-                }
+                SSHLoginModal* input = new SSHLoginModal();
+                input->bTestBtn = FALSE;
+                input->hPanelHwnd = _panelHwnd;
+                _hLoginPanel = SSH_LoginModalWindowsModal(input);
+                if (_hLoginPanel == nullptr) delete input; // 创建失败需要手动释放
             }
         }
         else if (cmd == IDC_BTN_CLOSE_SSH) {

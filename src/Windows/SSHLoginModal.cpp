@@ -140,29 +140,32 @@ void SSHLogin_DeleteHistoryByItem(const SSHLoginHistoryItem* pItem)
 }
 
 
-void SSHLoginModal_WindowsModal(SSHLoginModal* pOut)
+HWND SSHLoginModal_WindowsModal(SSHLoginModal* pOut)
 {
-    if (!pOut) return;
-    ZeroMemory(pOut, sizeof(SSHLoginModal));
+    if (!pOut) return nullptr;
+    NppSSH_LogInfoAuto("显示SSH登录对话框:"+ std::to_string(pOut->bTestBtn));
 
     // 将结构体指针作为DialogBoxParam的lParam传入
-    INT_PTR nDlgRet = DialogBoxParamW(
+    //INT_PTR nDlgRet = DialogBoxParamW(
+    //    g_hInst,
+    //    MAKEINTRESOURCE(IDD_SSH_Putty_LOGIN),
+    //    g_nppData._nppHandle,
+    //    SSH_LoginDlgProc,
+    //    (LPARAM)pOut   
+    //);
+    HWND hDlg = CreateDialogParamW(
         g_hInst,
         MAKEINTRESOURCE(IDD_SSH_Putty_LOGIN),
         g_nppData._nppHandle,
         SSH_LoginDlgProc,
-        (LPARAM)pOut   
+        (LPARAM)pOut
     );
-
-    // DialogBoxParam返回，模态框已经关闭
-    if (nDlgRet == IDOK)
+    if (hDlg != nullptr)
     {
-        pOut->bOk = TRUE;
+        NppSSH_LogInfoAuto("登录对话框:" + HwndToString(hDlg));
+        ShowWindow(hDlg, SW_SHOW);
     }
-    else
-    {
-        pOut->bOk = FALSE;
-    }
+	return hDlg;
 }
 
 static LRESULT CALLBACK ComboDropList_SubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData)
@@ -241,13 +244,21 @@ static LRESULT CALLBACK ComboDropList_SubclassProc(HWND hWnd, UINT uMsg, WPARAM 
 INT_PTR CALLBACK SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 
-    SSHLoginModal* pPanel = nullptr;
-    // 统一从窗口属性读取面板指针，替代每次遍历全局vector
-    wchar_t buf[128]{};
-    swprintf_s(buf, _countof(buf), L"SSHLoginModal-%p", hWnd);
-    pPanel = (SSHLoginModal*)GetPropW(hWnd, buf);
+    //SSHLoginModal* pPanel = nullptr;
+    //// 统一从窗口属性读取面板指针，替代每次遍历全局vector
+    //wchar_t buf[128]{};
+    //swprintf_s(buf, _countof(buf), L"SSHLoginModal-%p", hWnd);
+    //pPanel = reinterpret_cast<SSHLoginModal*>(GetPropW(hWnd, buf));
     switch (uMsg)
     {
+    case WM_SSH_BTNRECOVER:
+    {
+        HWND hBtnTest = GetDlgItem(hWnd, IDC_BTN_TEST);
+        HWND hBtnConnect = GetDlgItem(hWnd, IDC_BTN_SUBMIT);
+        EnableWindow(hBtnTest, TRUE);
+        EnableWindow(hBtnConnect, TRUE);
+        return TRUE;
+    }
     case WM_ERASEBKGND:
     {
         HDC hdc = (HDC)wParam;
@@ -332,6 +343,7 @@ INT_PTR CALLBACK SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lP
 
     case WM_INITDIALOG:
     {
+        SSHLoginModal* pPanel = nullptr;
         HBRUSH hBgBrush = CreateSolidBrush(RGB(239, 244, 249));
         SetPropW(hWnd, L"_DlgBgBrush", (HANDLE)hBgBrush);
         // lParam是DialogBoxParam传入的this，存入窗口属性
@@ -400,6 +412,19 @@ INT_PTR CALLBACK SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lP
         SetPropW(hWnd, L"hEyeShow", (HANDLE)hEyeShow);
         SetPropW(hWnd, L"isPasswordHide", (HANDLE)true);// 标记当前密码是否隐藏（默认true隐藏）
 
+        NppSSH_LogInfoAuto("面板过程显示SSH登录对话框:" + std::to_string(pPanel->bTestBtn));
+        if (pPanel->bTestBtn)
+        {
+            // 显示登录测试，隐藏取消登录
+            ShowWindow(GetDlgItem(hWnd, IDC_BTN_TEST), SW_SHOW);
+            ShowWindow(GetDlgItem(hWnd, IDC_BTN_CONNECT), SW_HIDE);
+        }
+        else
+        {
+            // 显示取消登录，隐藏登录测试
+            ShowWindow(GetDlgItem(hWnd, IDC_BTN_TEST), SW_HIDE);
+            ShowWindow(GetDlgItem(hWnd, IDC_BTN_CONNECT), SW_SHOW);
+        }
         return TRUE;
     }
     case WM_DELETE_COMBO_ITEM:
@@ -532,9 +557,20 @@ INT_PTR CALLBACK SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lP
             return TRUE;
         }
         else {
-            if (LOWORD(wParam) == IDC_BTN_SUBMIT)//确认登录按钮
+            if ((HIWORD(wParam) == BN_CLICKED) && (LOWORD(wParam) == IDC_BTN_SUBMIT || LOWORD(wParam) == IDC_BTN_TEST))//确认登录按钮
             {
                 NppSSH_LogInfoAuto("用户点击确认登录按钮，开始调用");
+
+                SSHLoginModal* pPanel = nullptr;
+                // 统一从窗口属性读取面板指针，替代每次遍历全局vector
+                wchar_t buf[128]{};
+                swprintf_s(buf, _countof(buf), L"SSHLoginModal-%p", hWnd);
+                pPanel = reinterpret_cast<SSHLoginModal*>(GetPropW(hWnd, buf));
+                HWND hBtnTest = GetDlgItem(hWnd, IDC_BTN_TEST);
+                HWND hBtnConnect = GetDlgItem(hWnd, IDC_BTN_SUBMIT);
+				EnableWindow(hBtnTest, FALSE);
+				EnableWindow(hBtnConnect, FALSE);// 禁用按钮，防止重复点击
+
                 wchar_t szHost[256] = { 0 };
                 wchar_t szPort[32] = { 0 };
                 wchar_t szUser[256] = { 0 };
@@ -552,6 +588,7 @@ INT_PTR CALLBACK SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lP
                 std::string passU8 = WStringToUTF8(szPass);
                 std::string dirU8 = WStringToUTF8(szDir);
                 
+                NppSSH_LogInfoAuto("开始调用校验");
                 bool bValid = isEmptyInputToSSHLoginModal(pPanel,
                     hostU8.c_str(), portU8.c_str(), userU8.c_str(), passU8.c_str(), dirU8.c_str());
                 if(bValid){
@@ -568,16 +605,31 @@ INT_PTR CALLBACK SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lP
                         SSH_EncryptPasswordToBase64(szPass, encBase64);
                         wcsncpy_s(item.szPassEncBase64, _countof(item.szPassEncBase64), encBase64.c_str(), _TRUNCATE);
                         SSHLogin_SaveHistoryJson(item);
-
                     }
-                    EndDialog(hWnd, IDOK);
+                    
+
+                    LOWORD(wParam) == IDC_BTN_TEST ? pPanel->bTestMsg = TRUE : pPanel->bTestMsg = FALSE;
+                    if (pPanel->hPanelHwnd && IsWindow(pPanel->hPanelHwnd))
+                    {
+                        NppSSH_LogInfoAuto("登录对话框:" + HwndToString(pPanel->hPanelHwnd));
+                        NppSSH_LogInfoAuto("登录对话框:" + HwndToString(hWnd));
+                        PostMessageW(pPanel->hPanelHwnd, WM_SSHLOGIN_BTNMSG, 0, (LPARAM)pPanel);
+                    }
+                }
+                else {
+                    PostMessage(hWnd, WM_SSH_BTNRECOVER, 0, 0);
                 }
             }
             else if (LOWORD(wParam) == IDC_BTN_CONNECT) {
-                EndDialog(hWnd, IDCANCEL);
+                DestroyWindow(hWnd);
                 NppSSH_LogErrorAuto("点击取消按钮");
             }
         }
+        return TRUE;
+    }
+    case WM_CLOSE:
+    {
+        DestroyWindow(hWnd);
         return TRUE;
     }
     //对话框销毁后的所有操作
@@ -613,7 +665,10 @@ INT_PTR CALLBACK SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lP
             SSHLoginHistoryItem* p = (SSHLoginHistoryItem*)SendMessageW(hComboHost, CB_GETITEMDATA, i, 0);
             if (p) delete p;
         }
-
+        SSHLoginModal* pPanel = nullptr;
+        wchar_t bufPanel[128]{};
+        swprintf_s(bufPanel, _countof(bufPanel), L"SSHLoginModal-%p", hWnd);
+        pPanel = reinterpret_cast<SSHLoginModal*>(GetPropW(hWnd, bufPanel));
         if (pPanel)
         {
             // 释放眼睛图标资源
@@ -625,7 +680,7 @@ INT_PTR CALLBACK SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lP
             RemovePropW(hWnd, L"hEyeShow");
             RemovePropW(hWnd, L"isPasswordHide");
         }
-
+		delete pPanel;
         NppSSH_LogInfoAuto("登录对话框销毁");
         return TRUE;
     }
@@ -639,7 +694,7 @@ bool isEmptyInputToSSHLoginModal(SSHLoginModal* loginPanel,const char* host, con
     std::wstring SSH_USER = UTF8ToWstring(user);
     std::wstring SSH_PASS = UTF8ToWstring(pass);
     std::wstring SSH_INITCD = UTF8ToWstring(director);
-
+    HWND hPanelHwnd = loginPanel->hPanelHwnd;
     if (SSH_HOST.empty()) {
         ::MessageBoxW(NULL, L"主机不能为空！", L"NppSSH 提示", MB_OK | MB_ICONERROR);
         NppSSH_LogErrorAuto("启动PuTTY失败：主机不能为空");

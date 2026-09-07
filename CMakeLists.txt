@@ -130,6 +130,7 @@ target_link_libraries(NppSSH PRIVATE
     user32.lib
     gdi32.lib
     version.lib
+    msimg32
 )
 target_compile_definitions(NppSSH PRIVATE
     WIN32_LEAN_AND_MEAN

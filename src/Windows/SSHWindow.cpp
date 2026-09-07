@@ -420,6 +420,6 @@ void SSH_TermHandleExecuteClear(HWND hwnd) {
 
 
 /**************（实际定义在SSHLoginModal中）***************/
-void SSH_LoginModalWindowsModal(SSHLoginModal* SSHLoginModal) {
-    SSHLoginModal_WindowsModal(SSHLoginModal);
+HWND SSH_LoginModalWindowsModal(SSHLoginModal* SSHLoginModal) {
+    return SSHLoginModal_WindowsModal(SSHLoginModal);
 }

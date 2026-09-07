@@ -70,7 +70,7 @@ private:
     HWND _hEditTerm;        // 输出编辑框句柄,面板内输出文本框
     HWND _hBtnConnectSSH;   // 连接SSH按钮句柄
     HWND _hBtnDisconnectSSH;// 断开SSH按钮句柄
-    HWND _hLoginPanel;      //登录面板句柄(已废除)
+    //HWND _hLoginPanel;      //登录面板句柄(已废除)
 
     HICON _hIconConnect;    // 持久化连接图标句柄
     HICON _hIconDisconnect; // 持久化断开图标句柄

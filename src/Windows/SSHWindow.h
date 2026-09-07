@@ -91,6 +91,8 @@
 #define WM_DELETE_COMBO_ITEM (WM_USER + 2005)
 #define WM_CLEAR_SUPPRESS  (WM_USER + 2006)
 #define WM_SET_EDIT_CURSOR_END (WM_USER + 2007)
+#define WM_SSHLOGIN_BTNMSG (WM_USER + 2008)
+#define WM_SSH_BTNRECOVER (WM_USER + 2009)
 
 class SSHBasePanel;
 class SSHTermPanel;
@@ -109,6 +111,9 @@ typedef struct tagSSHLoginInput
     wchar_t szUser[256];
     wchar_t szPass[256];
     wchar_t szDir[256];
+    HWND hPanelHwnd;
+	BOOL bTestMsg;// 发送消息时候标记是否是测试按钮
+	BOOL bTestBtn;// TRUE=显示测试按钮，FALSE=显示取消按钮
     BOOL bOk;   // TRUE=用户点确定，FALSE=取消
 } SSHLoginModal;
 // 全局变量转发
@@ -212,4 +217,4 @@ void SSH_TermHandleExecuteClear(HWND hwnd);                        //清屏命�
 //void SSH_TerminalResize(HWND hParent, int panelSeqId);					// 调整伪终端面板大小
 
 // 其他文件调用SSHLoginModal中的函数
-void SSH_LoginModalWindowsModal(SSHLoginModal* SSHLoginModal);
+HWND SSH_LoginModalWindowsModal(SSHLoginModal* SSHLoginModal);

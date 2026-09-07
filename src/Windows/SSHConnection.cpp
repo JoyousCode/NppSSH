@@ -1763,10 +1763,6 @@ bool SSHConnection::Connect(const char* host, int port, const char* user, const 
         NppSSH_LogInfoAuto("面板已处于连接状态，无需重复连接");
         return true;
     }
-    //else {
-    //    NppSSH_LogInfoAuto("测试崩溃连接");
-    //    return false;
-    //}
 
     try {
         // 创建promise/future，用于获取异步连接结果
@@ -1965,6 +1961,7 @@ void SSHConnection::ConnectAsync(const char* host, int port, const char* user, c
 
 bool SSHConnection_Handle(HWND hWnd, std::wstring host, std::wstring port, std::wstring user, std::wstring pass, std::wstring director) {
     NppSSH_LogInfoAuto("面板="+ HwndToString(hWnd) +",绑定连接信息");
+    NppSSH_LogInfoAuto("主机："+WStringToLogStr(host) +",用户名：" + WStringToLogStr(user) +",端口：" + WStringToLogStr(port));
     if (hWnd == nullptr)
     {
         NppSSH_LogErrorAuto("SSHConnection_Handle hWnd为NULL，拒绝创建连接");
@@ -2017,6 +2014,7 @@ bool SSHConnection_Handle(HWND hWnd, std::wstring host, std::wstring port, std::
     bool connectResult = false;
     try {
         connectResult = spConn->Connect(hostUtf8.c_str(), nPort, userUtf8.c_str(), passUtf8.c_str(), directorUtf8.c_str()); // Connect内部已加锁，无需外层锁
+        //connectResult = true;
     }
     catch (const std::exception& e) {
         NppSSH_LogErrorAuto("调用Connect异常: " + std::string(e.what()));
