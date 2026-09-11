@@ -71,9 +71,12 @@ private:
     HWND _hBtnConnectSSH;   // 连接SSH按钮句柄
     HWND _hBtnDisconnectSSH;// 断开SSH按钮句柄
     //HWND _hLoginPanel;      //登录面板句柄(已废除)
+    HWND _hSshWaitDlg;      // 跑马灯等待对话框句柄
 
     HICON _hIconConnect;    // 持久化连接图标句柄
     HICON _hIconDisconnect; // 持久化断开图标句柄
+
+	bool _testMsgHandle;     // 测试消息处理标志
 
 };
 

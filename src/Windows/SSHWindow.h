@@ -93,6 +93,9 @@
 #define WM_SET_EDIT_CURSOR_END (WM_USER + 2007)
 #define WM_SSHLOGIN_BTNMSG (WM_USER + 2008)
 #define WM_SSH_BTNRECOVER (WM_USER + 2009)
+#define WM_SSHLOGIN_CONNECTION_MSG (WM_USER + 2010)
+#define WM_SET_BTN_TRUE (WM_USER + 2011)
+
 
 class SSHBasePanel;
 class SSHTermPanel;
@@ -173,7 +176,7 @@ void SSH_PanelInitRecreateSSHAppPanel(int panelSeqId, int panelrealId);
 //bool SSH_AppPanelPuttyLoginHandle(int panelSeqId, const char* host, int port, const char* user, const char* pass, const char* director);
 
 // 其他文件调用SSHConnection中的函数
-bool SSH_ConnectionHandle(HWND hWnd, std::wstring host, std::wstring port, std::wstring user, std::wstring pass, std::wstring director);	// 连接操作
+bool SSH_ConnectionHandle(HWND hWnd, HWND hWaitDlg, std::wstring host, std::wstring port, std::wstring user, std::wstring pass, std::wstring director);	// 连接操作
 void SSH_ConnectionDisconnectInner(HWND hWnd);            // 内部断开连接
 void SSH_ConnectionOnDisconn(HWND hWnd);				// map移除数据
 bool SSH_ConnectionIsConn(HWND hWnd);					// 判断是否连接

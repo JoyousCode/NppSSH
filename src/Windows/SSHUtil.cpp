@@ -731,3 +731,445 @@ std::string CleanAnsiEscapeSequences(const std::string& input) {
 
     return out;
 }
+
+struct SshProgressTask
+{
+    HWND hDlg;
+    int nPercent;
+    std::wstring strDetailText;
+    std::wstring strMainTitle;
+};
+static std::unordered_map<HWND, bool> g_mapWndCancelFlag;
+static CRITICAL_SECTION g_mapCs;
+static std::queue<SshProgressTask> g_progressQueue;
+static CRITICAL_SECTION g_progressCs;
+static HANDLE g_progressEvent = NULL;
+static HANDLE g_progressThread = NULL;
+static bool g_progressActive = true;
+
+// 初始化map临界区，在SSHProgress_Init调用
+void InitMapCs()
+{
+    static bool inited = false;
+    if (!inited)
+    {
+        InitializeCriticalSection(&g_mapCs);
+        inited = true;
+    }
+}
+// 初始化临界区（只执行一次，和日志InitLogCs保持一样写法）
+void InitProgressCs()
+{
+    static bool inited = false;
+    if (!inited)
+    {
+        InitializeCriticalSection(&g_progressCs);
+        inited = true;
+    }
+}
+
+// 线程安全入队，拷贝字符串，不保存外部裸指针
+void ProgressEnqueue(HWND hDlg, int nPercent, LPCWSTR szDetailText, LPCWSTR szMainTitle)
+{
+    InitProgressCs();
+    SshProgressTask task;
+    task.hDlg = hDlg;
+    task.nPercent = nPercent;
+    if (szDetailText)
+        task.strDetailText = szDetailText;
+    if (szMainTitle)
+        task.strMainTitle = szMainTitle;
+
+    EnterCriticalSection(&g_progressCs);
+    g_progressQueue.push(task);
+    LeaveCriticalSection(&g_progressCs);
+
+    SetEvent(g_progressEvent); // 唤醒后台进度消费线程
+}
+// 后台线程：消费进度更新队列，真正执行TDM消息与窗口检测
+DWORD WINAPI ProgressWriterThread(LPVOID)
+{
+    InitProgressCs();
+    while (g_progressActive)
+    {
+        // 等待有更新任务入队
+        WaitForSingleObject(g_progressEvent, INFINITE);
+
+        // 把队列全部转移到本地队列，缩短持有临界区时间（和日志方案完全一致）
+        std::queue<SshProgressTask> localQueue;
+        EnterCriticalSection(&g_progressCs);
+        while (!g_progressQueue.empty())
+        {
+            localQueue.push(g_progressQueue.front());
+            g_progressQueue.pop();
+        }
+        LeaveCriticalSection(&g_progressCs);
+
+        // 重置事件，准备下一次等待
+        ResetEvent(g_progressEvent);
+
+        // 逐个执行进度更新任务
+        while (!localQueue.empty())
+        {
+            SshProgressTask task = localQueue.front();
+            localQueue.pop();
+            HWND hDlg = task.hDlg;
+
+            // 优先判断：该窗口是否已经触发取消
+            bool bWndCanceling = false;
+            InitMapCs();
+            EnterCriticalSection(&g_mapCs);
+            auto it = g_mapWndCancelFlag.find(hDlg);
+            if (it != g_mapWndCancelFlag.end())
+            {
+                bWndCanceling = it->second;
+            }
+            LeaveCriticalSection(&g_mapCs);
+
+            if (bWndCanceling)
+            {
+                NppSSH_LogInfoAuto("【后台队列】窗口已经取消，丢弃本条进度任务 hDlg=" + HwndToString(hDlg));
+                continue;
+            }
+
+
+            // 任务执行前校验窗口有效性
+            if (hDlg == nullptr || !IsWindow(hDlg))
+            {
+                NppSSH_LogInfoAuto("【进度后台线程】窗口已销毁，跳过本次更新任务");
+                continue;
+            }
+
+            NppSSH_LogInfoAuto("【后台队列更新进度】" + std::to_string(task.nPercent));
+            NppSSH_LogInfoAuto("【后台队列更新主标题】" + WStringToLogStr(task.strMainTitle.c_str()));
+            NppSSH_LogInfoAuto("【后台队列更新详情】" + WStringToLogStr(task.strDetailText.c_str()));
+
+            if (task.nPercent != -1)
+            {
+                SendMessage(hDlg, TDM_SET_PROGRESS_BAR_MARQUEE, FALSE, 0);
+                SendMessage(hDlg, TDM_SET_PROGRESS_BAR_POS, task.nPercent, 0);
+            }
+
+            // WaitWithMsgLoop 放到后台线程内部执行，不再阻塞SSH业务调用线程
+            BOOL bWaitOk = WaitWithMsgLoop(&hDlg, 1000);
+            if (!bWaitOk)
+            {
+                NppSSH_LogInfoAuto("【后台进度线程】等待期间对话框已关闭，终止本次后续更新");
+                continue;
+            }
+
+            if (!task.strDetailText.empty() && hDlg != nullptr && IsWindow(hDlg))
+            {
+                SendMessage(hDlg, TDM_SET_ELEMENT_TEXT, TDE_CONTENT, reinterpret_cast<LPARAM>(task.strDetailText.c_str()));
+            }
+            if (!task.strMainTitle.empty() && hDlg != nullptr && IsWindow(hDlg))
+            {
+                SendMessage(hDlg, TDM_SET_ELEMENT_TEXT, TDE_MAIN_INSTRUCTION, reinterpret_cast<LPARAM>(task.strMainTitle.c_str()));
+            }
+            if (task.nPercent >= 100 && hDlg != nullptr && IsWindow(hDlg))
+            {
+                SendMessage(hDlg, TDM_ENABLE_BUTTON, IDOK, 1);
+            }
+            NppSSH_LogInfoAuto("【后台队列】任务完成，等待1000ms再执行下一条");
+            WaitWithMsgLoop(nullptr, 80);
+        }
+    }
+    return 0;
+}
+void SSHProgress_Init()
+{
+    InitProgressCs();
+    g_progressEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+    g_progressThread = CreateThread(NULL, 0, ProgressWriterThread, NULL, 0, NULL);
+}
+
+BOOL WaitWithMsgLoop(HWND* phWnd, DWORD dwTimeoutMs)
+{
+    const ULONGLONG ullStart = GetTickCount64();
+    MSG msg = { 0 };
+
+    while (GetTickCount64() - ullStart < dwTimeoutMs)
+    {
+        // 如果传入句柄指针，就做窗口就绪检测
+        if (phWnd != nullptr)
+        {
+            if (*phWnd != nullptr && IsWindow(*phWnd))
+            {
+                // 检测到有效窗口，提前成功返回
+                return TRUE;
+            }
+        }
+
+        // 统一消息泵逻辑（两种模式共用这段）
+        if (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE))
+        {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+        else
+        {
+            Sleep(10);
+        }
+    }
+
+    // 超时分支：如果是等待窗口模式，句柄置空
+    if (phWnd != nullptr)
+    {
+        *phWnd = nullptr;
+        return FALSE;
+    }
+    return TRUE;
+}
+// 回调上下文结构体（精简，移除无用成员）
+typedef struct tagTD_CALLBACK_CONTEXT {
+    HWND hTaskDialog;
+    HWND* ppOutHwnd;
+    HWND hParentWnd;
+    HWND hLoginWnd;
+    bool isTestMsg;
+    bool bCanceling;
+} TD_CALLBACK_CONTEXT;
+
+// 线程参数结构体（精简）
+struct TD_THREAD_PARAM {
+    TASKDIALOGCONFIG tdc;
+    HWND* ppOutHwnd;
+};
+
+// 子线程入口：承载TaskDialogIndirect模态对话框
+unsigned int __stdcall TaskDialogThreadProc(void* pParam)
+{
+    TD_THREAD_PARAM* pTp = reinterpret_cast<TD_THREAD_PARAM*>(pParam);
+    HWND* ppOutHwnd = pTp->ppOutHwnd;
+
+    HRESULT hr = TaskDialogIndirect(&pTp->tdc, nullptr, nullptr, nullptr);
+
+    if (ppOutHwnd)
+        *ppOutHwnd = nullptr;
+
+    delete pTp;
+    return 0;
+}
+
+// TaskDialog回调函数
+HRESULT CALLBACK SshWaitTDCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam, LONG_PTR lpRefData)
+{
+    TD_CALLBACK_CONTEXT* pCtx = reinterpret_cast<TD_CALLBACK_CONTEXT*>(lpRefData);
+    if (!pCtx)
+    {
+        NppSSH_LogInfoAuto("没有找到回调上下文");
+        return S_OK;
+    }
+
+    switch (msg)
+    {
+    // 对话框窗口创建完成
+    case TDN_CREATED:
+    {
+        NppSSH_LogInfoAuto("进入到【TDN_CREATED】父窗口:" + HwndToString(pCtx->hParentWnd));
+        NppSSH_LogInfoAuto("进入到【TDN_CREATED】对话框:" + HwndToString(hWnd));
+
+        pCtx->hTaskDialog = hWnd;
+        pCtx->bCanceling = false; // 初始化：未进入取消流程
+        if (pCtx->ppOutHwnd)
+        {
+            *(pCtx->ppOutHwnd) = hWnd;
+        }
+        InitMapCs();
+        EnterCriticalSection(&g_mapCs);
+        g_mapWndCancelFlag[hWnd] = false;
+        LeaveCriticalSection(&g_mapCs);
+
+        // ========== 初始进度0，普通进度条（非跑马灯） ==========
+        SendMessage(hWnd, TDM_SET_PROGRESS_BAR_MARQUEE, FALSE, 0);
+        SendMessage(hWnd, TDM_SET_PROGRESS_BAR_POS, 0, 0);
+        // 设置初始详情文字
+        SendMessage(hWnd, TDM_SET_ELEMENT_TEXT, TDE_CONTENT, reinterpret_cast<LPARAM>(L"准备执行SSH操作..."));
+		SendMessage(hWnd, TDM_ENABLE_BUTTON, IDOK, 0);//禁用按钮，防止用户误操作
+        break;
+    }
+
+    // 用户点击(IDOK)拦截处理
+    case TDN_BUTTON_CLICKED:
+    {
+		NppSSH_LogInfoAuto("进入到【TDN_BUTTON_CLICKED】");
+        int nBtnId = static_cast<int>(wParam);
+        HWND hParentWnd = pCtx->hParentWnd;
+		HWND hLoginWnd = pCtx->hLoginWnd;
+        HWND hDlg = hWnd;
+        if (nBtnId == IDCANCEL && hParentWnd && IsWindow(hParentWnd))
+        {
+            if (pCtx->bCanceling)
+            {
+                NppSSH_LogInfoAuto("【取消】当前弹窗正在取消流程，忽略本次点击");
+                //break;//双击直接关闭（根据用户体验可优化）
+				return S_FALSE;// 阻止对话框关闭，继续等待SSH断开
+            }
+            // 打上标记，锁定本次取消流程
+            pCtx->bCanceling = true;
+
+            InitMapCs();
+            EnterCriticalSection(&g_mapCs);
+            g_mapWndCancelFlag[hDlg] = true;
+            LeaveCriticalSection(&g_mapCs);
+            
+            SendMessage(hDlg, TDM_SET_PROGRESS_BAR_MARQUEE, FALSE, 0);
+            SendMessage(hDlg, TDM_SET_PROGRESS_BAR_POS, 100, 0);
+            SendMessage(hDlg, TDM_SET_ELEMENT_TEXT, TDE_MAIN_INSTRUCTION, reinterpret_cast<LPARAM>(L"正在取消中"));
+            SendMessage(hDlg, TDM_SET_ELEMENT_TEXT, TDE_CONTENT, reinterpret_cast<LPARAM>(L"连接结束，正在取消中..."));
+            SSH_ConnectionOnDisconn(hParentWnd);
+
+            InitProgressCs();
+            EnterCriticalSection(&g_progressCs);
+            while (!g_progressQueue.empty())
+            {
+                g_progressQueue.pop();
+            }
+            LeaveCriticalSection(&g_progressCs);
+            WaitWithMsgLoop(nullptr, 1000);
+        }
+        else if (nBtnId == IDOK && hLoginWnd && IsWindow(hLoginWnd) && !pCtx->isTestMsg) {
+            PostMessage(hLoginWnd, WM_CLOSE, 0, 0);
+        }
+        break;
+    }
+
+    // 对话框销毁，释放上下文内存
+    case TDN_DESTROYED:
+    {
+        NppSSH_LogInfoAuto("进入到【TDN_DESTROYED】");
+
+        InitMapCs();
+        EnterCriticalSection(&g_mapCs);
+        auto it = g_mapWndCancelFlag.find(hWnd);
+        if (it != g_mapWndCancelFlag.end())
+        {
+            g_mapWndCancelFlag.erase(it);
+        }
+        LeaveCriticalSection(&g_mapCs);
+
+        if (pCtx->ppOutHwnd)
+        {
+            *(pCtx->ppOutHwnd) = nullptr;
+        }
+        if (pCtx)
+        {
+            NppSSH_LogInfoAuto("【释放】释放释放释放释放释放释放释放释放释放释放释放释放释放释放释放释放释放释放释放释放释放释放释放释放释放释放释放释放释放释放释放释放释放释放");
+            delete pCtx;
+        }
+        break;
+    }
+    }
+    return S_OK;
+}
+
+/**
+ * @brief 创建进度提示对话框，子线程拉起模态TaskDialog
+ * @param hParent 主窗口句柄
+ * @return 对话框HWND，用于后续更新进度/关闭
+ */
+HWND CreateSshWaitDialog(HWND hParent, HWND hLoginPanel, bool bTestMsg)
+{
+    HWND hResultWnd = nullptr;
+
+    TD_CALLBACK_CONTEXT* pCtx = new TD_CALLBACK_CONTEXT();
+    ZeroMemory(pCtx, sizeof(TD_CALLBACK_CONTEXT));
+    pCtx->ppOutHwnd = &hResultWnd;
+    pCtx->hParentWnd = hParent;
+    pCtx->hLoginWnd = hLoginPanel;
+    pCtx->isTestMsg = bTestMsg;
+
+    TASKDIALOGCONFIG tdc = { 0 };
+    tdc.cbSize = sizeof(TASKDIALOGCONFIG);
+    tdc.hwndParent = hLoginPanel;
+    tdc.hInstance = GetModuleHandle(nullptr);
+
+	// 仅普通进度条+自适应大小，禁止按钮
+    tdc.dwFlags = static_cast<TASKDIALOG_FLAGS>(TDF_SHOW_PROGRESS_BAR | TDF_SIZE_TO_CONTENT);
+    //tdc.dwCommonButtons = static_cast<TASKDIALOG_COMMON_BUTTON_FLAGS>(TDCBF_OK_BUTTON);
+    tdc.dwCommonButtons = static_cast<TASKDIALOG_COMMON_BUTTON_FLAGS>(TDCBF_OK_BUTTON | TDCBF_CANCEL_BUTTON);
+
+    tdc.pszWindowTitle = L"NppSSH";
+    tdc.pszMainInstruction = L"SSH 连接进行中,请勿关闭面板，关闭则中断";
+    tdc.pszContent = L"准备执行SSH连接操作...";
+
+    tdc.cxWidth = 0;
+    tdc.cButtons = 0;
+    tdc.pButtons = nullptr;
+    tdc.nDefaultButton = 0;
+    tdc.cRadioButtons = 0;
+    tdc.pRadioButtons = nullptr;
+    tdc.nDefaultRadioButton = 0;
+
+    tdc.pszVerificationText = nullptr;
+    tdc.pszExpandedInformation = nullptr;
+    tdc.pszExpandedControlText = nullptr;
+    tdc.pszCollapsedControlText = nullptr;
+    tdc.pszFooterIcon = nullptr;
+    tdc.pszFooter = nullptr;
+
+    tdc.pfCallback = SshWaitTDCallback;
+    tdc.lpCallbackData = reinterpret_cast<LONG_PTR>(pCtx);
+    tdc.cxWidth = 0;
+
+    TD_THREAD_PARAM* pThreadParam = new TD_THREAD_PARAM();
+    pThreadParam->tdc = tdc;
+    pThreadParam->ppOutHwnd = &hResultWnd;
+    NppSSH_LogInfoAuto("【进度框】准备启动子线程");
+
+    HANDLE hThread = (HANDLE)_beginthreadex(nullptr, 0, TaskDialogThreadProc, pThreadParam, 0, nullptr);
+    //MessageBoxW(hResultWnd, L"测试", L"NppSSH", MB_OK | MB_TASKMODAL);
+    //WaitWithMsgLoop(nullptr, 10000);
+    BOOL bGotHandle = WaitWithMsgLoop(&hResultWnd, 3000);
+    if (bGotHandle && hThread != nullptr)
+    {
+        NppSSH_LogInfoAuto("【进度框】线程创建成功");
+        CloseHandle(hThread);
+    }
+    else
+    {
+        delete pThreadParam;
+        delete pCtx;
+        NppSSH_LogErrorAuto("【进度框】线程创建失败，无法启动子线程");
+        return nullptr;
+    }
+    
+    if (hResultWnd && IsWindow(hResultWnd)) {
+        NppSSH_LogInfoAuto("获取进度框句柄成功");
+    }
+    return hResultWnd;
+}
+
+/**
+ * @brief 更新进度对话框：进度百分比 + 底部详情文本
+ * @param hDlg CreateSshWaitDialog返回的对话框句柄
+ * @param nPercent 进度值 0~100
+ * @param szDetailText 进度条下方详情文本（宽字符串 L"xxx"）
+ */
+void UpdateSshWaitProgress(HWND hDlg, int nPercent, LPCWSTR szDetailText, LPCWSTR szMainTitle)
+{
+    NppSSH_LogInfoAuto("【更新进度】" + std::to_string(nPercent));
+
+    NppSSH_LogInfoAuto("【更新主标题】" + ((szMainTitle != nullptr) ? WStringToLogStr(szMainTitle) : "空"));
+    NppSSH_LogInfoAuto("【更新详情】" + ((szDetailText != nullptr) ? WStringToLogStr(szDetailText) : "空"));
+    if (hDlg == nullptr || !IsWindow(hDlg))
+    {
+        return;
+    }
+    ProgressEnqueue(hDlg, nPercent, szDetailText, szMainTitle);
+    //SendMessage(hDlg, TDM_UPDATE_ELEMENT_TEXT, TDE_CONTENT, reinterpret_cast<LPARAM>(szDetailText));
+    //SendMessage(hDlg, TDM_UPDATE_ELEMENT_TEXT, TDE_MAIN_INSTRUCTION, reinterpret_cast<LPARAM>(szMainTitle));
+}
+
+/**
+ * @brief 唯一关闭入口，只有调用此函数才能关闭进度对话框
+ * @param hDlg 对话框句柄引用，置空
+ */
+void CloseSshWaitDialog(HWND& hDlg)//暂时废除，目前仅通过点击按钮关闭进度框。
+{
+    if (hDlg && IsWindow(hDlg))
+    {
+        SendMessage(hDlg, TDM_CLICK_BUTTON, IDOK, 0);
+    }
+    hDlg = nullptr;
+}

@@ -248,13 +248,13 @@ void SSH_PanelInitRecreateSSHAppPanel(int panelSeqId, int panelrealId) {//panelS
 
 
 /**************（实际定义在SSHConnection中）***************/
-bool SSH_ConnectionHandle(HWND hWnd, std::wstring host, std::wstring port, std::wstring user, std::wstring pass, std::wstring director) {
-    return SSHConnection_Handle(hWnd,host, port, user, pass, director);   // SSH连接操作转发
+bool SSH_ConnectionHandle(HWND hWnd, HWND hWaitDlg, std::wstring host, std::wstring port, std::wstring user, std::wstring pass, std::wstring director) {
+    return SSHConnection_Handle(hWnd, hWaitDlg, host, port, user, pass, director);   // SSH连接操作转发
 }
-void SSH_ConnectionDisconnectInner(HWND hWnd) {
+void SSH_ConnectionDisconnectInner(HWND hWnd) {// 提高效率专用，只是状态断开,没有map映射中移除
     SSHConnection_DisconnectInner(hWnd);
 }
-void SSH_ConnectionOnDisconn(HWND hWnd) {
+void SSH_ConnectionOnDisconn(HWND hWnd) {    // 彻底断开连接（释放资源并从全局map映射中移除）
     SSHConnection_OnDisconn(hWnd);
 }
 bool SSH_ConnectionIsConn(HWND hWnd) {

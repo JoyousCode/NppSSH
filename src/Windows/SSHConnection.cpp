@@ -464,8 +464,8 @@ SSHConnection::SSHConnection(SSHConnection&& other) noexcept {
     m_session = other.m_session;
     m_sock = other.m_sock;
     m_connected.store(other.m_connected.load(std::memory_order_acquire), std::memory_order_release);
-    m_connecting.store(other.m_connecting.load(std::memory_order_acquire), std::memory_order_release);
-    m_cancelConnect.store(other.m_cancelConnect.load(std::memory_order_acquire), std::memory_order_release);
+    //m_connecting.store(other.m_connecting.load(std::memory_order_acquire), std::memory_order_release);
+    m_stopSSHConn.store(other.m_stopSSHConn.load(std::memory_order_acquire), std::memory_order_release);
     m_host = std::move(other.m_host);
     m_user = std::move(other.m_user);
     m_pass = std::move(other.m_pass);
@@ -480,8 +480,8 @@ SSHConnection::SSHConnection(SSHConnection&& other) noexcept {
     other.m_session = nullptr;
     other.m_sock = INVALID_SOCKET;
     other.m_connected.store(false, std::memory_order_release);
-    other.m_connecting.store(false, std::memory_order_release);
-    other.m_cancelConnect.store(false, std::memory_order_release);
+    //other.m_connecting.store(false, std::memory_order_release);
+    other.m_stopSSHConn.store(false, std::memory_order_release);
     other.m_port = 22;
     other.m_shellChannel.store(nullptr, std::memory_order_release);
     other.m_stopHeartbeat.store(true, std::memory_order_release);
@@ -501,8 +501,8 @@ SSHConnection& SSHConnection::operator=(SSHConnection&& other) noexcept {
         m_session = other.m_session;
         m_sock = other.m_sock;
         m_connected.store(other.m_connected.load(std::memory_order_acquire), std::memory_order_release);
-        m_connecting.store(other.m_connecting.load(std::memory_order_acquire), std::memory_order_release);
-        m_cancelConnect.store(other.m_cancelConnect.load(std::memory_order_acquire), std::memory_order_release);
+        //m_connecting.store(other.m_connecting.load(std::memory_order_acquire), std::memory_order_release);
+        m_stopSSHConn.store(other.m_stopSSHConn.load(std::memory_order_acquire), std::memory_order_release);
         m_host = std::move(other.m_host);
         m_user = std::move(other.m_user);
         m_pass = std::move(other.m_pass);
@@ -518,8 +518,8 @@ SSHConnection& SSHConnection::operator=(SSHConnection&& other) noexcept {
         other.m_session = nullptr;
         other.m_sock = INVALID_SOCKET;
         other.m_connected.store(false, std::memory_order_release);
-        other.m_connecting.store(false, std::memory_order_release);
-        other.m_cancelConnect.store(false, std::memory_order_release);
+        //other.m_connecting.store(false, std::memory_order_release);
+        other.m_stopSSHConn.store(false, std::memory_order_release);
         other.m_port = 22;
         other.m_shellChannel.store(nullptr, std::memory_order_release);
         other.m_stopHeartbeat.store(true, std::memory_order_release);
@@ -620,8 +620,8 @@ void SSHConnection::ReleaseResources() {
         m_session = nullptr;
         m_shellChannel.store(nullptr, std::memory_order_release);
         m_connected.store(false, std::memory_order_release);
-        m_connecting.store(false, std::memory_order_release);
-        m_cancelConnect.store(false, std::memory_order_release);
+        //m_connecting.store(false, std::memory_order_release);
+        //m_stopSSHConn.store(false, std::memory_order_release);
         m_prompt.clear();
     }
     
@@ -731,11 +731,12 @@ THREAD_EXIT:
 }
 
 // 启动心跳
-void SSHConnection::StartHeartbeat() {
+bool SSHConnection::StartHeartbeat() {
     std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_hWaitDlg != nullptr && IsWindow(m_hWaitDlg)) UpdateSshWaitProgress(m_hWaitDlg, m_Loading+=3, L"开始启动心跳线程", nullptr);
 
     if (m_heartbeatThread.joinable())
-        return;
+        return false;
     m_stopHeartbeat.store(false, std::memory_order_release);
     if (m_heartbeatThread.joinable()) {
         m_heartbeatThread.join();
@@ -749,27 +750,42 @@ void SSHConnection::StartHeartbeat() {
     m_heartbeatThread = std::thread(&SSHConnection::HeartbeatThreadFunc, this);
     if (m_heartbeatThread.joinable()) {
         NppSSH_LogInfoAuto("✅ 心跳线程启动成功");
+        return true;
     }
     else {
         NppSSH_LogInfoAuto("❌ 心跳线程启动失败");
+        return false;
     }
 }
 
 
 // 断开连接
 void SSHConnection::Disconnect() {
+    m_hWaitDlg = nullptr;
     HWND hwnd = SSHConnection_GetPanelId(this);
     SSH_TermHandleExecuteClear(hwnd);
     SSH_TermHandleSetPanelPrompt(hwnd, "✅ SSH已断开\n等待新的连接...");
+
+    // 先停止连接线程
+    m_stopSSHConn.store(true, std::memory_order_release);
+    // 唤醒心跳线程（如果在wait_for中阻塞，立即唤醒）
+    m_SSHConnCv.notify_one();
+    if (m_SSHConnThread.joinable()) {
+        NppSSH_LogInfoAuto("释放资源.直接分离连接线程（不等待）");
+        //m_SSHConnThread.detach();//直接不等待，让线程脱离主线程，自生自灭，根据废掉所有资源会自动销毁
+        m_SSHConnThread.join();//等线程执行完才会执行
+    }
+    else {
+        NppSSH_LogInfoAuto("释放资源.............心跳线程不存在");
+    }
     StopShellReader();
     ReleaseResources();
-    m_connected.store(false, std::memory_order_release);
 }
 
 // 重置状态
 void SSHConnection::ResetState() {
     // 标记取消连接
-    m_cancelConnect.store(true, std::memory_order_release);
+    m_stopSSHConn.store(true, std::memory_order_release);
 
     std::lock_guard<std::mutex> lock(m_mutex);
 
@@ -791,7 +807,7 @@ void SSHConnection::ResetState() {
     m_pass.clear();
     m_port = 22;
     m_connected.store(false, std::memory_order_release);
-    m_connecting.store(false, std::memory_order_release);
+    //m_connecting.store(false, std::memory_order_release);
     m_session = nullptr;
     m_sock = INVALID_SOCKET;
 }
@@ -1083,19 +1099,25 @@ SOCKET SSHConnection::CreateAndConnectSocket(const std::string& host, int port, 
     for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         // 清空前一次的错误信息
         errorMsg.clear();
+		if (m_stopSSHConn.load(std::memory_order_acquire))return INVALID_SOCKET; // 如果收到停止信号，立即返回
 
         // 打印重试日志
         if (attempt > 1) {
             int wait_time = BASE_WAIT_MS * (1 << (attempt - 2)); // 指数退避：1秒, 2秒, 4秒
-            NppSSH_LogInfoAuto("Socket连接重试 " + std::to_string(attempt) + "/" +
-                std::to_string(MAX_RETRIES) + "：等待 " +
-                std::to_string(wait_time) + "ms 后重试...");
+			std::string retryMsg = "Socket连接重试 " + std::to_string(attempt) + "/" +
+				std::to_string(MAX_RETRIES) + "：等待 " +
+				std::to_string(wait_time) + "ms 后重试...";
+            NppSSH_LogInfoAuto(retryMsg);
+            if (m_hWaitDlg != nullptr && IsWindow(m_hWaitDlg)) UpdateSshWaitProgress(m_hWaitDlg, (m_Loading += 1), UTF8ToWstring(retryMsg).c_str(), nullptr);
             std::this_thread::sleep_for(std::chrono::milliseconds(wait_time));
         }
 
-        NppSSH_LogInfoAuto("Socket连接尝试 " + std::to_string(attempt) + "/" +
+		std::string attemptMsg = "Socket连接尝试 " + std::to_string(attempt) + "/" +
             std::to_string(MAX_RETRIES) + "：正在连接 " +
-            host + ":" + std::to_string(port));
+            host + ":" + std::to_string(port);
+        NppSSH_LogInfoAuto(attemptMsg);
+        if (m_hWaitDlg != nullptr && IsWindow(m_hWaitDlg)) UpdateSshWaitProgress(m_hWaitDlg, (m_Loading += 2), UTF8ToWstring(attemptMsg).c_str(), nullptr);
+
 
         // 1. 创建Socket
         SOCKET sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -1104,9 +1126,11 @@ SOCKET SSHConnection::CreateAndConnectSocket(const std::string& host, int port, 
             errorMsg = "Socket创建失败（错误码：" + std::to_string(err) + "）";
             NppSSH_LogErrorAuto(errorMsg);
             last_error = errorMsg;
+            m_Loading += 4;
             continue;  // 继续下一次重试
         }
 
+        if (m_hWaitDlg != nullptr && IsWindow(m_hWaitDlg)) UpdateSshWaitProgress(m_hWaitDlg, (m_Loading += 2), L"尝试Socket连接成功，开始解析域名/IP", nullptr);
         // 2. 域名/IP解析
         addrinfo hints = { 0 };
         hints.ai_family = AF_INET;
@@ -1120,6 +1144,7 @@ SOCKET SSHConnection::CreateAndConnectSocket(const std::string& host, int port, 
             NppSSH_LogErrorAuto(errorMsg);
             closesocket(sock);
             last_error = errorMsg;
+            m_Loading += 2;
             continue;  // 继续下一次重试
         }
 
@@ -1128,6 +1153,7 @@ SOCKET SSHConnection::CreateAndConnectSocket(const std::string& host, int port, 
         ioctlsocket(sock, FIONBIO, &nonblock);
 
         // 4. 非阻塞连接
+        if (m_hWaitDlg != nullptr && IsWindow(m_hWaitDlg)) UpdateSshWaitProgress(m_hWaitDlg, (m_Loading += 2), L"解析域名/IP成功，开始非阻塞式检查socket连接", nullptr);
         int connectRet = connect(sock, result->ai_addr, (int)result->ai_addrlen);
         freeaddrinfo(result);
 
@@ -1181,6 +1207,8 @@ SOCKET SSHConnection::CreateAndConnectSocket(const std::string& host, int port, 
 
         // 连接成功
         NppSSH_LogInfoAuto("✓ Socket连接成功！总尝试次数：" + std::to_string(attempt));
+        m_Loading = 37;
+        if (m_hWaitDlg != nullptr && IsWindow(m_hWaitDlg)) UpdateSshWaitProgress(m_hWaitDlg, m_Loading, L"Socket连接成功！总尝试次数：" + attempt, nullptr);
         return sock;
     }
 
@@ -1276,18 +1304,23 @@ LIBSSH2_SESSION* SSHConnection::InitSSHSession(SOCKET sock, const std::string& h
             NppSSH_LogErrorAuto(errorMsg);
             break;
         }
+		std::wstring configMsg = L"开始处理交换算法: " + UTF8ToWstring(config.name);
+        if (m_hWaitDlg != nullptr && IsWindow(m_hWaitDlg)) UpdateSshWaitProgress(m_hWaitDlg, (m_Loading += 6), configMsg.c_str(), nullptr);
 
         // 对当前配置进行指数退避重试
         for (int retry = 1; retry <= MAX_RETRIES && !handshake_success; retry++) {
+            if (m_stopSSHConn.load(std::memory_order_acquire)) return nullptr;
             total_attempts++;
-
             // 指数退避等待
             if (retry > 1) {
                 int wait_time = BASE_WAIT_MS * (1 << (retry - 2)); // 1秒, 2秒, 4秒
-                NppSSH_LogInfoAuto("SSH握手尝试 " + std::to_string(total_attempts) +
-                    " (配置: " + config.name +
-                    ", 重试: " + std::to_string(retry) + "/" + std::to_string(MAX_RETRIES) +
-                    ")：等待 " + std::to_string(wait_time) + "ms 后重试...");
+				std::string waitMsg = "SSH握手尝试 " + std::to_string(total_attempts) +
+					" (配置: " + config.name +
+					", 重试: " + std::to_string(retry) + "/" + std::to_string(MAX_RETRIES) +
+					")：等待 " + std::to_string(wait_time) + "ms 后重试...";
+
+				NppSSH_LogInfoAuto(waitMsg);
+                if (m_hWaitDlg != nullptr && IsWindow(m_hWaitDlg)) UpdateSshWaitProgress(m_hWaitDlg, -1, UTF8ToWstring(waitMsg).c_str(), nullptr);
 
                 // 等待期间检查socket状态
                 if (!IsSocketAlive(sock)) {
@@ -1320,7 +1353,13 @@ LIBSSH2_SESSION* SSHConnection::InitSSHSession(SOCKET sock, const std::string& h
                 NppSSH_LogWarnAuto(errorMsg);
                 continue;  // 继续下一次重试
             }
+			std::wstring initMsg = L"初始化session会话，第" + std::to_wstring(total_attempts) + 
+                L"次，使用算法配置: " + UTF8ToWstring(config.name) +
+				L", 设置超时： " + std::to_wstring(config.timeout_ms) + 
+                L", 设置密钥交换算法: " + UTF8ToWstring(config.kex_algorithms) +
+                L", 设置加密算法: " + UTF8ToWstring(config.ciphers);
 
+            if (m_hWaitDlg != nullptr && IsWindow(m_hWaitDlg)) UpdateSshWaitProgress(m_hWaitDlg, -1, initMsg.c_str(), nullptr);
             // 设置会话参数
             // 1. 设置banner（有些服务器对banner有要求）
             libssh2_session_banner_set(session, "SSH-2.0-NppSSH_Client");
@@ -1356,6 +1395,7 @@ LIBSSH2_SESSION* SSHConnection::InitSSHSession(SOCKET sock, const std::string& h
 
             // 尝试SSH握手
             NppSSH_LogInfoAuto("开始SSH握手...");
+            if (m_hWaitDlg != nullptr && IsWindow(m_hWaitDlg)) UpdateSshWaitProgress(m_hWaitDlg, -1, L"设置session会话成功，开始SSH握手", nullptr);
             auto handshake_start = std::chrono::steady_clock::now();
 
             int handshake_ret = libssh2_session_handshake(session, sock);
@@ -1369,12 +1409,20 @@ LIBSSH2_SESSION* SSHConnection::InitSSHSession(SOCKET sock, const std::string& h
                 std::string negotiated_kex = libssh2_session_methods(session, LIBSSH2_METHOD_KEX);
                 std::string negotiated_cipher = libssh2_session_methods(session, LIBSSH2_METHOD_CRYPT_CS);
 
-                NppSSH_LogInfoAuto("✓ SSH握手成功：" + host + ":" + std::to_string(port));
-                NppSSH_LogInfoAuto("  使用算法配置: " + std::string(config.name));
-                NppSSH_LogInfoAuto("  协商的KEX算法: " + negotiated_kex);
-                NppSSH_LogInfoAuto("  协商的加密算法: " + negotiated_cipher);
-                NppSSH_LogInfoAuto("  总尝试次数: " + std::to_string(total_attempts));
-                NppSSH_LogInfoAuto("  总耗时: " + std::to_string(elapsed_ms) + "ms");
+                //NppSSH_LogInfoAuto("✓ SSH握手成功：" + host + ":" + std::to_string(port));
+                //NppSSH_LogInfoAuto("  使用算法配置: " + std::string(config.name));
+                //NppSSH_LogInfoAuto("  协商的KEX算法: " + negotiated_kex);
+                //NppSSH_LogInfoAuto("  协商的加密算法: " + negotiated_cipher);
+                //NppSSH_LogInfoAuto("  总尝试次数: " + std::to_string(total_attempts));
+                //NppSSH_LogInfoAuto("  总耗时: " + std::to_string(elapsed_ms) + "ms");
+                std::string resMsg = "SSH握手成功：" + host + ":" + std::to_string(port) +
+                    "，使用算法配置: " + std::string(config.name) +
+                    "，协商的KEX算法: " + negotiated_kex +
+                    "，协商的加密算法: " + negotiated_cipher +
+                    "，总尝试次数: " + std::to_string(total_attempts) +
+                    "，总耗时: " + std::to_string(elapsed_ms) + "ms";
+				m_Loading = 57;
+                if (m_hWaitDlg != nullptr && IsWindow(m_hWaitDlg)) UpdateSshWaitProgress(m_hWaitDlg, m_Loading, UTF8ToWstring(resMsg).c_str(), nullptr);
 
                 handshake_success = true;
                 return session;  // 成功，直接返回
@@ -1466,6 +1514,7 @@ bool SSHConnection::AuthenticateSSH(LIBSSH2_SESSION* session, const std::string&
         NppSSH_LogErrorAuto(errorMsg);
         return false;
     }
+    if (m_hWaitDlg != nullptr && IsWindow(m_hWaitDlg)) UpdateSshWaitProgress(m_hWaitDlg, (m_Loading+=3), L"开始连接用户名和密码认证", nullptr);
 
     libssh2_session_set_timeout(session, SSHConst::SSH_AUTH_TIMEOUT_MS);
     int authRet = libssh2_userauth_password(session, user.c_str(), pass.c_str());
@@ -1475,7 +1524,7 @@ bool SSHConnection::AuthenticateSSH(LIBSSH2_SESSION* session, const std::string&
         NppSSH_LogErrorAuto(errorMsg);
         return false;
     }
-
+    if (m_hWaitDlg != nullptr && IsWindow(m_hWaitDlg)) UpdateSshWaitProgress(m_hWaitDlg, (m_Loading += 3), L"开始连接用户名和密码认证", nullptr);
     NppSSH_LogInfoAuto("SSH认证成功：用户=" + user);
     return true;
 }
@@ -1510,6 +1559,8 @@ void SSHConnection::ReadLoginBanner(LIBSSH2_SESSION* session) {
         LIBSSH2_CHANNEL_EXTENDED_DATA_NORMAL
     )) > 0)
     {
+        if (m_stopSSHConn.load(std::memory_order_acquire)) { return; }
+
         buf[bytesRead] = 0;
         currentLoginTime += buf;
         memset(buf, 0, sizeof(buf));
@@ -1542,11 +1593,12 @@ void SSHConnection::ReadLoginBanner(LIBSSH2_SESSION* session) {
     }
 }
 
-bool SSHConnection::CreatePtyChannel() {
+bool SSHConnection::CreatePtyChannel(std::string& errorMsg) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
     if (!m_session || m_sock == INVALID_SOCKET) {
         NppSSH_LogErrorAuto("【CreatePtyChannel】会话/Socket无效");
+        errorMsg = "会话/Socket无效";
         return false;
     }
 
@@ -1565,15 +1617,18 @@ bool SSHConnection::CreatePtyChannel() {
     LIBSSH2_CHANNEL* channel = nullptr;
 
     for (int attempt = 1; attempt <= MAX_TOTAL_ATTEMPTS; attempt++) {
-        NppSSH_LogInfoAuto("【CreatePtyChannel】尝试创建通道 (" +
-            std::to_string(attempt) + "/" +
-            std::to_string(MAX_TOTAL_ATTEMPTS) + ")");
+        std::string attemptMsg = "开始创建通道 (" + std::to_string(attempt) + "/" +
+            std::to_string(MAX_TOTAL_ATTEMPTS) + ")";
+        NppSSH_LogInfoAuto(attemptMsg);
+        if (m_hWaitDlg != nullptr && IsWindow(m_hWaitDlg)) UpdateSshWaitProgress(m_hWaitDlg, (m_Loading+=2), UTF8ToWstring(attemptMsg).c_str(), nullptr);
+        if (m_stopSSHConn.load(std::memory_order_acquire)) { errorMsg = "连接被中断取消"; return false; }
 
         // 尝试创建通道
         channel = libssh2_channel_open_session(m_session);
 
         if (channel) {
             NppSSH_LogInfoAuto("【CreatePtyChannel】通道创建成功");
+            if (m_hWaitDlg != nullptr && IsWindow(m_hWaitDlg)) UpdateSshWaitProgress(m_hWaitDlg, -1, L"通道创建成功", nullptr);
             break;
         }
 
@@ -1592,6 +1647,9 @@ bool SSHConnection::CreatePtyChannel() {
             else {
                 wait_time = std::min(BASE_WAIT_MS * (1 << (attempt - 3)), MAX_WAIT_MS);  // 后面指数
             }
+            std::wstring waitMsg = L"出现创建Channel异常，尝试等待Socket，大约等待" + std::to_wstring(MAX_WAIT_ATTEMPTS) + L"毫秒后，继续尝试创建通道 (" +
+                std::to_wstring(attempt) + L"/" + std::to_wstring(MAX_TOTAL_ATTEMPTS) + L")";
+            if (m_hWaitDlg != nullptr && IsWindow(m_hWaitDlg)) UpdateSshWaitProgress(m_hWaitDlg, -1, waitMsg.c_str(), nullptr);
             if (WaitSocketWithBackoff(m_sock, m_session, wait_time, MAX_WAIT_ATTEMPTS)) {
                 // 等待成功，继续下一次尝试
                 continue;
@@ -1601,39 +1659,49 @@ bool SSHConnection::CreatePtyChannel() {
 
                 if (attempt == MAX_TOTAL_ATTEMPTS) {
                     NppSSH_LogErrorAuto("【CreatePtyChannel】达到最大尝试次数，通道创建失败");
+					errorMsg = "通道创建失败，达到"+ std::to_string(MAX_TOTAL_ATTEMPTS) +"最大尝试次数，session会话错误: " + GetLibssh2ErrorMsg(m_session) +
+						" (错误码: " + std::to_string(last_err) + ")";
                     return false;
                 }
             }
         }
         else {
             // 其他错误
-            std::string err = "通道创建失败: " + GetLibssh2ErrorMsg(m_session) +
+            std::string err = "通道创建失败，session会话错误: " + GetLibssh2ErrorMsg(m_session) +
                 " (错误码: " + std::to_string(last_err) + ")";
             NppSSH_LogErrorAuto(err);
 
             if (attempt == MAX_TOTAL_ATTEMPTS) {
+                errorMsg = err;
                 return false;
             }
-
+            
             // 如果不是致命错误，可以重试
             int wait_time = BASE_WAIT_MS * attempt;
+            if (m_hWaitDlg != nullptr && IsWindow(m_hWaitDlg)) UpdateSshWaitProgress(m_hWaitDlg, -1, UTF8ToWstring(err+"等待"+ std::to_string(wait_time) +"毫秒后重试").c_str(), nullptr);
             std::this_thread::sleep_for(std::chrono::milliseconds(wait_time));
         }
     }
-
+    
     if (!channel) {
         NppSSH_LogErrorAuto("【CreatePtyChannel】最终通道创建失败");
+		errorMsg = std::to_string(MAX_TOTAL_ATTEMPTS) + "次最终通道创建失败: " + GetLibssh2ErrorMsg(m_session);
         return false;
     }
 
     // 第二步：设置PTY伪终端
     std::string used_terminal = "";
     bool pty_success = false;
-
+    m_Loading += 5;
     for (const auto& term_type : TERMINAL_TYPES) {
         NppSSH_LogInfoAuto("【CreatePtyChannel】尝试PTY终端类型: " + term_type);
-
+		std::wstring termMsg = L"开始设置PTY终端类型: " + UTF8ToWstring(term_type);
+        if (m_hWaitDlg != nullptr && IsWindow(m_hWaitDlg)) UpdateSshWaitProgress(m_hWaitDlg, -1, termMsg.c_str(), nullptr);
         for (int attempt = 1; attempt <= MAX_WAIT_ATTEMPTS; attempt++) {
+            if (m_stopSSHConn.load(std::memory_order_acquire)) { 
+                errorMsg = "连接被中断取消";
+                return false; 
+            }
             libssh2_channel_setenv(channel, "LC_ALL", "zh_CN.UTF8");
             libssh2_channel_setenv(channel, "LANG", "zh_CN.UTF8");
             libssh2_channel_setenv(channel, "LC_CTYPE", "zh_CN.UTF8");
@@ -1666,6 +1734,8 @@ bool SSHConnection::CreatePtyChannel() {
                 pty_success = true;
                 used_terminal = term_type;
                 NppSSH_LogInfoAuto("【CreatePtyChannel】PTY终端类型 " + term_type + " 设置成功");
+				termMsg = L"PTY终端类型 " + UTF8ToWstring(term_type) + L" 设置成功";
+                if (m_hWaitDlg != nullptr && IsWindow(m_hWaitDlg)) UpdateSshWaitProgress(m_hWaitDlg, -1, termMsg.c_str(), nullptr);
                 break;
             }
             else if (ret == LIBSSH2_ERROR_EAGAIN) {
@@ -1674,6 +1744,11 @@ bool SSHConnection::CreatePtyChannel() {
                     std::to_string(MAX_WAIT_ATTEMPTS) + ")");
 
                 int wait_time = BASE_WAIT_MS * attempt;
+				termMsg = L"PTY设置EAGAIN，等待socket (" +
+					std::to_wstring(attempt) + L"/" +
+					std::to_wstring(MAX_WAIT_ATTEMPTS) + L")，大约等待" +
+					std::to_wstring(wait_time) + L"毫秒后继续尝试";
+                if (m_hWaitDlg != nullptr && IsWindow(m_hWaitDlg)) UpdateSshWaitProgress(m_hWaitDlg, -1, termMsg.c_str(), nullptr);
                 if (WaitSocketWithBackoff(m_sock, m_session, wait_time, 1)) {
                     // 等待后继续重试
                     continue;
@@ -1701,13 +1776,17 @@ bool SSHConnection::CreatePtyChannel() {
         std::string err = "所有PTY终端类型设置失败: " + GetLibssh2ErrorMsg(m_session);
         NppSSH_LogErrorAuto(err);
         libssh2_channel_free(channel);
+        errorMsg = err;
         return false;
     }
 
     // 第三步：启动shell
     NppSSH_LogInfoAuto("【CreatePtyChannel】准备启动shell...");
-
+    m_Loading += 5;
+    if (m_hWaitDlg != nullptr && IsWindow(m_hWaitDlg)) UpdateSshWaitProgress(m_hWaitDlg, -1, L"开始启动服务连接shell", nullptr);
     for (int attempt = 1; attempt <= MAX_TOTAL_ATTEMPTS; attempt++) {
+        if (m_stopSSHConn.load(std::memory_order_acquire)) { errorMsg = "连接被中断取消";return false; }
+
         int ret = libssh2_channel_shell(channel);
 
         if (ret == 0) {
@@ -1719,6 +1798,7 @@ bool SSHConnection::CreatePtyChannel() {
                 log_msg += " (终端类型: " + used_terminal + ")";
             }
             NppSSH_LogInfoAuto(log_msg);
+            if (m_hWaitDlg != nullptr && IsWindow(m_hWaitDlg)) UpdateSshWaitProgress(m_hWaitDlg, -1, L"启动服务连接Shell启动成功", nullptr);
             return true;
         }
         else if (ret == LIBSSH2_ERROR_EAGAIN) {
@@ -1727,6 +1807,12 @@ bool SSHConnection::CreatePtyChannel() {
                 std::to_string(MAX_TOTAL_ATTEMPTS) + ")");
 
             int wait_time = std::min(BASE_WAIT_MS * attempt, MAX_WAIT_MS);
+
+            std::wstring shellMsg = L"启动Shell失败，等待socket (" +
+                std::to_wstring(attempt) + L"/" +
+                std::to_wstring(MAX_TOTAL_ATTEMPTS) + L")，大约等待" +
+                std::to_wstring(wait_time) + L"毫秒后继续尝试";
+            if (m_hWaitDlg != nullptr && IsWindow(m_hWaitDlg)) UpdateSshWaitProgress(m_hWaitDlg, -1, shellMsg.c_str(), nullptr);
 
             if (WaitSocketWithBackoff(m_sock, m_session, wait_time, MAX_WAIT_ATTEMPTS)) {
                 // 等待后继续尝试
@@ -1737,234 +1823,242 @@ bool SSHConnection::CreatePtyChannel() {
 
                 if (attempt == MAX_TOTAL_ATTEMPTS) {
                     NppSSH_LogErrorAuto("【CreatePtyChannel】Shell启动达到最大尝试次数");
-                    break;
+					errorMsg = "Shell启动失败，达到最大重试次数: " + std::to_string(MAX_TOTAL_ATTEMPTS)+",session会话错误:" + GetLibssh2ErrorMsg(m_session) +
+						" (错误码: " + std::to_string(ret) + ")";
+                    libssh2_channel_free(channel);
+                    return false;
                 }
             }
         }
         else {
             // 其他错误
-            std::string err = "Shell启动失败: " + GetLibssh2ErrorMsg(m_session) +
+            errorMsg = "Shell启动失败，发生致命错误，session会话错误: " + GetLibssh2ErrorMsg(m_session) +
                 " (错误码: " + std::to_string(ret) + ")";
-            NppSSH_LogErrorAuto(err);
-            break;
+            NppSSH_LogErrorAuto(errorMsg);
+            libssh2_channel_free(channel);
+            return false;
         }
     }
 
     // 启动shell失败
-    std::string err = "Shell启动最终失败: " + GetLibssh2ErrorMsg(m_session);
-    NppSSH_LogErrorAuto(err);
+    errorMsg = "Shell启动最终失败: " + GetLibssh2ErrorMsg(m_session);
+    NppSSH_LogErrorAuto(errorMsg);
     libssh2_channel_free(channel);
     return false;
 }
-bool SSHConnection::Connect(const char* host, int port, const char* user, const char* pass, const char* director) {
-    //NppSSH_LogInfoAuto("开始进行连接==========1");
+// 连接线程函数
+void SSHConnection::SSHConnThreadFunc() {
+    NppSSH_LogInfoAuto("连接线程已启动");
+    if (m_hWaitDlg != nullptr && IsWindow(m_hWaitDlg)) UpdateSshWaitProgress(m_hWaitDlg, (m_Loading+=2), L"连接初始化中", L"正在连接中，点击取消直接中断");
 
-    if (m_connected.load(std::memory_order_acquire)) {
-        NppSSH_LogInfoAuto("面板已处于连接状态，无需重复连接");
+    // 步骤1：参数赋值
+    std::string err;
+    std::string l_host = m_host;
+    int l_port = m_port;
+    std::string l_user = m_user;
+    std::string l_pass = m_pass;
+
+    NppSSH_LogInfoAuto("步骤1：参数已接收 host=" + l_host + " port=" + std::to_string(l_port));
+
+    // 检查是否取消连接
+    if (m_stopSSHConn.load(std::memory_order_acquire)) {
+        NppSSH_LogErrorAuto("步骤1：连接已取消，终止执行");
+		err = "连接被中断,已退出连接";
+        goto SSHCONNTHREAD_EXIT;
+    }
+
+    // 步骤2：初始化WSA
+    if (m_hWaitDlg != nullptr && IsWindow(m_hWaitDlg)) UpdateSshWaitProgress(m_hWaitDlg, (m_Loading += 2), L"开始初始化WSA", nullptr);
+    WSADATA wsa;
+    if (!InitWSA(wsa)) {
+        NppSSH_LogErrorAuto("步骤2：WSA初始化失败");
+        err = "WSA初始化失败，连接被中断,已退出连接";
+        goto SSHCONNTHREAD_EXIT;
+    }
+    NppSSH_LogInfoAuto("步骤2：WSA初始化成功");
+
+    // 检查是否取消连接
+    if (m_stopSSHConn.load(std::memory_order_acquire)) {
+        NppSSH_LogErrorAuto("步骤2后：连接已取消，释放WSA资源");
+        err = "连接被中断,已退出连接";
+        WSACleanup(); // 释放WSA资源
+        goto SSHCONNTHREAD_EXIT;
+    }
+
+    if (m_hWaitDlg != nullptr && IsWindow(m_hWaitDlg)) UpdateSshWaitProgress(m_hWaitDlg, (m_Loading += 3), L"开始创建Socket", nullptr);
+    // 步骤3：创建Socket
+    SOCKET sock = CreateAndConnectSocket(l_host, l_port, err);//37
+    if (sock == INVALID_SOCKET) {
+        NppSSH_LogErrorAuto("步骤3：Socket失败 → " + err);
+        err = "Socket创建失败，连接被中断,已退出连接";
+        goto SSHCONNTHREAD_EXIT;
+    }
+    NppSSH_LogInfoAuto("步骤3：Socket连接成功");
+
+    // 检查是否取消连接
+    if (m_stopSSHConn.load(std::memory_order_acquire)) {
+        NppSSH_LogErrorAuto("步骤3后：连接已取消，关闭Socket");
+        err = "连接被中断,已退出连接";
+        closesocket(sock);
+        WSACleanup();
+        goto SSHCONNTHREAD_EXIT;
+    }
+
+    // 步骤4：SSH握手
+    LIBSSH2_SESSION* session = InitSSHSession(sock, l_host, l_port, err);//57
+    if (!session) {
+
+        if (!IsSocketValid(sock)) {
+            NppSSH_LogErrorAuto("握手过程中Socket已失效");
+        }
+        NppSSH_LogErrorAuto("步骤4：SSH握手失败 → " + err);
+        closesocket(sock);
+        WSACleanup();
+        goto SSHCONNTHREAD_EXIT;
+    }
+    NppSSH_LogInfoAuto("步骤4：SSH握手成功");
+
+    // 检查是否取消连接
+    if (m_stopSSHConn.load(std::memory_order_acquire)) {
+        err = "连接被中断,已退出连接";
+        NppSSH_LogErrorAuto("步骤4后：连接已取消，释放SSH会话和Socket");
+        libssh2_session_free(session);
+        closesocket(sock);
+        WSACleanup();
+        goto SSHCONNTHREAD_EXIT;
+    }
+
+    // 步骤5：认证
+    if (!AuthenticateSSH(session, l_user, l_pass, err)) {//63
+        libssh2_session_free(session);
+        closesocket(sock);
+        WSACleanup();
+        NppSSH_LogErrorAuto("步骤5：认证失败 → " + err);
+        goto SSHCONNTHREAD_EXIT;
+    }
+    NppSSH_LogInfoAuto("步骤5：SSH认证成功");
+
+    // 检查是否取消连接
+    if (m_stopSSHConn.load(std::memory_order_acquire)) {
+        err = "连接被中断,已退出连接";
+        NppSSH_LogErrorAuto("步骤5后：连接已取消，释放所有资源");
+        libssh2_session_free(session);
+        closesocket(sock);
+        WSACleanup();
+        goto SSHCONNTHREAD_EXIT;
+    }
+
+    // 步骤6：赋值到成员（优化锁逻辑）
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_sock = sock;
+        m_session = session;
+        m_connected.store(true, std::memory_order_release);
+    }
+
+    //连接成功后，申请 PTY 伪终端
+    bool isReqPTY = CreatePtyChannel(err);//83
+    if (!isReqPTY) {
+        err = "Channel创建失败，连接被中断,已退出连接";
+        ReleaseResources();//申请失败，释放资源
+        goto SSHCONNTHREAD_EXIT;
+    }
+    // 步骤7：读取Banner和启动心跳（锁外执行）
+    // 增加 3次重试机制，确保通道完全就绪
+    if (!StartHeartbeat()) {//86
+        err = "心跳线程启动失败，连接被中断,已退出连接";
+        ReleaseResources();
+        goto SSHCONNTHREAD_EXIT;
+    }
+
+    NppSSH_LogInfoAuto("SSH连接成功！");
+
+    if (m_hWaitDlg != nullptr && IsWindow(m_hWaitDlg)) UpdateSshWaitProgress(m_hWaitDlg, m_Loading+=2, L"启动心跳线程成功,开始读取服务器响应内容", nullptr);
+
+    //WaitWithMsgLoop(nullptr, 3000);
+
+    int retryCount = 0;
+    const int MAX_RETRY = 10;    // 增加重试次数
+    const int RETRY_DELAY_MS = 200; // 每次重试延迟200ms
+    while (retryCount < MAX_RETRY) {
+        if (m_stopSSHConn.load(std::memory_order_acquire)) {
+            err = "连接被中断,已退出连接";
+            NppSSH_LogErrorAuto("连接已取消，终止重试");
+            goto SSHCONNTHREAD_EXIT;
+        }
+        m_Loading += 1;
+        if (IsShellReady()) {
+            NppSSH_LogInfoAuto("伪终端就绪成功！");
+            if (m_hWaitDlg != nullptr && IsWindow(m_hWaitDlg)) UpdateSshWaitProgress(m_hWaitDlg, m_Loading, L"开始读取服务器响应内容", nullptr);
+            ReadLoginBanner(session);
+            break;
+        }
+        retryCount++;
+        NppSSH_LogInfoAuto("【重试】等待伪终端就绪：第" + std::to_string(retryCount) + "次");
+        std::wstring attemptMsg = L"Pty伪终端通道未就绪，读取服务器响应失败，即将延迟"+ std::to_wstring(RETRY_DELAY_MS) +L"后，重试 (" + std::to_wstring(retryCount) + L"/" +
+            std::to_wstring(MAX_RETRY) + L")";
+        if (m_hWaitDlg != nullptr && IsWindow(m_hWaitDlg)) UpdateSshWaitProgress(m_hWaitDlg, m_Loading, L"开始读取服务器响应内容", nullptr);
+
+        // 增加延迟，避免高频重试
+        std::this_thread::sleep_for(std::chrono::milliseconds(RETRY_DELAY_MS));
+    }
+
+    if (retryCount >= MAX_RETRY) {
+        err = "【错误】" + std::to_string(MAX_RETRY) + "次重试后，伪终端仍未就绪，已退出连接";
+        NppSSH_LogErrorAuto(err);
+        // 清理资源
+        ReleaseResources();
+        goto SSHCONNTHREAD_EXIT;
+    }
+SSHCONNTHREAD_EXIT:
+	NppSSH_LogInfoAuto("连接线程退出");
+    std::wstring wstrTip = L"SSH连接成功";
+	std::wstring mainMsg = L"连接成功";
+    WPARAM msgWParam = 0; // 默认：成功消息 + 堆内存标记1
+    if (!err.empty()) {
+        NppSSH_LogErrorAuto("连接过程中发生错误：" + err);
+        wstrTip = UTF8ToWstring(err);
+		mainMsg = L"连接失败";
+        msgWParam = 1;
+    }
+    if (m_hWaitDlg != nullptr && IsWindow(m_hWaitDlg)) UpdateSshWaitProgress(m_hWaitDlg, 100, wstrTip.c_str(), mainMsg.c_str());
+    if (m_panelHwnd != nullptr && ::IsWindow(m_panelHwnd)) {
+        ::PostMessageW(m_panelHwnd, WM_SSHLOGIN_CONNECTION_MSG,msgWParam,0);
+    }
+    //m_connecting.store(false, std::memory_order_release);
+}
+
+// 启动连接
+bool SSHConnection::StartSSHConn() {
+    std::lock_guard<std::mutex> lock(m_SSHConnMtx);
+    m_Loading = 8;
+    if (m_hWaitDlg != nullptr && IsWindow(m_hWaitDlg)) UpdateSshWaitProgress(m_hWaitDlg, m_Loading, L"启动连接中", nullptr);
+    if (m_SSHConnThread.joinable())
+        return false;
+    m_stopSSHConn.store(false, std::memory_order_release);
+    NppSSH_LogInfoAuto("启动连接线程");
+
+    m_SSHConnThread = std::thread(&SSHConnection::SSHConnThreadFunc, this);
+    if (m_SSHConnThread.joinable()) {
+        NppSSH_LogInfoAuto("✅ 连接线程启动成功");
+        //m_SSHConnThread.detach();
         return true;
     }
-
-    try {
-        // 创建promise/future，用于获取异步连接结果
-        std::promise<bool> connPromise;
-        std::future<bool> connFuture = connPromise.get_future();
-
-        // 调用异步连接函数（传入promise）
-        NppSSH_LogInfoAuto("调用ConnectAsync进入异步连接核心逻辑");
-        ConnectAsync(host, port, user, pass, std::move(connPromise));
-        std::future_status status = connFuture.wait_for(std::chrono::seconds(SSHConst::MAX_MAIN_THREAD_WAIT_MS)); // 30秒超时
-        if (status == std::future_status::ready) {
-            m_connected.store(connFuture.get(), std::memory_order_release);
-            return m_connected.load(std::memory_order_acquire);
-        }
-        else {
-            NppSSH_LogErrorAuto("连接超时（30秒），终止连接");
-            return false;
-        }
-    }
-    catch (const std::exception& e) {
-        NppSSH_LogErrorAuto(std::string("连接过程异常：") + e.what());
+    else {
+        if (m_hWaitDlg != nullptr && IsWindow(m_hWaitDlg)) UpdateSshWaitProgress(m_hWaitDlg, 100, L"启动连接失败，程序出现异常，已退出启动连接", L"启动连接失败");
+        NppSSH_LogInfoAuto("❌ 连接线程启动失败");
         return false;
     }
 }
-// 异步连接核心逻辑（线程执行体）
-void SSHConnection::ConnectAsync(const char* host, int port, const char* user, const char* pass, std::promise<bool> promise) {
-    bool ok = false;
-    std::string err;
-    NppSSH_LogInfoAuto("进入异步连接核心逻辑");
-    auto guard = [&]() {
-        try { promise.set_value(ok); }
-        catch (...) {}
-        };
 
-    try {
-        // 步骤1：参数赋值
-        std::string l_host = host ? host : "";
-        int l_port = (port >= 1 && port <= 65535) ? port : 22;
-        std::string l_user = user ? user : "";
-        std::string l_pass = pass ? pass : "";
-
-        NppSSH_LogInfoAuto("步骤1：参数已接收 host=" + l_host + " port=" + std::to_string(l_port));
-
-        // 新增：检查是否取消连接
-        if (m_cancelConnect.load(std::memory_order_acquire)) {
-            NppSSH_LogErrorAuto("步骤1：连接已取消，终止执行");
-            guard();
-            return;
-        }
-
-        // 步骤2：初始化WSA
-        WSADATA wsa;
-        if (!InitWSA(wsa)) {
-            NppSSH_LogErrorAuto("步骤2：WSA初始化失败");
-            guard();
-            return;
-        }
-        NppSSH_LogInfoAuto("步骤2：WSA初始化成功");
-
-        // 新增：检查是否取消连接
-        if (m_cancelConnect.load(std::memory_order_acquire)) {
-            NppSSH_LogErrorAuto("步骤2后：连接已取消，释放WSA资源");
-            WSACleanup(); // 释放WSA资源
-            guard();
-            return;
-        }
-
-        // 步骤3：创建Socket
-        SOCKET sock = CreateAndConnectSocket(l_host, l_port, err);
-        if (sock == INVALID_SOCKET) {
-            NppSSH_LogErrorAuto("步骤3：Socket失败 → " + err);
-            guard();
-            return;
-        }
-        NppSSH_LogInfoAuto("步骤3：Socket连接成功");
-
-        // 新增：检查是否取消连接
-        if (m_cancelConnect.load(std::memory_order_acquire)) {
-            NppSSH_LogErrorAuto("步骤3后：连接已取消，关闭Socket");
-            closesocket(sock);
-            WSACleanup();
-            guard();
-            return;
-        }
-
-        // 步骤4：SSH握手
-        LIBSSH2_SESSION* session = InitSSHSession(sock, l_host, l_port, err);
-        if (!session) {
-            
-            if (!IsSocketValid(sock)) {
-                NppSSH_LogErrorAuto("握手过程中Socket已失效");
-            }
-            NppSSH_LogErrorAuto("步骤4：SSH握手失败 → " + err);
-
-            closesocket(sock);
-            WSACleanup();
-            guard();
-            return;
-        }
-        NppSSH_LogInfoAuto("步骤4：SSH握手成功");
-
-        // 新增：检查是否取消连接
-        if (m_cancelConnect.load(std::memory_order_acquire)) {
-            NppSSH_LogErrorAuto("步骤4后：连接已取消，释放SSH会话和Socket");
-            libssh2_session_free(session);
-            closesocket(sock);
-            WSACleanup();
-            guard();
-            return;
-        }
-
-        // 步骤5：认证
-        if (!AuthenticateSSH(session, l_user, l_pass, err)) {
-            libssh2_session_free(session);
-            closesocket(sock);
-            WSACleanup();
-            NppSSH_LogErrorAuto("步骤5：认证失败 → " + err);
-            guard();
-            return;
-        }
-        NppSSH_LogInfoAuto("步骤5：SSH认证成功");
-
-        // 新增：检查是否取消连接
-        if (m_cancelConnect.load(std::memory_order_acquire)) {
-            NppSSH_LogErrorAuto("步骤5后：连接已取消，释放所有资源");
-            libssh2_session_free(session);
-            closesocket(sock);
-            WSACleanup();
-            guard();
-            return;
-        }
-
-        // 步骤6：赋值到成员（优化锁逻辑）
-        {
-            std::lock_guard<std::mutex> lock(m_mutex);
-
-            m_host = l_host;
-            m_port = l_port;
-            m_user = l_user;
-            m_pass = l_pass;
-            m_sock = sock;
-            m_session = session;
-            m_connected.store(true, std::memory_order_release);
-        }
-
-        //连接成功后，申请 PTY 伪终端
-        bool isReqPTY = CreatePtyChannel();
-        if (!isReqPTY) {
-            ReleaseResources();//申请失败，释放资源
-            return;
-        }
-        // 步骤7：读取Banner和启动心跳（锁外执行）
-        // 增加 3次重试机制，确保通道完全就绪
-        StartHeartbeat();
-
-        NppSSH_LogInfoAuto("SSH连接成功！");
-
-
-        int retryCount = 0;
-        const int MAX_RETRY = 10;    // 增加重试次数
-        const int RETRY_DELAY_MS = 200; // 每次重试延迟200ms
-        while (retryCount < MAX_RETRY) {
-            if (IsShellReady()) {
-                NppSSH_LogInfoAuto("伪终端就绪成功！");
-                ReadLoginBanner(session);
-                break;
-            }
-            retryCount++;
-            NppSSH_LogInfoAuto("【重试】等待伪终端就绪：第" + std::to_string(retryCount) + "次");
-            // 增加延迟，避免高频重试
-            std::this_thread::sleep_for(std::chrono::milliseconds(RETRY_DELAY_MS));
-        }
-
-        if (retryCount >= MAX_RETRY) {
-            NppSSH_LogErrorAuto("【错误】" + std::to_string(MAX_RETRY) + "次重试后，伪终端仍未就绪");
-            // 清理资源
-            ReleaseResources();
-            return;
-        }
-        ok = true;
-    }
-    catch (const std::exception& e) {
-        std::string msg = "连接异常：";
-        msg += e.what();
-        NppSSH_LogErrorAuto(msg.c_str());
-        ok = false;
-    }
-    catch (...) {
-        NppSSH_LogErrorAuto("连接未知异常");
-        ok = false;
-    }
-
-    guard();
-    m_connecting.store(false, std::memory_order_release);
-}
-
-bool SSHConnection_Handle(HWND hWnd, std::wstring host, std::wstring port, std::wstring user, std::wstring pass, std::wstring director) {
+bool SSHConnection_Handle(HWND hWnd, HWND hWaitDlg, std::wstring host, std::wstring port, std::wstring user, std::wstring pass, std::wstring director) {
     NppSSH_LogInfoAuto("面板="+ HwndToString(hWnd) +",绑定连接信息");
     NppSSH_LogInfoAuto("主机："+WStringToLogStr(host) +",用户名：" + WStringToLogStr(user) +",端口：" + WStringToLogStr(port));
-    if (hWnd == nullptr)
+    if (hWaitDlg != nullptr && IsWindow(hWaitDlg)) UpdateSshWaitProgress(hWaitDlg, 2, L"开始初始化", L"启动连接中，请稍等，关闭则中断");
+    if (hWnd == nullptr && IsWindow(hWnd))
     {
         NppSSH_LogErrorAuto("SSHConnection_Handle hWnd为NULL，拒绝创建连接");
+        if (hWaitDlg != nullptr && IsWindow(hWaitDlg)) UpdateSshWaitProgress(hWaitDlg, 100, L"初始化失败，主面板不存在，已退出启动连接", L"启动连接失败");
         return false;
     }
     uintptr_t hwndKey = reinterpret_cast<uintptr_t>(hWnd);
@@ -2006,24 +2100,15 @@ bool SSHConnection_Handle(HWND hWnd, std::wstring host, std::wstring port, std::
         NppSSH_LogErrorAuto("创建/覆盖SSHConnection实例失败，hWnd=" + HwndToString(hWnd));
         std::lock_guard<std::mutex> mapLock(g_panelConnMutex);
         g_panelConnections.erase(hwndKey);
+        if (hWaitDlg != nullptr && IsWindow(hWaitDlg)) UpdateSshWaitProgress(hWaitDlg, 100, L"初始化失败，程序出现异常，已退出启动连接", L"启动连接失败");
         return false;
     }
+    if (hWaitDlg != nullptr && IsWindow(hWaitDlg)) UpdateSshWaitProgress(hWaitDlg, 5, L"初始化连接信息中", nullptr);
+    // 私有化连接信息
+    spConn->SetInfoConn(hWnd, hWaitDlg, hostUtf8, nPort, userUtf8, passUtf8, directorUtf8);
 
-
-    // 第二步：调用Connect（实例锁）
-    bool connectResult = false;
-    try {
-        connectResult = spConn->Connect(hostUtf8.c_str(), nPort, userUtf8.c_str(), passUtf8.c_str(), directorUtf8.c_str()); // Connect内部已加锁，无需外层锁
-        //connectResult = true;
-    }
-    catch (const std::exception& e) {
-        NppSSH_LogErrorAuto("调用Connect异常: " + std::string(e.what()));
-        connectResult = false;
-    }
-    catch (...) {
-        NppSSH_LogErrorAuto("调用Connect未知异常");
-        connectResult = false;
-    }
+    // 第二步：调用Connect
+    bool connectResult = spConn->StartSSHConn();
 
     // 连接失败时兜底清理数据 
     if (!connectResult) {
@@ -2033,9 +2118,6 @@ bool SSHConnection_Handle(HWND hWnd, std::wstring host, std::wstring port, std::
             std::lock_guard<std::mutex> mapLock(g_panelConnMutex);
             g_panelConnections.erase(hwndKey);
         }
-    }
-    else {
-        spConn->SetPanelHwnd(hWnd);
     }
     return connectResult;
 }
@@ -2238,6 +2320,17 @@ void SSHConnection::SetPTYSize(int cols,int rows) {
         return;
     libssh2_channel_request_pty_size(channel, cols, rows);
 }
+void SSHConnection::SetInfoConn(HWND hWnd, HWND hWaitDlg, std::string host, int port, std::string user, std::string pass, std::string director) {
+    m_panelHwnd = hWnd;
+	m_hWaitDlg = hWaitDlg;
+    m_host = host;
+	m_port = port;
+    m_user = user;
+    m_pass = pass;
+	m_dir = director;
+}
+
+
 // 仅清空容器，连接已提前全部断开
 void SSHConnection_ClearAllSSHConnections()
 {

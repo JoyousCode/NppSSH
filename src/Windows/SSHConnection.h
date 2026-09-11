@@ -60,8 +60,7 @@ public:
     ~SSHConnection();
 
     // 核心功能：连接SSH服务器
-    bool Connect(const char* host, int port, const char* user, const char* pass, const char* director);
-    void ConnectAsync(const char* host, int port, const char* user, const char* pass, std::promise<bool> promise);
+    bool StartSSHConn();
 
     // 核心功能：断开连接
     void Disconnect();
@@ -76,7 +75,7 @@ public:
     std::string GetPrompt() const;
 
     // 启动/停止心跳线程
-    void StartHeartbeat();
+    bool StartHeartbeat();
     //void StopHeartbeat();
 
     // 重置连接状态
@@ -153,6 +152,8 @@ public:
     void StopShellReader();
 
     void SetPTYSize(int cols, int rows);
+    void SetInfoConn(HWND hWnd, HWND hWaitDlg, std::string host, int port, std::string user, std::string pass, std::string director);
+
     
 private:
     // 私有工具函数
@@ -173,7 +174,7 @@ private:
     void ReadLoginBanner(LIBSSH2_SESSION* session);
 
     // 子函数：申请Pty伪终端读取登录欢迎语
-    bool SSHConnection::CreatePtyChannel();
+    bool SSHConnection::CreatePtyChannel(std::string& errorMsg);
 
     // 工具函数：提取字符串最后一行
     std::string extractLastLine(const std::string& str);
@@ -229,15 +230,18 @@ private:
     LIBSSH2_SESSION* m_session = nullptr;
     SOCKET m_sock = INVALID_SOCKET;
     std::atomic<bool> m_connected = { false }; // 连接状态
-    std::atomic<bool> m_connecting = { false }; // 连接中标记
-    std::atomic<bool> m_cancelConnect = { false };//标记是否取消连接
+    //std::atomic<bool> m_connecting = { false }; // 连接中标记
+    //std::atomic<bool> m_cancelConnect = { false };//标记是否取消连接
 
-    // 连接参数（改用std::string，消除手动free）
+    // 连接参数
     std::string m_host;
     std::string m_user;
     std::string m_pass;
     int m_port = 22;
+    std::string m_dir;
     HWND m_panelHwnd;
+    HWND m_hWaitDlg;
+    int m_Loading = 8;
 
     std::string m_prompt = "";// 面板上的命令提示符，只有该提示符才能进行命令操作。
     std::atomic<LIBSSH2_CHANNEL*> m_shellChannel{ nullptr };//使用stomic保证内存的可见性
@@ -262,11 +266,19 @@ private:
     std::atomic<bool> m_commandFinished{ false };
     std::atomic<bool> m_isReadingOutput{ false };//是否是持续输出
     std::string m_currentCommand;// 用于过滤命令回显
+
+    // 连接线程控制：条件变量+互斥锁
+    std::mutex m_SSHConnMtx;
+    std::thread m_SSHConnThread;
+    void SSHConnThreadFunc();
+    std::condition_variable m_SSHConnCv;
+    std::atomic<bool> m_isSSHConnAlive = { true };
+    std::atomic<bool> m_stopSSHConn = { false };
     
 };
 
 // SSH连接操作具体声明
-bool SSHConnection_Handle(HWND hWnd, std::wstring host, std::wstring port, std::wstring user, std::wstring pass, std::wstring director);
+bool SSHConnection_Handle(HWND hWnd, HWND hWaitDlg, std::wstring host, std::wstring port, std::wstring user, std::wstring pass, std::wstring director);
 void SSHConnection_DisconnectInner(HWND hWnd);    // 内部断开连接（不清理全局映射，供Disconnect调用）
 void SSHConnection_OnDisconn(HWND hWnd);          // 彻底断开连接（释放资源并从全局映射中移除）
 bool SSHConnection_IsConn(HWND hWnd);

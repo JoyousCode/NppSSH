@@ -61,6 +61,7 @@ void pluginInit(HANDLE hModule)
     hInst = (HINSTANCE)hModule;
     InitGDIPlus(); // NPP加载插件时，启动GDI+
     NppSSH_Log_Init();// 初始化日志系统，以队列的方式处理日志，防止写入日志发送争抢，并防止阻塞主线程。
+	SSHProgress_Init(); // 初始化进度框队列，防止阻塞主线程
 }
 
 //

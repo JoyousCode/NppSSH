@@ -629,15 +629,16 @@ INT_PTR CALLBACK SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lP
     }
     case WM_CLOSE:
     {
+        NppSSH_LogInfoAuto("进入关闭");
+        wchar_t bufPanel[128]{};
+        swprintf_s(bufPanel, _countof(bufPanel), L"SSHLoginModal-%p", hWnd);
+        SSHLoginModal* pPanel = reinterpret_cast<SSHLoginModal*>(GetPropW(hWnd, bufPanel));
+        if (pPanel) PostMessageW(pPanel->hPanelHwnd, WM_SET_BTN_TRUE, 0, 0);
         DestroyWindow(hWnd);
         return TRUE;
     }
     //对话框销毁后的所有操作
     case WM_DESTROY:
-        wchar_t buf[128]{};
-        swprintf_s(buf, _countof(buf), L"SSHLoginModal-%p", hWnd);
-        RemovePropW(hWnd, buf);
-        RemovePropW(hWnd, L"SuppressSelChange");
 
         // 释放背景画刷资源
         HBRUSH hBgBrush = (HBRUSH)GetPropW(hWnd, L"_DlgBgBrush");
@@ -646,6 +647,15 @@ INT_PTR CALLBACK SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lP
             DeleteObject(hBgBrush);
             RemovePropW(hWnd, L"_DlgBgBrush");
         }
+
+        RemovePropW(hWnd, L"SuppressSelChange");
+        HICON hHide = (HICON)GetPropW(hWnd, L"hEyeHide");
+        HICON hShow = (HICON)GetPropW(hWnd, L"hEyeShow");
+        if (hHide) DestroyIcon(hHide);
+        if (hShow) DestroyIcon(hShow);
+        RemovePropW(hWnd, L"hEyeHide");
+        RemovePropW(hWnd, L"hEyeShow");
+        RemovePropW(hWnd, L"isPasswordHide");
 
         // 释放COMBOBOX堆上分配的ItemData内存，防止内存泄漏
         HWND hComboHost = GetDlgItem(hWnd, IDC_HOST);
@@ -659,29 +669,22 @@ INT_PTR CALLBACK SSH_LoginDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lP
         // 清理combo上挂的对话框句柄属性
         RemovePropW(hComboHost, L"_DLG_HWND");
         
+        
         int count = (int)SendMessageW(hComboHost, CB_GETCOUNT, 0, 0);
         for (int i = 0;i < count;i++)
         {
             SSHLoginHistoryItem* p = (SSHLoginHistoryItem*)SendMessageW(hComboHost, CB_GETITEMDATA, i, 0);
             if (p) delete p;
         }
-        SSHLoginModal* pPanel = nullptr;
         wchar_t bufPanel[128]{};
         swprintf_s(bufPanel, _countof(bufPanel), L"SSHLoginModal-%p", hWnd);
-        pPanel = reinterpret_cast<SSHLoginModal*>(GetPropW(hWnd, bufPanel));
+        SSHLoginModal* pPanel = reinterpret_cast<SSHLoginModal*>(GetPropW(hWnd, bufPanel));
         if (pPanel)
         {
-            // 释放眼睛图标资源
-            HICON hHide = (HICON)GetPropW(hWnd, L"hEyeHide");
-            HICON hShow = (HICON)GetPropW(hWnd, L"hEyeShow");
-            if (hHide) DestroyIcon(hHide);
-            if (hShow) DestroyIcon(hShow);
-            RemovePropW(hWnd, L"hEyeHide");
-            RemovePropW(hWnd, L"hEyeShow");
-            RemovePropW(hWnd, L"isPasswordHide");
+            NppSSH_LogInfoAuto("登录对话框销毁");
+            delete pPanel;
         }
-		delete pPanel;
-        NppSSH_LogInfoAuto("登录对话框销毁");
+        RemovePropW(hWnd, bufPanel);
         return TRUE;
     }
 
