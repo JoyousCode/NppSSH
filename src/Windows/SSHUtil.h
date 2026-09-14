@@ -58,3 +58,5 @@ INT_PTR CALLBACK SshWaitDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lPara
 HWND CreateSshWaitDialog(HWND hParent, HWND hLoginPanel, bool bTestMsg);
 void UpdateSshWaitProgress(HWND hDlg, int nPercent, LPCWSTR szDetailText, LPCWSTR szMainTitle);
 void CloseSshWaitDialog(HWND& hDlg);
+
+LONG GetLastLineGlobalStart(HWND hTerminal);

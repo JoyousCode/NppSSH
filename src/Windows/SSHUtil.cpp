@@ -1173,3 +1173,33 @@ void CloseSshWaitDialog(HWND& hDlg)//暂时废除，目前仅通过点击按钮�
     }
     hDlg = nullptr;
 }
+
+
+LONG GetLastLineGlobalStart(HWND hTerminal)
+{
+    if (!hTerminal || !::IsWindow(hTerminal))
+        return 0;
+
+    GETTEXTLENGTHEX gtl{};
+    gtl.flags = GTL_DEFAULT;
+    gtl.codepage = 1200; // UTF16
+    LONG totalTextLen = static_cast<LONG>(::SendMessageW(hTerminal, EM_GETTEXTLENGTHEX, (WPARAM)&gtl, 0));
+    LONG lastLineGlobalStart = 0;
+
+    for (LONG i = totalTextLen; i > 0; i--)
+    {
+        WCHAR chBuf[2] = { 0 };
+        TEXTRANGE tr;
+        tr.chrg.cpMin = i - 1;
+        tr.chrg.cpMax = i;
+        tr.lpstrText = chBuf;
+        ::SendMessageW(hTerminal, EM_GETTEXTRANGE, 0, (LPARAM)&tr);
+        WCHAR ch = chBuf[0];
+        if (ch == L'\r')
+        {
+            lastLineGlobalStart = i;
+            break;
+        }
+    }
+    return lastLineGlobalStart;
+}

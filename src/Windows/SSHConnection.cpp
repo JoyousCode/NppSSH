@@ -764,7 +764,7 @@ void SSHConnection::Disconnect() {
     m_hWaitDlg = nullptr;
     HWND hwnd = SSHConnection_GetPanelId(this);
     SSH_TermHandleExecuteClear(hwnd);
-    SSH_TermHandleSetPanelPrompt(hwnd, "✅ SSH已断开\n等待新的连接...");
+    SSH_TermHandleAppendTextHandle(hwnd, "✅ SSH已断开\n等待新的连接...");
 
     // 先停止连接线程
     m_stopSSHConn.store(true, std::memory_order_release);
