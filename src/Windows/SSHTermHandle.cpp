@@ -246,7 +246,6 @@ void SSHTermHandle::ParseAnsiParseOnly(const std::wstring& params, CHARFORMAT2W&
 void SSHTermHandle::StoreTerminalContent(wchar_t ch)
 {
     _oldStoreContent += ch; // 无需判空，string自动扩容，只追加
-    NppSSH_LogInfoAuto("存储最后一行：" + WStringToLogStr(_oldStoreContent));
 }
 void SSHTermHandle::StoreTerminalContent(const std::string& str)
 {
@@ -809,7 +808,22 @@ LRESULT CALLBACK SSHTermHandle::TerminalEditProc(HWND hWnd, UINT msg, WPARAM wPa
         if (msg == WM_KEYDOWN && (wParam == VK_UP || wParam == VK_DOWN) && canEdit) {
             if (terminal->GetPTYFeatures().supportCursorMove) {
                 NppSSH_LogInfoAuto("调用远程服务器的历史记录，待实现去远程服务查询历史命令");
-                NppSSH_LogInfoAuto("【拦截】上下方向键禁止操作！wParam=" + IntToStr(wParam));
+                std::string promptStr = terminal->GetPrompt();
+                std::wstring wPrompt = UTF8ToWstring(promptStr);
+                if (wPrompt.length() != 20) {
+                    res = 0;
+                    return res;
+                }
+                NppSSH_LogInfoAuto("【拦截】上下方向键 wParam=" + IntToStr(wParam));
+                std::string sendSeq;
+                if (wParam == VK_UP)
+                    sendSeq = "\033[A";
+                else
+                    sendSeq = "\033[B";
+                std::thread([terminal, sendSeq]() {
+                    bool result = SSH_ConnectionExecuteCommand(terminal->_hwndParent, sendSeq, true);
+                    }).detach();
+
                 res = 0;
             }
             else {
@@ -962,6 +976,16 @@ LRESULT CALLBACK SSHTermHandle::TerminalEditProc(HWND hWnd, UINT msg, WPARAM wPa
         // 6. 回车处理
         if (msg == WM_KEYDOWN && (wParam == VK_RETURN || wParam == 13)) {
 
+            int totalTextLen = GetWindowTextLengthW(hWnd);
+            SendMessageW(hWnd, EM_SETSEL, totalTextLen, totalTextLen);
+            SendMessageW(hWnd, EM_SCROLLCARET, 0, 0);
+
+            if (!terminal->IsCursorInEditableArea()) {
+                res = 0;
+                s_bProcessingMsg = false;
+                return res;
+            }
+
             // ============= 【从伪终端提取真实命令】=============
             DWORD cursorPos = 0;
             SendMessageW(hWnd, EM_GETSEL, (WPARAM)&cursorPos, NULL);
@@ -980,13 +1004,13 @@ LRESULT CALLBACK SSHTermHandle::TerminalEditProc(HWND hWnd, UINT msg, WPARAM wPa
             }
 
             // 执行命令
-            terminal->SetIsCommandRunning(true); // 标记后台命令开始执行
+            //terminal->SetIsCommandRunning(true); // 标记后台命令开始执行
             // 立即放行，不等待
             std::string cmdCopy = cmdToExecute;
             int panelId = terminal->Get_panelSeqId();
 
             std::thread([terminal, cmdCopy]() {
-                bool result = SSH_ConnectionExecuteCommand(terminal->_hwndParent, cmdCopy);
+                bool result = SSH_ConnectionExecuteCommand(terminal->_hwndParent, cmdCopy,false);
                 }).detach();
             NppSSH_LogInfoAuto("【调试】TerminalEditProc设置提示符，命令提示符====" + terminal->GetPrompt());
             NppSSH_LogInfoAuto("【命令执行结果】面板ID=" + IntToStr(terminal->Get_panelSeqId())
@@ -1558,33 +1582,24 @@ void SSHTermHandle::AppendOutputText(const std::string& text) {
     }
 
 
-    NppSSH_LogInfoAuto("输出文本到输出框" + std::string(text));
+    NppSSH_LogInfoAuto("输出服务器结果到输出框" + std::string(text));
 
-
-    //std::string cleanText = CleanAnsiEscapeSequences(text);
     std::string cleanText = text;
     NppSSH_LogInfoAuto("【原始字符内容=======================================】");
     DeBugOutPutText(cleanText);
-    //cleanText = Cleanrr(cleanText);//清除所有\n前面的\r
 
     // 1、转宽字符
     std::wstring rawW = UTF8ToWstring(cleanText);
     // 2、统一换行预处理（删除全部\r、合并连续\n）
     std::wstring normW = NormalizeTerminalLineFeed(rawW);
 
-    // 3、调用自动换行函数（封装后的核心逻辑）
-    //std::wstring wrapText = AutoWrapText(normW);
-    ////////////////////////////wrapText
-
-
     std::wstring* wtext = new std::wstring(normW);
-    //NppSSH_LogInfoAuto("【原始宽字符内容】" + WStringToLogStr(*wtext));
     NppSSH_LogInfoAuto("【原始宽字符内容=======================================】");
-    //DeBugOutPutText(wtext->c_str());
-    NppSSH_LogInfoAuto("【原始宽字符内容,删除全部\r、合并连续\n处理后=======================================】");
+    NppSSH_LogInfoAuto("【原始宽字符内容】" + WStringToLogStr(*wtext));
+    NppSSH_LogInfoAuto("【原始宽字符内容,删除全部\\r、合并连续\\n处理后=======================================】");
     DeBugOutPutText(wtext->c_str());
 
-    // ✅ 投递到主线程（绝对安全）
+    // 投递到主线程（绝对安全）
 
     PostMessage(_hTerminal, WM_APPEND_OUTPUT_TEXT, 0, (LPARAM)wtext);
 }

@@ -202,7 +202,6 @@ HWND SSHConnection_GetPanelId(SSHConnection* self) {
 }
 // 工具函数：提取字符串最后一行，待处理，要适配ANSI清屏指令,目前遍历是否包含L'J'
 std::string SSHConnection::extractLastLine(const std::string& str) {
-    DeBugOutPutText(str);
     if (str.empty() || str == "\n" || str == "\r" || str == "\r\n")
     {
         NppSSH_LogInfoAuto("【检测空】");
@@ -473,6 +472,8 @@ SSHConnection::SSHConnection(SSHConnection&& other) noexcept {
     m_prompt = std::move(other.m_prompt);
     m_shellChannel.store(other.m_shellChannel.load(std::memory_order_acquire), std::memory_order_release);
     m_stopHeartbeat.store(other.m_stopHeartbeat.load(std::memory_order_acquire), std::memory_order_release);
+    m_stopReader.store(other.m_stopReader.load(std::memory_order_acquire), std::memory_order_release);
+    m_hasPendingRead.store(other.m_hasPendingRead.load(std::memory_order_acquire), std::memory_order_release);
     m_heartbeatThread = std::move(other.m_heartbeatThread);
     m_pConnectThread = other.m_pConnectThread;
 
@@ -484,7 +485,9 @@ SSHConnection::SSHConnection(SSHConnection&& other) noexcept {
     other.m_stopSSHConn.store(false, std::memory_order_release);
     other.m_port = 22;
     other.m_shellChannel.store(nullptr, std::memory_order_release);
-    other.m_stopHeartbeat.store(true, std::memory_order_release);
+    other.m_stopHeartbeat.store(false, std::memory_order_release);
+    other.m_stopReader.store(false, std::memory_order_release);
+    other.m_hasPendingRead.store(false, std::memory_order_release);
 
     other.m_pConnectThread = nullptr;
 }
@@ -510,7 +513,8 @@ SSHConnection& SSHConnection::operator=(SSHConnection&& other) noexcept {
         m_prompt = std::move(other.m_prompt);
         m_shellChannel.store(other.m_shellChannel.load(std::memory_order_acquire), std::memory_order_release);
         m_stopHeartbeat.store(other.m_stopHeartbeat.load(std::memory_order_acquire), std::memory_order_release);
-
+        m_stopReader.store(other.m_stopReader.load(std::memory_order_acquire), std::memory_order_release);
+        m_hasPendingRead.store(other.m_hasPendingRead.load(std::memory_order_acquire), std::memory_order_release);
         m_heartbeatThread = std::move(other.m_heartbeatThread);
         m_pConnectThread = other.m_pConnectThread;
 
@@ -522,7 +526,9 @@ SSHConnection& SSHConnection::operator=(SSHConnection&& other) noexcept {
         other.m_stopSSHConn.store(false, std::memory_order_release);
         other.m_port = 22;
         other.m_shellChannel.store(nullptr, std::memory_order_release);
-        other.m_stopHeartbeat.store(true, std::memory_order_release);
+        other.m_stopHeartbeat.store(false, std::memory_order_release);
+        other.m_stopReader.store(false, std::memory_order_release);
+        other.m_hasPendingRead.store(false, std::memory_order_release);
 
         other.m_pConnectThread = nullptr;
     }
@@ -536,6 +542,7 @@ SSHConnection::~SSHConnection() {
     m_isAlive.store(false, std::memory_order_release);
     m_stopHeartbeat.store(true, std::memory_order_release);
     m_stopReader.store(true, std::memory_order_release);
+
 }
 
 // 释放资源
@@ -558,11 +565,11 @@ void SSHConnection::ReleaseResources() {
     }
     StopShellReader(); // 先确保线程退出
     // 等待线程彻底退出，防止线程还在操作通道
-    if (m_shellReaderThread.joinable()) {
-        NppSSH_LogInfoAuto("释放资源.............等待ShellReader线程完全退出");
-        m_shellReaderThread.join();
-        m_shellReaderThread = std::thread(); // 重置线程对象
-    }
+    //if (m_shellReaderThread.joinable()) {
+    //    NppSSH_LogInfoAuto("释放资源.............等待ShellReader线程完全退出");
+    //    m_shellReaderThread.join();
+    //    m_shellReaderThread = std::thread(); // 重置线程对象
+    //}
 
 
     // 先停止心跳（避免心跳线程访问已释放资源）
@@ -812,19 +819,19 @@ void SSHConnection::ResetState() {
     m_sock = INVALID_SOCKET;
 }
 // 启动后台持续读（官方poll）
-// ========== 改造StartShellReader：仅执行命令时启动 ==========
-void SSHConnection::StartShellReader() {
+bool SSHConnection::StartShellReader() {
     std::lock_guard<std::mutex> lock(m_readerMutex);
     // 前置检查：通道无效/已有运行线程 → 直接返回
     if ((m_shellChannel.load(std::memory_order_acquire) == nullptr) || m_shellReaderThread.joinable()) {
         //NppSSH_LogWarnAuto("【WARN】StartShellReader 跳过：通道无效或线程已运行");
         NppSSH_LogInfoAuto("【INFO】等待旧 ShellReader 线程自然结束");
         m_shellReaderThread.detach();
-        //return;
+        return false;
     }
 
     // 重置线程控制状态
     m_stopReader.store(false, std::memory_order_release);
+    m_hasPendingRead.store(false, std::memory_order_release);
     m_commandFinished.store(false, std::memory_order_release);
     m_waitingForPrompt.store(true, std::memory_order_release);// 标记"等待提示符"
 
@@ -833,12 +840,19 @@ void SSHConnection::StartShellReader() {
 
     // 启动线程
     m_shellReaderThread = std::thread(&SSHConnection::ShellReaderLoop, this);
-    NppSSH_LogInfoAuto("【OK】ShellReader 线程启动（仅本次命令）");
+    if (m_shellReaderThread.joinable()) {
+        NppSSH_LogInfoAuto("【OK】ShellReader 读命令返回结果线程启动");
+        return true;
+    }
+    else {
+        NppSSH_LogInfoAuto("【err】ShellReader 读命令返回结果线程启动失败");
+        return false;
+    }
 }
 
 // 停止后台读
 void SSHConnection::StopShellReader() {
-    std::lock_guard<std::mutex> lock(m_readerMutex);
+    //std::lock_guard<std::mutex> lock(m_readerMutex);
     m_stopReader.store(true, std::memory_order_release);
     m_waitingForPrompt.store(false, std::memory_order_release);// 取消等待提示符
     if (m_shellChannel.load(std::memory_order_acquire) == nullptr) {//通道为空直接放弃，不操作
@@ -846,20 +860,22 @@ void SSHConnection::StopShellReader() {
         m_shellReaderThread = std::thread();
         return;
     }
+    m_readerCv.notify_one();
     if (m_shellReaderThread.joinable()) {
-        //try {
-        //    // 正确的线程等待方式：直接join（无超时）
-        //    m_shellReaderThread.join();
-        //}
-        //catch (...) {
-        //    // 如果join失败，强制分离
-        //    m_shellReaderThread.detach();
-        //    NppSSH_LogErrorAuto("【ERROR】ShellReader 线程join失败，强制分离");
-        //}
+        NppSSH_LogInfoAuto("释放资源..........读线程释放资源");
+        try {
+            // 正确的线程等待方式：直接join（无超时）
+            m_shellReaderThread.join();
+        }
+        catch (...) {
+            // 如果join失败，强制分离
+            m_shellReaderThread.detach();
+            NppSSH_LogErrorAuto("【ERROR】ShellReader 线程join失败，强制分离");
+        }
     }
 
     // 重置线程对象
-    //m_shellReaderThread = std::thread();
+    m_shellReaderThread = std::thread();
     NppSSH_LogInfoAuto("【OK】ShellReader 线程已停止，最终提示符：[" + (m_prompt.empty() ? "空" : m_prompt) + "]");
 }
 
@@ -873,26 +889,48 @@ void SSHConnection::ShellReaderLoop() {
     char buf[SSHConst::BUF_SIZE_LARGE];
     HWND hwnd = SSHConnection_GetPanelId(this);
 
-    const int MAX_IDLE_MS = 10;
+    const int MAX_IDLE_MS = 100;
     int retry = 0;// 重试次数
     int baseRetry = 100;//基础等待时间（ms） 100ms, 200ms, 400ms...
     const int MAX_RETRY = 20; // 足够多，不设时间兜底,目前最大尝试次数20次。指数回避每次尝试需要等待的时间
-    //if (m_stopReader.load(std::memory_order_acquire)) {//防止 Unknown
-    //    exitReason = ShellExitReason::StoppedByUser;
-    //}
     while (!m_stopReader.load(std::memory_order_acquire)) {
         // 实时检测 socket 是否还活着
-        if (!IsSocketAlive(m_sock)) {
-            exitReason = ShellExitReason::SocketDead;
-            NppSSH_LogErrorAuto("【FATAL】Socket 已断开，ShellReaderLoop 强制退出");
-            break;
+        if ((!hwnd && !IsWindow(hwnd)) || !IsSocketAlive(m_sock)) {
+            NppSSH_LogErrorAuto("【FATAL】Socket 已断开或者面板不存在，ShellReaderLoop 强制退出");
+            goto READ_THREAD_EXIT;
         }
+
+        retry++;
+        if (retry >= MAX_RETRY) {//大于十次，准备启动睡眠，指数退避的方式增加睡眠时间
+            baseRetry = std::min(100 * (1 << (retry - MAX_RETRY)), 5000);
+            //baseRetry = 100 * (1 << (retry - 1)); // 100ms, 200ms, 400ms...
+            NppSSH_LogInfoAuto("【RETRY】-9 后 prompt 仍为空，指数退避 " +
+                std::to_string(baseRetry) + "ms，第 " +
+                std::to_string(retry) + " 次");        
+        }
+        {
+            std::unique_lock<std::mutex> lock(m_readerMutex);
+            bool waked = m_readerCv.wait_for(lock, std::chrono::milliseconds(baseRetry),
+                [this]() {
+                    return m_stopReader.load(std::memory_order_acquire)
+                        || m_hasPendingRead.load(std::memory_order_acquire);
+                });
+            if (waked) {
+                if (m_stopReader.load(std::memory_order_acquire))
+                {
+                    // 被唤醒且检测到停止信号，直接退出
+                    NppSSH_LogInfoAuto("等待期间收到停止信号，退出读PTY伪终端线程");
+                    goto READ_THREAD_EXIT;
+                }
+                m_hasPendingRead.store(false, std::memory_order_release);
+            }
+        }
+        
 
         LIBSSH2_CHANNEL* ch = m_shellChannel.load(std::memory_order_acquire);
         if (!ch) {
-            exitReason = ShellExitReason::SocketDead;
             NppSSH_LogInfoAuto("【EXIT】通道为空，安全退出");
-            break;
+            goto READ_THREAD_EXIT;
         }
 
         int n = libssh2_channel_read(
@@ -914,113 +952,37 @@ void SSHConnection::ShellReaderLoop() {
                 }
                 m_currentCommand.clear();
             }
-
-            if (hwnd) {
-                SSH_TermHandleAppendTextHandle(hwnd, chunk);
-                SSH_TermHandleSetCommandRunning(hwnd, true);
-            }
-
-            retry = 0; // 有输出就重置重试
-            NppSSH_LogInfoAuto("【输出】" + chunk);
             std::string lastLine = extractLastLine(chunk);
+            SSH_TermHandleAppendTextHandle(hwnd, chunk);
+            SSH_TermHandleSetCommandRunning(hwnd, true);
             if (!lastLine.empty()) {
-                std::lock_guard<std::mutex> lock(m_mutex);
                 m_prompt = lastLine;
-                if (hwnd)//拿到提示符直接结束命令状态
-                {
-                    NppSSH_LogInfoAuto("【发送执行结束信号】" + chunk);
-                    SSH_TermHandleSetPanelPrompt(hwnd, m_prompt);
-                    SSH_TermHandleSetCommandRunning(hwnd, false);
-                }
-                exitReason = ShellExitReason::PromptReceived;
-                goto exit_read_loop;
+                NppSSH_LogInfoAuto("【发送执行结束信号】命令提示符："+ m_prompt);
+                SSH_TermHandleSetPanelPrompt(hwnd, m_prompt);
+                SSH_TermHandleSetCommandRunning(hwnd, false);
             }
-
+            retry = 0;
+            baseRetry = 100;
         }
         else if (n == 0) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(MAX_IDLE_MS));
+            NppSSH_LogInfoAuto("【警告】返回为0数据");
         }
         else {
             int err = libssh2_session_last_errno(m_session);
-
             // -9 处理（核心）
             if (err == LIBSSH2_ERROR_TIMEOUT) {
                 NppSSH_LogInfoAuto("【WARN】channel closed (-9)，prompt=[" + m_prompt + "]");
-                if (retry >= MAX_RETRY) {
-                    NppSSH_LogErrorAuto("【FATAL】超过最大重试次数，仍未检测到命令提示符");
-                    exitReason = ShellExitReason::RetryExhausted;
-                    break;
-                }
-                // ibssh2 官方 flush
-                libssh2_channel_flush(ch);
-
-                if (!m_prompt.empty()) {
-                    NppSSH_LogInfoAuto("【EOF】prompt 非空，命令真正结束");
-                    exitReason = ShellExitReason::PromptReceived;
-                    break;
-                }
-
-                retry++;
-                int backoff = 100 * (1 << (retry - 1)); // 100ms, 200ms, 400ms...
-                NppSSH_LogInfoAuto("【RETRY】-9 后 prompt 仍为空，指数退避 " +
-                    std::to_string(backoff) + "ms，第 " +
-                    std::to_string(retry) + " 次");
-
-                std::this_thread::sleep_for(std::chrono::milliseconds(backoff));
-                continue; // 绝不退出
             }
-
-            if (err != LIBSSH2_ERROR_EAGAIN) {
-                NppSSH_LogErrorAuto("【ERROR】channel_read 错误: " + std::to_string(err));
-                break;
-            }
-        }
-    }
-    //命中正常提示符直接跳到此处，退出while循环
-    exit_read_loop:
-    ;
-    if (m_stopReader.load(std::memory_order_acquire)) {
-        exitReason = ShellExitReason::StoppedByUser;
-    }
-
-    if (hwnd) {
-        std::string panelPrompt = SSH_TerminalPanelPrompt(hwnd);
-        switch (exitReason) {
-        case ShellExitReason::PromptReceived:
-            // 正常结束，不追加干扰信息
-            break;
-
-        case ShellExitReason::StoppedByUser:
-            SSH_TermHandleAppendTextHandle(hwnd,
-                "\r\n[!] 输出已被中断（Ctrl+C / 服务器停止）\r\n"+ panelPrompt);
-            break;
-
-        case ShellExitReason::SocketDead:
-            SSH_TermHandleAppendTextHandle(hwnd,
-                "\r\n[!] 连接已断开（服务器关机或网络异常）\r\n" + panelPrompt);
-            break;
-
-        case ShellExitReason::RetryExhausted:
-            SSH_TermHandleAppendTextHandle(hwnd,
-                "\r\n[!] 命令执行超时，未检测到命令提示符\r\n" + panelPrompt);
-            break;
-
-        case ShellExitReason::Unknown:
-        default:
-            SSH_TermHandleAppendTextHandle(hwnd,
-                "\r\n[!] 命令执行异常（未知原因）\r\n" + panelPrompt);
-            break;
-        }
-        if (exitReason != ShellExitReason::PromptReceived) {
-            SSH_TermHandleSetPanelPrompt(hwnd, panelPrompt);
-            SSH_TermHandleSetCommandRunning(hwnd, false);
+            NppSSH_LogInfoAuto("【警告】无数据输出"+IntToStr(n));
         }
         
     }
-
-    if (m_shellReaderThread.joinable()) {
-        m_shellReaderThread.detach();
-    }
+    //命中正常提示符直接跳到此处，退出while循环
+READ_THREAD_EXIT:
+    NppSSH_LogInfoAuto("【结束】【结束】【结束】【结束】【结束】【结束】【结束】【结束】【结束】【结束】【结束】【结束】【结束】读线程结束");
+    //if (m_shellReaderThread.joinable()) {
+    //    m_shellReaderThread.detach();
+    //}
 }
 // 伪终端执行命令（终极纯净版）
 bool SSHConnection::ExecuteCommand(const std::string& cmd) {
@@ -1033,20 +995,23 @@ bool SSHConnection::ExecuteCommand(const std::string& cmd) {
     }
     
     // 1. 停止旧线程（防止残留）
-    StopShellReader();
-    m_commandFinished.store(false, std::memory_order_release);
+    //StopShellReader();
+    //m_commandFinished.store(false, std::memory_order_release);
     // 保存当前命令，用于过滤回显
     m_currentCommand = cmd;
 
     // 2. 启动本次命令的ShellReader线程
-    StartShellReader();
+    //StartShellReader();
+    m_hasPendingRead.store(true, std::memory_order_release);
+    m_readerCv.notify_one();
 
     // 3. 发送命令
     std::string command = cmd + "\n";
     size_t sent = 0;
+    LIBSSH2_CHANNEL* ch = m_shellChannel.load(std::memory_order_acquire);
     while (sent < command.size()) {
         int n = libssh2_channel_write(
-            m_shellChannel.load(std::memory_order_acquire),
+            ch,
             command.data() + sent,
             command.size() - sent
         );
@@ -1058,9 +1023,25 @@ bool SSHConnection::ExecuteCommand(const std::string& cmd) {
         }
         else {
             NppSSH_LogErrorAuto("【ERROR】命令发送失败");
-            StopShellReader();
+            //StopShellReader();
             return false;
         }
+    }
+
+    int flushRet;
+    const int FLUSH_RETRY = 5;
+    int flushTry = 0;
+    do {
+        flushRet = libssh2_channel_flush(ch);
+        if (flushRet == LIBSSH2_ERROR_EAGAIN) {
+            WaitSocketWithBackoff(m_sock, m_session, 100, 2);
+        }
+        flushTry++;
+    } while (flushRet == LIBSSH2_ERROR_EAGAIN && flushTry < FLUSH_RETRY);
+
+    if (flushRet < 0) {
+        NppSSH_LogErrorAuto("【ERROR】channel flush失败，命令可能未送达远端");
+        // flush失败不直接return false；字节已经进libssh2缓冲，只是没推socket，允许上层继续等待输出
     }
     //int wait = 0;
     //while (!m_commandFinished.load(std::memory_order_acquire) &&
@@ -1070,6 +1051,40 @@ bool SSHConnection::ExecuteCommand(const std::string& cmd) {
     //    wait++;
     //}
     NppSSH_LogInfoAuto("【OK】命令已发送，后台执行中");
+    return true;
+}
+bool SSHConnection::SendRawInput(const std::string& rawSeq)
+{
+    NppSSH_LogInfoAuto("【SendRawInput 执行】命令 = " + rawSeq+"大小："+ IntToStr(rawSeq.size()));
+    // 前置检查：未连接/通道无效 → 返回失败
+    if (!m_connected.load(std::memory_order_acquire) || (m_shellChannel.load(std::memory_order_acquire) == nullptr))
+    {
+        NppSSH_LogErrorAuto("【SendRawInput】连接/通道无效");
+        return false;
+    }
+    m_hasPendingRead.store(true, std::memory_order_release);
+    m_readerCv.notify_one();
+
+    size_t sent = 0;
+    LIBSSH2_CHANNEL* ch = m_shellChannel.load(std::memory_order_acquire);
+    const size_t total = rawSeq.size();
+    while (sent < total)
+    {
+        int n = libssh2_channel_write(ch, rawSeq.data() + sent, total - sent);
+        if (n > 0)
+        {
+            sent += n;
+        }
+        else if (n == LIBSSH2_ERROR_EAGAIN)
+        {
+            WaitSocketWithBackoff(m_sock, m_session, 100, 3);
+        }
+        else
+        {
+            NppSSH_LogErrorAuto("【SendRawInput】发送失败，剩余字节:" + std::to_string(total - sent));
+            return false;
+        }
+    }
     return true;
 }
 
@@ -2010,6 +2025,13 @@ void SSHConnection::SSHConnThreadFunc() {
         ReleaseResources();
         goto SSHCONNTHREAD_EXIT;
     }
+
+    if (!StartShellReader()) {
+        err = "PTY伪终端线程启动失败，连接被中断,已退出连接";
+        NppSSH_LogErrorAuto(err);
+        ReleaseResources();
+        goto SSHCONNTHREAD_EXIT;
+    }
 SSHCONNTHREAD_EXIT:
 	NppSSH_LogInfoAuto("连接线程退出");
     std::wstring wstrTip = L"SSH连接成功";
@@ -2232,7 +2254,7 @@ void SSHConnection_ResetConn(HWND hWnd) {
     }
 }
 
-bool SSHConnection_ExecuteCommand(HWND hWnd, const std::string& cmd) {
+bool SSHConnection_ExecuteCommand(HWND hWnd, const std::string& cmd,bool isSequence) {
     if (GetCurrentThreadId() == GetWindowThreadProcessId(hWnd, nullptr)) {
         NppSSH_LogErrorAuto("【FATAL】UI 线程禁止执行 SSH 命令！");
         return false;
@@ -2259,6 +2281,9 @@ bool SSHConnection_ExecuteCommand(HWND hWnd, const std::string& cmd) {
     }
     //NppSSH_LogInfoAuto("准备执行命令！！！！！！！");
     // 5. 已连接 → 执行命令并返回结果
+    if (isSequence) {
+        return conn->SendRawInput(cmd);
+    }
     return conn->ExecuteCommand(cmd);
 }
 

@@ -181,7 +181,7 @@ void SSH_ConnectionDisconnectInner(HWND hWnd);            // 内部断开连接
 void SSH_ConnectionOnDisconn(HWND hWnd);				// map移除数据
 bool SSH_ConnectionIsConn(HWND hWnd);					// 判断是否连接
 void SSH_ConnectionResetConn(HWND hWnd);				// 重置连接状态（暂未使用）
-bool SSH_ConnectionExecuteCommand(HWND hWnd, const std::string& cmd); // 执行SSH命令
+bool SSH_ConnectionExecuteCommand(HWND hWnd, const std::string& cmd, bool isSequence); // 执行SSH命令
 std::string SSH_ConnectionPanelPrompt(HWND hWnd);		// 获取命令提示词
 void SSH_ConnectionPtySize(HWND hWnd, int cols, int rows);// 设置申请的Pty大小
 

@@ -263,8 +263,8 @@ bool SSH_ConnectionIsConn(HWND hWnd) {
 void SSH_ConnectionResetConn(HWND hWnd) {
     SSHConnection_ResetConn(hWnd);
 }
-bool SSH_ConnectionExecuteCommand(HWND hWnd, const std::string& cmd) {
-    return SSHConnection_ExecuteCommand(hWnd, cmd);   // 命令执行转发
+bool SSH_ConnectionExecuteCommand(HWND hWnd, const std::string& cmd,bool isSequence) {
+    return SSHConnection_ExecuteCommand(hWnd, cmd, isSequence);   // 命令执行转发
 }
 std::string SSH_ConnectionPanelPrompt(HWND hWnd) {
     return SSHConnection_PanelPrompt(hWnd);

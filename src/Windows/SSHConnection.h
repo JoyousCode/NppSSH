@@ -70,6 +70,7 @@ public:
 
     // 执行命令（线程安全）
     bool ExecuteCommand(const std::string& cmd);
+    bool SendRawInput(const std::string& rawSeq);
 
     // 获取提示符（线程安全）
     std::string GetPrompt() const;
@@ -148,7 +149,7 @@ public:
     bool Getconnected() {return m_connected.load(std::memory_order_acquire);}
 
     //后台持续读（官方poll）
-    void StartShellReader();
+    bool StartShellReader();
     void StopShellReader();
 
     void SetPTYSize(int cols, int rows);
@@ -263,6 +264,7 @@ private:
     std::condition_variable m_readerCv;
     std::atomic<bool> m_waitingForPrompt{ false };//标记是否等待命令提示符（仅执行命令时为true）
     std::atomic<bool> m_stopReader{ false };
+    std::atomic<bool> m_hasPendingRead{ false };
     std::atomic<bool> m_commandFinished{ false };
     std::atomic<bool> m_isReadingOutput{ false };//是否是持续输出
     std::string m_currentCommand;// 用于过滤命令回显
@@ -283,7 +285,7 @@ void SSHConnection_DisconnectInner(HWND hWnd);    // 内部断开连接（不清
 void SSHConnection_OnDisconn(HWND hWnd);          // 彻底断开连接（释放资源并从全局映射中移除）
 bool SSHConnection_IsConn(HWND hWnd);
 void SSHConnection_ResetConn(HWND hWnd);
-bool SSHConnection_ExecuteCommand(HWND hWnd, const std::string& cmd);
+bool SSHConnection_ExecuteCommand(HWND hWnd, const std::string& cmd, bool isSequence);
 std::string SSHConnection_PanelPrompt(HWND hWnd);
 void SSHConnection_PtySize(HWND hWnd, int cols, int rows);
 void SSHConnection_ClearAllSSHConnections();
